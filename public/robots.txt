@@ -1,0 +1,9 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /auth/
+Disallow: /(dashboard)/
+
+Sitemap: https://xocial.world/sitemap.xml
+

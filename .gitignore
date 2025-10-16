@@ -1,0 +1,319 @@
+# =============================================================================
+# XOCIAL Platform - .gitignore
+# =============================================================================
+# This file prevents sensitive and generated files from being committed to Git
+# Following best practices for Next.js, Bun, Prisma, and Vercel projects
+# =============================================================================
+
+# =============================================================================
+# ENVIRONMENT VARIABLES (CRITICAL - NEVER COMMIT SECRETS!)
+# =============================================================================
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env*.local
+*.env
+
+# Environment template is OK to commit
+!env
+!.env.example
+!.env.template
+
+# =============================================================================
+# DEPENDENCIES & PACKAGE MANAGERS
+# =============================================================================
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Bun dependencies and cache
+.bun/
+bun.lockb
+
+# pnpm (if used as alternative)
+pnpm-debug.log*
+.pnpm-store/
+
+# Yarn (if used as alternative)
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.pnp.*
+
+# =============================================================================
+# NEXT.JS BUILD OUTPUT & CACHE
+# =============================================================================
+.next/
+out/
+next-env.d.ts
+.vercel
+
+# Next.js build cache
+.next/cache/
+
+# Static export
+dist/
+build/
+
+# =============================================================================
+# VERCEL DEPLOYMENT
+# =============================================================================
+.vercel
+.vercel/**
+
+# =============================================================================
+# SUPABASE & PRISMA
+# =============================================================================
+# Prisma generated client (regenerated on build)
+node_modules/.prisma/
+prisma/generated/
+
+# Supabase local development
+.supabase/
+
+# Database migrations (keep migrations folder but ignore local dumps)
+*.sql.backup
+*.dump
+
+# =============================================================================
+# TESTING & COVERAGE
+# =============================================================================
+coverage/
+.nyc_output/
+*.lcov
+
+# Jest
+jest-report/
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
+# =============================================================================
+# LOGS & DEBUG FILES
+# =============================================================================
+*.log
+logs/
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Runtime logs
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# =============================================================================
+# OPERATING SYSTEM FILES
+# =============================================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+.nfs*
+
+# =============================================================================
+# IDE & EDITOR FILES
+# =============================================================================
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Cursor IDE (keep AI rules but ignore cache)
+.cursor/.cache/
+.cursor/workspace/
+
+# Keep these Cursor files for team consistency
+!.cursor/rules.md
+!.cursor/architecture.md
+!.cursor/component-patterns.md
+
+# JetBrains IDEs (WebStorm, IntelliJ IDEA, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+Session.vim
+Sessionx.vim
+.netrwhist
+*~
+tags
+[._]*.un~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# =============================================================================
+# TEMPORARY FILES & CACHE
+# =============================================================================
+*.tmp
+*.temp
+.cache/
+.parcel-cache/
+.turbo/
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# ESLint cache
+.eslintcache
+
+# Prettier cache
+.prettiercache
+
+# Stylelint cache
+.stylelintcache
+
+# =============================================================================
+# PRODUCTION BUILD ARTIFACTS
+# =============================================================================
+# Static files generated by build
+public/static/
+public/uploads/
+public/build/
+
+# Server-side rendered files
+.ssr/
+.server/
+
+# =============================================================================
+# SECURITY & CREDENTIALS
+# =============================================================================
+# SSL certificates
+*.pem
+*.key
+*.cert
+*.crt
+
+# OAuth tokens
+*token*.json
+credentials.json
+
+# AWS credentials
+.aws/
+
+# Service account keys
+service-account*.json
+firebase-adminsdk*.json
+
+# =============================================================================
+# DOCKER & CONTAINERS
+# =============================================================================
+docker-compose.override.yml
+*.dockerignore.local
+
+# =============================================================================
+# ANALYTICS & MONITORING
+# =============================================================================
+# Sentry
+.sentryclirc
+
+# Lighthouse reports
+lighthouse-report/
+*.lighthouse.json
+
+# =============================================================================
+# MISCELLANEOUS
+# =============================================================================
+# TypeScript declarations
+*.d.ts.map
+
+# Source maps (optional - comment out if you want to keep them)
+*.map
+
+# Storybook build
+storybook-static/
+
+# Chromatic (visual testing)
+chromatic.log
+
+# Backup files
+*.backup
+*.bak
+*.swp
+*.swo
+
+# Archive files
+*.zip
+*.tar
+*.gz
+*.rar
+*.7z
+
+# =============================================================================
+# PROJECT-SPECIFIC IGNORES
+# =============================================================================
+# Add any project-specific patterns here
+# Example:
+# /data/local-cache/
+# /scripts/private/
+

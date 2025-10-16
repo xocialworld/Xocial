@@ -183,9 +183,13 @@ export function CalendarView({ posts }: CalendarViewProps) {
                       </span>
                     </div>
                     <p className="text-sm text-secondary-700 line-clamp-3 mb-2">
-                      {typeof post.content === "string"
-                        ? post.content
-                        : post.content?.text || "No content"}
+                      {(() => {
+                        if (typeof post.content === "string") return post.content;
+                        if (typeof post.content === "object" && post.content !== null && "text" in post.content) {
+                          return String(post.content.text);
+                        }
+                        return "No content";
+                      })()}
                     </p>
                     <div className="flex gap-1 flex-wrap">
                       {post.platforms.map((platform) => (

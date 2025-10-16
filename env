@@ -1,0 +1,116 @@
+# Xocial Platform - Environment Variables
+# Copy this file to .env.local and fill in your actual values
+
+# =============================================================================
+# APPLICATION CONFIGURATION
+# =============================================================================
+NEXT_PUBLIC_APP_URL=https://web-xocials-projects.vercel.app
+NODE_ENV=development
+
+# =============================================================================
+# SUPABASE CONFIGURATION
+# Get these values from: https://supabase.com/dashboard/project/_/settings/api
+# =============================================================================
+NEXT_PUBLIC_SUPABASE_URL=https://fwfjqvzmrrswkkksjunm.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3ZmpxdnptcnJzd2tra3NqdW5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk4NjM1MzMsImV4cCI6MjA3NTQzOTUzM30.AVUvADQyXAi-7vD8zVR3ZknNtnfUSuTz3Zh8K4yO9zU
+
+# Service role key (use with caution - server-side only)
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3ZmpxdnptcnJzd2tra3NqdW5tIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTg2MzUzMywiZXhwIjoyMDc1NDM5NTMzfQ.6JJapMKb9TZV2EFaZKUr4ABxsy-1VfTmAAZPiEwbvJo
+
+# =============================================================================
+# DATABASE CONFIGURATION (PRISMA)
+# Get these from: https://supabase.com/dashboard/project/_/settings/database
+# =============================================================================
+
+# Connection pooling URL (for serverless functions - Vercel/Netlify)
+# Port 6543 with pgbouncer=true
+DATABASE_URL=postgresql://postgres.fwfjqvzmrrswkkksjunm:xocial8287652418@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true
+
+# Direct connection URL (for migrations and direct queries)
+# Port 5432 without pooling
+DIRECT_URL=postgresql://postgres.fwfjqvzmrrswkkksjunm:xocial8287652418@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
+
+# =============================================================================
+# AUTHENTICATION
+# =============================================================================
+
+# JWT Secret (generate using: openssl rand -hex 32)
+JWT_SECRET=025e6976d6c36be498b80a0b9a7b499d628468f5a6e410add3445941ee82038f
+
+# Session Secret (generate using: openssl rand -hex 32)
+SESSION_SECRET=b947d26684c5492deb3c2f241af682f887a3e8e653a4200235cae52a88a0046b
+
+# =============================================================================
+# SOCIAL MEDIA API KEYS
+# =============================================================================
+
+# Facebook / Instagram
+# Get from: https://developers.facebook.com
+FACEBOOK_APP_ID=3507757269363886
+FACEBOOK_APP_SECRET=4dcf6474b650e3a3c7ccbd2e67e35e0a
+
+# Twitter / X
+# Get from: https://developer.twitter.com
+TWITTER_CLIENT_ID=your_twitter_client_id
+TWITTER_CLIENT_SECRET=your_twitter_client_secret
+
+# LinkedIn
+# Get from: https://www.linkedin.com/developers
+LINKEDIN_CLIENT_ID=your_linkedin_client_id
+LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret
+
+# Google / YouTube
+# Get from: https://console.cloud.google.com
+GOOGLE_CLIENT_ID=434338890089-lags4e224cbe575jftidqdc66qeq07o5.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=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
+GOOGLE_REDIRECT_URI=https://web-xocials-projects.vercel.app/integrations/callback
+
+# YouTube (uses same Google credentials)
+YOUTUBE_CLIENT_ID=434338890089-lags4e224cbe575jftidqdc66qeq07o5.apps.googleusercontent.com
+YOUTUBE_CLIENT_SECRET=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
+
+# TikTok
+# Get from: https://developers.tiktok.com
+TIKTOK_CLIENT_KEY=your_tiktok_client_key
+TIKTOK_CLIENT_SECRET=your_tiktok_client_secret
+
+# =============================================================================
+# OPTIONAL: REDIS / UPSTASH (for caching and rate limiting)
+# =============================================================================
+REDIS_URL=redis://localhost:6379
+
+# =============================================================================
+# OPTIONAL: ERROR TRACKING & MONITORING
+# =============================================================================
+
+# Sentry (error tracking)
+NEXT_PUBLIC_SENTRY_DSN=your_sentry_dsn
+SENTRY_AUTH_TOKEN=your_sentry_auth_token
+
+# =============================================================================
+# OPTIONAL: ANALYTICS
+# =============================================================================
+NEXT_PUBLIC_GA_ID=your_google_analytics_id
+
+# =============================================================================
+# NOTES
+# =============================================================================
+# 
+# For Local Development:
+# 1. Copy this file to .env.local
+# 2. Fill in your Supabase credentials
+# 3. Generate JWT_SECRET and SESSION_SECRET
+# 4. Add social media API keys as needed
+#
+# For Vercel Deployment:
+# 1. Go to: https://vercel.com/[team]/[project]/settings/environment-variables
+# 2. Add all variables above
+# 3. Select "Production", "Preview", and "Development" environments
+# 4. Deploy!
+#
+# Security:
+# - Never commit .env.local to Git
+# - Rotate secrets regularly
+# - Use different secrets for each environment
+# - Keep service role keys server-side only
+#

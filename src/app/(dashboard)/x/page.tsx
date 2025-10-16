@@ -1,8 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { AccountsGrid } from "./components/accounts-grid";
 import { RecentPosts } from "./components/recent-posts";
-import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
+import Link from "next/link";
 
 export default async function XPage() {
   const supabase = await createClient();
@@ -47,10 +47,13 @@ export default async function XPage() {
               Connect and manage all your social media accounts in one place
             </p>
           </div>
-          <Button size="lg">
+          <Link
+            href="/x/connect"
+            className="inline-flex items-center justify-center rounded-md font-medium transition-colors px-6 py-3 text-lg bg-primary-600 text-white hover:bg-primary-700"
+          >
             <Plus className="mr-2 h-5 w-5" />
             Add Account
-          </Button>
+          </Link>
         </div>
       </div>
 

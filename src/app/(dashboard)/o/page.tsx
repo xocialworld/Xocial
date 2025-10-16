@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { CalendarView } from "./components/calendar-view";
-import { Button } from "@/components/ui/button";
-import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus } from "lucide-react";
+import Link from "next/link";
 
 export default async function OPage() {
   const supabase = await createClient();
@@ -36,10 +36,13 @@ export default async function OPage() {
               Plan and schedule your social media content
             </p>
           </div>
-          <Button size="lg">
+          <Link
+            href="/c"
+            className="inline-flex items-center justify-center rounded-md font-medium transition-colors px-6 py-3 text-lg bg-primary-600 text-white hover:bg-primary-700"
+          >
             <Plus className="mr-2 h-5 w-5" />
             Schedule Post
-          </Button>
+          </Link>
         </div>
       </div>
 

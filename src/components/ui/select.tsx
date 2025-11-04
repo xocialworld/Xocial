@@ -270,5 +270,4 @@ const SelectItem: React.FC<{
 Select.displayName = "Select";
 
 export { Select, SelectTrigger, SelectValue, SelectContent, SelectItem };
-export type { SelectOption };
 

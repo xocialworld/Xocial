@@ -134,6 +134,28 @@ class Logger {
   }
 
   /**
+   * Helper to log with dynamic level while satisfying type constraints
+   */
+  private logByLevel(level: LogLevel, message: string, context?: LogContext): void {
+    switch (level) {
+      case 'error':
+        this.error(message, undefined, context);
+        break;
+      case 'warn':
+        this.warn(message, context);
+        break;
+      case 'info':
+        this.info(message, context);
+        break;
+      case 'debug':
+        this.debug(message, context);
+        break;
+      default:
+        this.info(message, context);
+    }
+  }
+
+  /**
    * Track user action for analytics
    */
   trackAction(action: string, context?: LogContext): void {
@@ -161,7 +183,7 @@ class Logger {
       duration,
     };
 
-    this[level](message, fullContext);
+    this.logByLevel(level, message, fullContext);
   }
 
   /**
@@ -181,7 +203,7 @@ class Logger {
       duration,
     };
 
-    this[level](message, fullContext);
+    this.logByLevel(level, message, fullContext);
   }
 
   /**

@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient();
@@ -22,7 +22,7 @@ export async function POST(
       throw new APIError(401, 'Unauthorized');
     }
 
-    const postId = params.id;
+    const { id: postId } = await params;
 
     // Get post details
     const { data: post, error: postError } = await supabase

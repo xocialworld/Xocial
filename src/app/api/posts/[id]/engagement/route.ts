@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient();
@@ -23,7 +23,7 @@ export async function GET(
       throw new APIError(401, 'Unauthorized');
     }
 
-    const postId = params.id;
+    const { id: postId } = await params;
 
     // Verify user has access to this post
     const { data: post } = await supabase

@@ -9,10 +9,10 @@ export const dynamic = 'force-dynamic';
  */
 export const GET = withErrorHandler(async (
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) => {
   const { user, supabase } = await requireAuth(request);
-  const postId = params.id;
+  const { id: postId } = await params;
   
   // Get post and verify access
   const { data: post } = await supabase
@@ -63,14 +63,14 @@ export const GET = withErrorHandler(async (
  */
 export const POST = withErrorHandler(async (
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) => {
   const { user, supabase } = await requireAuth(request);
   const body = await request.json();
   const { action, commentId, message } = body;
   
   // Verify access (same as GET)
-  const postId = params.id;
+  const { id: postId } = await params;
   const { data: post } = await supabase
     .from('posts')
     .select('*, workspace_id')

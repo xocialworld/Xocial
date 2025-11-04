@@ -37,11 +37,12 @@ const updateCampaignSchema = z.object({
  */
 export const GET = withErrorHandler(async (
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) => {
   const { user, supabase } = await requireAuth(request);
   
   const workspace = await getUserWorkspace(user.id);
+  const { id } = await params;
 
   // Fetch campaign with related data
   const { data: campaign, error } = await supabase
@@ -120,18 +121,19 @@ export const GET = withErrorHandler(async (
  */
 export const PATCH = withErrorHandler(async (
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) => {
   const { user, supabase } = await requireAuth(request);
   
   const workspace = await getUserWorkspace(user.id);
   const updates = await validateRequest(request, updateCampaignSchema);
+  const { id } = await params;
 
   // Update campaign
   const { data: campaign, error } = await supabase
     .from('campaigns')
     .update(updates)
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('workspace_id', workspace.id)
     .select()
     .single();
@@ -159,17 +161,18 @@ export const PATCH = withErrorHandler(async (
  */
 export const DELETE = withErrorHandler(async (
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) => {
   const { user, supabase } = await requireAuth(request);
   
   const workspace = await getUserWorkspace(user.id);
+  const { id } = await params;
 
   // Delete campaign (posts will have campaign_id set to NULL due to ON DELETE SET NULL)
   const { error } = await supabase
     .from('campaigns')
     .delete()
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('workspace_id', workspace.id);
 
   if (error) {

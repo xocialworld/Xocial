@@ -66,7 +66,7 @@ export const GET = withErrorHandler(async (
         )
       )
     `)
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('workspace_id', workspace.id)
     .single();
 

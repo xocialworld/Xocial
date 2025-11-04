@@ -149,7 +149,7 @@ export const PATCH = withErrorHandler(async (
   logger.info('Campaign updated', {
     userId: user.id,
     workspaceId: workspace.id,
-    campaignId: params.id,
+    campaignId: id,
   });
 
   return successResponse({ campaign });
@@ -182,7 +182,7 @@ export const DELETE = withErrorHandler(async (
   logger.info('Campaign deleted', {
     userId: user.id,
     workspaceId: workspace.id,
-    campaignId: params.id,
+    campaignId: id,
   });
 
   return successResponse({ message: 'Campaign deleted successfully' });

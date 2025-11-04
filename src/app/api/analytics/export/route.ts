@@ -4,7 +4,7 @@
  * GET /api/analytics/export?format=csv|json&dateRange=30
  */
 
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import {
   withErrorHandler,
   requireAuth,

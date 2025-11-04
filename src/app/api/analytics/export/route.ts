@@ -123,7 +123,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
 
   // Return based on format
   if (format === 'json') {
-    return new Response(JSON.stringify(exportData, null, 2), {
+    return new NextResponse(JSON.stringify(exportData, null, 2), {
       headers: {
         'Content-Type': 'application/json',
         'Content-Disposition': `attachment; filename="analytics-export-${Date.now()}.json"`,
@@ -134,7 +134,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   // CSV format
   const csv = convertToCSV(exportData);
   
-  return new Response(csv, {
+  return new NextResponse(csv, {
     headers: {
       'Content-Type': 'text/csv',
       'Content-Disposition': `attachment; filename="analytics-export-${Date.now()}.csv"`,

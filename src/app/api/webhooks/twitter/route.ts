@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHmac } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
 import { verifyWebhookSignature } from '@/lib/security';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 /**
  * Twitter webhook CRC (Challenge Response Check)
@@ -22,9 +24,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Generate response token
-  const cryptoNode = await import('crypto');
-  const responseToken = cryptoNode.default
-    .createHmac('sha256', consumerSecret)
+  const responseToken = createHmac('sha256', consumerSecret)
     .update(crcToken)
     .digest('base64');
 
@@ -76,8 +76,7 @@ function verifySignature(body: string, signature: string | null): boolean {
   const consumerSecret = process.env.TWITTER_CLIENT_SECRET;
   if (!consumerSecret) return false;
 
-  const expectedSignature = 'sha256=' + crypto
-    .createHmac('sha256', consumerSecret)
+  const expectedSignature = 'sha256=' + createHmac('sha256', consumerSecret)
     .update(body)
     .digest('base64');
 

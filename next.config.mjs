@@ -33,8 +33,6 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '10mb',
     },
-    // Instrumentation for observability
-    instrumentationHook: true,
   },
 
   // Compiler options

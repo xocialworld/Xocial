@@ -43,7 +43,7 @@ export interface NotificationPayload {
  */
 export async function createNotification(payload: NotificationPayload): Promise<Notification | null> {
   try {
-    const supabase = createClient({ serviceRole: true });
+    const supabase = await createClient();
 
     const { data, error } = await supabase
       .from('notifications')

@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Build account ID map
-    const accountIds: Record<Platform, string> = {};
+    const accountIds: Partial<Record<Platform, string>> = {};
     accounts.forEach((account: any) => {
       accountIds[account.platform as Platform] = account.id;
     });

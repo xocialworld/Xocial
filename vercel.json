@@ -3,6 +3,37 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  
+  "env": {
+    "NEXT_PUBLIC_APP_ENV": "production"
+  },
+  
+  "crons": [
+    {
+      "path": "/api/cron/publish",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/sync-metrics",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/refresh-tokens",
+      "schedule": "0 2 * * *"
+    }
+  ],
+  
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "s-maxage=60, stale-while-revalidate"
+        }
+      ]
+    }
+  ]
 }
 

@@ -1,4 +1,5 @@
 import { Sidebar } from "@/components/layouts/sidebar";
+import { Header } from "@/components/shared/header";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -14,12 +15,22 @@ export default async function DashboardLayout({
     redirect("/auth/login");
   }
 
+  // Get user profile
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .single();
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto bg-secondary-50">
-        {children}
-      </main>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Header user={profile || { name: user.email || "User", email: user.email || "" }} />
+        <main className="flex-1 overflow-y-auto bg-secondary-50">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

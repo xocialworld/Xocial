@@ -1,54 +1,131 @@
-import { createClient } from "@/lib/supabase/server";
-import { CalendarView } from "./components/calendar-view";
-import { Plus } from "lucide-react";
-import Link from "next/link";
+"use client";
 
-export default async function OPage() {
-  const supabase = await createClient();
-  
-  const { data: { user } } = await supabase.auth.getUser();
-  
-  // Fetch user's workspace
-  const { data: workspaces } = await supabase
-    .from("workspaces")
-    .select("*")
-    .eq("owner_id", user?.id)
-    .single();
-  
-  // Fetch scheduled posts
-  const { data: posts } = await supabase
-    .from("posts")
-    .select("*")
-    .eq("workspace_id", workspaces?.id)
-    .in("status", ["scheduled", "draft"])
-    .order("scheduled_at", { ascending: true });
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import { CalendarGrid } from "./components/calendar-grid";
+import { DayPostsPanel } from "./components/day-posts-panel";
+import { RescheduleModal } from "./components/reschedule-modal";
+import { usePosts } from "@/hooks/use-posts";
+import { Spinner } from "@/components/ui/spinner";
+import type { Post } from "@/types";
+import { toast } from "sonner";
+
+export default function OPage() {
+  const { posts, isLoading: loading, updatePost, deletePost } = usePosts();
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [reschedulePost, setReschedulePost] = useState<{ id: string; date: Date } | null>(null);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+
+  // Filter posts for selected date
+  const selectedDatePosts = selectedDate
+    ? posts.filter((post) => {
+        const postDate = new Date(post.scheduled_at || post.published_at || post.created_at);
+        return (
+          postDate.getFullYear() === selectedDate.getFullYear() &&
+          postDate.getMonth() === selectedDate.getMonth() &&
+          postDate.getDate() === selectedDate.getDate()
+        );
+      })
+    : [];
+
+  const handleReschedule = async (postId: string) => {
+    const post = posts.find((p) => p.id === postId);
+    if (!post) return;
+
+    const currentDate = new Date(post.scheduled_at || new Date());
+    setReschedulePost({ id: postId, date: currentDate });
+  };
+
+  const handleRescheduleSubmit = async (newDate: Date, newTime: string) => {
+    if (!reschedulePost) return;
+
+    const [hours, minutes] = newTime.split(':');
+    const scheduledDate = new Date(newDate);
+    scheduledDate.setHours(parseInt(hours), parseInt(minutes));
+
+    try {
+      await updatePost(reschedulePost.id, {
+        scheduled_at: scheduledDate.toISOString(),
+      });
+      toast.success('Post rescheduled successfully');
+      setReschedulePost(null);
+    } catch (error) {
+      toast.error('Failed to reschedule post');
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm('Are you sure you want to delete this post?')) return;
+
+    try {
+      await deletePost(postId);
+      toast.success('Post deleted successfully');
+    } catch (error) {
+      toast.error('Failed to delete post');
+    }
+  };
+
+  if (loading && posts.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-secondary-900">
-              Content Calendar
-            </h1>
-            <p className="mt-2 text-secondary-600">
-              Plan and schedule your social media content
-            </p>
+    <div className="flex h-full">
+      {/* Main Calendar Area */}
+      <div className="flex-1 p-8 overflow-auto">
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-secondary-900">
+                Content Calendar
+              </h1>
+              <p className="mt-2 text-secondary-600">
+                Schedule and manage your posts across all platforms
+              </p>
+            </div>
+            <Button>
+              <Plus className="mr-2 h-5 w-5" />
+              Schedule Post
+            </Button>
           </div>
-          <Link
-            href="/c"
-            className="inline-flex items-center justify-center rounded-md font-medium transition-colors px-6 py-3 text-lg bg-primary-600 text-white hover:bg-primary-700"
-          >
-            <Plus className="mr-2 h-5 w-5" />
-            Schedule Post
-          </Link>
         </div>
+
+        <CalendarGrid
+          posts={posts}
+          selectedDate={selectedDate}
+          onDateSelect={setSelectedDate}
+          onPostClick={setSelectedPost}
+        />
       </div>
 
-      {/* Calendar */}
-      <CalendarView posts={posts || []} />
+      {/* Day Posts Panel */}
+      {selectedDate && (
+        <div className="w-96">
+          <DayPostsPanel
+            date={selectedDate}
+            posts={selectedDatePosts}
+            onClose={() => setSelectedDate(null)}
+            onEditPost={setSelectedPost}
+            onDeletePost={handleDeletePost}
+            onReschedulePost={handleReschedule}
+          />
+        </div>
+      )}
+
+      {/* Reschedule Modal */}
+      {reschedulePost && (
+        <RescheduleModal
+          open={!!reschedulePost}
+          onOpenChange={(open) => !open && setReschedulePost(null)}
+          currentDate={reschedulePost.date}
+          onReschedule={handleRescheduleSubmit}
+        />
+      )}
     </div>
   );
 }
-

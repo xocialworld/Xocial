@@ -1,58 +1,86 @@
-"use client";
+'use client';
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { Card } from '@/components/ui/card';
+import { 
+  LineChart, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer 
+} from 'recharts';
+import type { EngagementDataPoint } from '../hooks/useAnalytics';
 
-const data = [
-  { date: "Jan 1", impressions: 4000, engagement: 2400, followers: 2400 },
-  { date: "Jan 5", impressions: 3000, engagement: 1398, followers: 2210 },
-  { date: "Jan 10", impressions: 2000, engagement: 9800, followers: 2290 },
-  { date: "Jan 15", impressions: 2780, engagement: 3908, followers: 2000 },
-  { date: "Jan 20", impressions: 1890, engagement: 4800, followers: 2181 },
-  { date: "Jan 25", impressions: 2390, engagement: 3800, followers: 2500 },
-  { date: "Jan 30", impressions: 3490, engagement: 4300, followers: 2100 },
-];
+interface EngagementChartProps {
+  data: EngagementDataPoint[];
+}
 
-export function EngagementChart() {
+export function EngagementChart({ data }: EngagementChartProps) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Impressions Over Time</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="date" stroke="#64748b" style={{ fontSize: "12px" }} />
-            <YAxis stroke="#64748b" style={{ fontSize: "12px" }} />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#fff",
-                border: "1px solid #e2e8f0",
-                borderRadius: "8px",
-              }}
-            />
-            <Legend />
-            <Line
-              type="monotone"
-              dataKey="impressions"
-              stroke="#0ea5e9"
-              strokeWidth={2}
-              dot={{ fill: "#0ea5e9", r: 4 }}
-              activeDot={{ r: 6 }}
-            />
-            <Line
-              type="monotone"
-              dataKey="engagement"
-              stroke="#22c55e"
-              strokeWidth={2}
-              dot={{ fill: "#22c55e", r: 4 }}
-              activeDot={{ r: 6 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </CardContent>
+    <Card className="p-6">
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-gray-900">Engagement Over Time</h3>
+        <p className="text-sm text-gray-500 mt-1">
+          Track likes, comments, and shares across all platforms
+        </p>
+      </div>
+
+      <ResponsiveContainer width="100%" height={400}>
+        <LineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis 
+            dataKey="date" 
+            stroke="#6b7280"
+            style={{ fontSize: '12px' }}
+          />
+          <YAxis 
+            stroke="#6b7280"
+            style={{ fontSize: '12px' }}
+          />
+          <Tooltip 
+            contentStyle={{
+              backgroundColor: '#fff',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '12px',
+            }}
+          />
+          <Legend 
+            wrapperStyle={{
+              paddingTop: '20px',
+            }}
+          />
+          <Line 
+            type="monotone" 
+            dataKey="likes" 
+            stroke="#ec4899" 
+            strokeWidth={2}
+            dot={{ fill: '#ec4899', r: 4 }}
+            activeDot={{ r: 6 }}
+            name="Likes"
+          />
+          <Line 
+            type="monotone" 
+            dataKey="comments" 
+            stroke="#3b82f6" 
+            strokeWidth={2}
+            dot={{ fill: '#3b82f6', r: 4 }}
+            activeDot={{ r: 6 }}
+            name="Comments"
+          />
+          <Line 
+            type="monotone" 
+            dataKey="shares" 
+            stroke="#10b981" 
+            strokeWidth={2}
+            dot={{ fill: '#10b981', r: 4 }}
+            activeDot={{ r: 6 }}
+            name="Shares"
+          />
+        </LineChart>
+      </ResponsiveContainer>
     </Card>
   );
 }
-

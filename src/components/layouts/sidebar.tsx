@@ -11,6 +11,9 @@ import {
   Settings,
   Users,
   LogOut,
+  Lightbulb,
+  FileText,
+  PenSquare,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -18,9 +21,12 @@ import { toast } from "sonner";
 
 const navigation = [
   { name: "Accounts", href: "/x", icon: Users },
+  { name: "Compose", href: "/compose", icon: PenSquare },
   { name: "Calendar", href: "/o", icon: Calendar },
   { name: "AI Content", href: "/c", icon: Sparkles },
   { name: "Analytics", href: "/a", icon: BarChart3 },
+  { name: "Strategy", href: "/l", icon: Lightbulb },
+  { name: "Templates", href: "/templates", icon: FileText },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

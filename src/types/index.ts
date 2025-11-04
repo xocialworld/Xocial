@@ -44,12 +44,17 @@ export interface SocialAccount {
   platform: Platform;
   account_id: string;
   account_name: string;
+  account_handle?: string;
   account_avatar?: string;
   access_token: string;
   refresh_token?: string;
   token_expires_at?: string;
   connected_at: string;
   is_active: boolean;
+  follower_count?: number;
+  post_count?: number;
+  engagement_rate?: number;
+  last_synced_at?: string;
 }
 
 export type PostStatus = 'draft' | 'pending_approval' | 'approved' | 'scheduled' | 'published' | 'failed';
@@ -66,6 +71,7 @@ export interface Post {
   campaign_id?: string;
   media?: Media[];
   tags?: string[];
+  external_post_id?: string;
   created_at: string;
   updated_at: string;
 }

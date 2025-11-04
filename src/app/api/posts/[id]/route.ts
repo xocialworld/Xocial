@@ -4,9 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 // GET - Fetch a specific post
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
@@ -20,7 +21,7 @@ export async function GET(
         *,
         post_analytics(*)
       `)
-      .eq("id", params.id)
+      .eq("id", id)
       .single();
 
     if (postError) {
@@ -36,9 +37,10 @@ export async function GET(
 // PATCH - Update a post
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
@@ -55,7 +57,7 @@ export async function PATCH(
     const { data: post, error: updateError } = await supabase
       .from("posts")
       .update(updates)
-      .eq("id", params.id)
+      .eq("id", id)
       .select()
       .single();
 
@@ -72,9 +74,10 @@ export async function PATCH(
 // DELETE - Delete a post
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
@@ -85,7 +88,7 @@ export async function DELETE(
     const { error: deleteError } = await supabase
       .from("posts")
       .delete()
-      .eq("id", params.id);
+      .eq("id", id);
 
     if (deleteError) {
       return NextResponse.json({ error: deleteError.message }, { status: 500 });

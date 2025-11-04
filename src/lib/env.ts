@@ -1,0 +1,210 @@
+/**
+ * Environment Variable Validation
+ * Validates all required environment variables on app startup
+ * Provides type-safe access to env vars
+ */
+
+import { z } from 'zod';
+
+/**
+ * Environment variable schema
+ * All required variables for the application
+ */
+const envSchema = z.object({
+  // Node Environment
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+
+  // Supabase Configuration
+  NEXT_PUBLIC_SUPABASE_URL: z.string().url({
+    message: 'NEXT_PUBLIC_SUPABASE_URL must be a valid URL',
+  }),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1, {
+    message: 'NEXT_PUBLIC_SUPABASE_ANON_KEY is required',
+  }),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, {
+    message: 'SUPABASE_SERVICE_ROLE_KEY is required for server-side operations',
+  }),
+
+  // OpenAI Configuration
+  OPENAI_API_KEY: z.string().min(1, {
+    message: 'OPENAI_API_KEY is required for AI features',
+  }),
+
+  // Encryption & Security
+  ENCRYPTION_KEY: z.string().length(64, {
+    message: 'ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)',
+  }).regex(/^[0-9a-f]{64}$/i, {
+    message: 'ENCRYPTION_KEY must be a valid hex string',
+  }),
+  CRON_SECRET: z.string().min(32, {
+    message: 'CRON_SECRET must be at least 32 characters for security',
+  }),
+
+  // App Configuration
+  NEXT_PUBLIC_APP_URL: z.string().url().optional(),
+
+  // OAuth - Facebook
+  FACEBOOK_APP_ID: z.string().optional(),
+  FACEBOOK_APP_SECRET: z.string().optional(),
+
+  // OAuth - Instagram (uses Facebook)
+  INSTAGRAM_CLIENT_ID: z.string().optional(),
+  INSTAGRAM_CLIENT_SECRET: z.string().optional(),
+
+  // OAuth - Twitter/X
+  TWITTER_CLIENT_ID: z.string().optional(),
+  TWITTER_CLIENT_SECRET: z.string().optional(),
+  TWITTER_BEARER_TOKEN: z.string().optional(),
+
+  // OAuth - LinkedIn
+  LINKEDIN_CLIENT_ID: z.string().optional(),
+  LINKEDIN_CLIENT_SECRET: z.string().optional(),
+
+  // OAuth - YouTube
+  YOUTUBE_CLIENT_ID: z.string().optional(),
+  YOUTUBE_CLIENT_SECRET: z.string().optional(),
+
+  // OAuth - TikTok
+  TIKTOK_CLIENT_KEY: z.string().optional(),
+  TIKTOK_CLIENT_SECRET: z.string().optional(),
+
+  // Webhook Verification Tokens
+  FACEBOOK_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
+  INSTAGRAM_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
+  TWITTER_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
+
+  // Optional Features
+  IP_HASH_SALT: z.string().optional(),
+  SENTRY_DSN: z.string().url().optional(),
+  VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
+});
+
+/**
+ * Validated and type-safe environment variables
+ */
+export type Env = z.infer<typeof envSchema>;
+
+/**
+ * Validate environment variables
+ * Throws an error with helpful messages if validation fails
+ */
+function validateEnv(): Env {
+  try {
+    return envSchema.parse(process.env);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.error('❌ Environment variable validation failed:');
+      console.error('');
+      
+      error.errors.forEach((err) => {
+        const path = err.path.join('.');
+        console.error(`  • ${path}: ${err.message}`);
+      });
+
+      console.error('');
+      console.error('Please check your .env.local file and ensure all required variables are set.');
+      console.error('');
+
+      // In production, this will prevent the app from starting
+      throw new Error('Invalid environment configuration');
+    }
+    throw error;
+  }
+}
+
+// Validate on module load
+let validatedEnv: Env;
+
+try {
+  validatedEnv = validateEnv();
+  console.log('✅ Environment variables validated successfully');
+} catch (error) {
+  console.error('Failed to validate environment variables:', error);
+  // In development, provide mock values to allow partial functionality
+  if (process.env.NODE_ENV === 'development') {
+    console.warn('⚠️  Running in development mode with potentially missing env vars');
+    validatedEnv = process.env as unknown as Env;
+  } else {
+    // In production, fail hard
+    throw error;
+  }
+}
+
+/**
+ * Type-safe environment variable access
+ */
+export const env = validatedEnv;
+
+/**
+ * Helper to check if a feature is enabled
+ */
+export const isFeatureEnabled = {
+  facebook: () => !!(env.FACEBOOK_APP_ID && env.FACEBOOK_APP_SECRET),
+  instagram: () => !!(env.INSTAGRAM_CLIENT_ID && env.INSTAGRAM_CLIENT_SECRET),
+  twitter: () => !!(env.TWITTER_CLIENT_ID && env.TWITTER_CLIENT_SECRET),
+  linkedin: () => !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET),
+  youtube: () => !!(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET),
+  tiktok: () => !!(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET),
+  ai: () => !!env.OPENAI_API_KEY,
+  monitoring: () => !!env.SENTRY_DSN,
+};
+
+/**
+ * Get OAuth redirect URL for a platform
+ */
+export function getOAuthRedirectURL(platform: string): string {
+  const baseURL = env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  return `${baseURL}/api/oauth/${platform}`;
+}
+
+/**
+ * Helper to get environment type
+ */
+export function getEnvironment(): 'development' | 'production' | 'test' {
+  return env.NODE_ENV;
+}
+
+/**
+ * Check if running in production
+ */
+export function isProduction(): boolean {
+  return env.NODE_ENV === 'production';
+}
+
+/**
+ * Check if running in development
+ */
+export function isDevelopment(): boolean {
+  return env.NODE_ENV === 'development';
+}
+
+/**
+ * Print environment configuration (safe for logging)
+ */
+export function printEnvironmentInfo(): void {
+  console.log('═══════════════════════════════════════════════════');
+  console.log('Environment Configuration');
+  console.log('═══════════════════════════════════════════════════');
+  console.log(`Environment: ${env.NODE_ENV}`);
+  console.log(`Supabase URL: ${env.NEXT_PUBLIC_SUPABASE_URL}`);
+  console.log(`App URL: ${env.NEXT_PUBLIC_APP_URL || 'Not configured'}`);
+  console.log('');
+  console.log('Features Enabled:');
+  console.log(`  • Facebook: ${isFeatureEnabled.facebook() ? '✓' : '✗'}`);
+  console.log(`  • Instagram: ${isFeatureEnabled.instagram() ? '✓' : '✗'}`);
+  console.log(`  • Twitter: ${isFeatureEnabled.twitter() ? '✓' : '✗'}`);
+  console.log(`  • LinkedIn: ${isFeatureEnabled.linkedin() ? '✓' : '✗'}`);
+  console.log(`  • YouTube: ${isFeatureEnabled.youtube() ? '✓' : '✗'}`);
+  console.log(`  • TikTok: ${isFeatureEnabled.tiktok() ? '✓' : '✗'}`);
+  console.log(`  • AI: ${isFeatureEnabled.ai() ? '✓' : '✗'}`);
+  console.log(`  • Monitoring: ${isFeatureEnabled.monitoring() ? '✓' : '✗'}`);
+  console.log('═══════════════════════════════════════════════════');
+}
+
+// Print env info in development
+if (isDevelopment()) {
+  printEnvironmentInfo();
+}
+
+export default env;
+

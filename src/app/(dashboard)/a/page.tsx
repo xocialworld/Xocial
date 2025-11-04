@@ -1,110 +1,91 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { MetricCard } from "./components/metric-card";
+import { Spinner } from "@/components/ui/spinner";
+import { OverviewMetrics } from "./components/overview-metrics";
 import { EngagementChart } from "./components/engagement-chart";
 import { PlatformComparison } from "./components/platform-comparison";
-import { TopPosts } from "./components/top-posts";
-import { Download, Calendar } from "lucide-react";
+import { TopPostsTable } from "./components/top-posts-table";
+import { DateRangeSelector } from "./components/date-range-selector";
+import { ExportButton } from "./components/export-button";
+import { useAnalytics } from "./hooks/useAnalytics";
 
 export default function APage() {
-  const [dateRange, setDateRange] = useState("30");
+  const [dateRange, setDateRange] = useState({
+    from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
+    to: new Date(),
+  });
 
-  // Mock data
-  const metrics = {
-    impressions: {
-      value: 125000,
-      change: 12.5,
-      trend: "up" as const,
-    },
-    engagement: {
-      value: 8420,
-      change: 8.3,
-      trend: "up" as const,
-    },
-    followers: {
-      value: 15234,
-      change: 5.2,
-      trend: "up" as const,
-    },
-    engagementRate: {
-      value: 4.2,
-      change: -0.3,
-      trend: "down" as const,
-    },
-  };
+  const { overview, engagementData, platformStats, topPosts, loading, error } = useAnalytics(dateRange);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+          <p className="font-semibold">Failed to load analytics</p>
+          <p className="text-sm mt-1">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8">
+    <div className="p-8 space-y-8">
       {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
+      <div>
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-3xl font-bold text-secondary-900">
+            <h1 className="text-3xl font-bold text-gray-900">
               Analytics & Insights
             </h1>
-            <p className="mt-2 text-secondary-600">
+            <p className="mt-2 text-gray-600">
               Track your social media performance and insights
             </p>
           </div>
-          <div className="flex gap-2">
-            <select
-              className="px-4 py-2 border border-secondary-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-              value={dateRange}
-              onChange={(e) => setDateRange(e.target.value)}
-            >
-              <option value="7">Last 7 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="90">Last 90 days</option>
-              <option value="custom">Custom Range</option>
-            </select>
-            <Button variant="secondary">
-              <Download className="mr-2 h-4 w-4" />
-              Export Report
-            </Button>
-          </div>
+          <ExportButton dateRange={dateRange} />
         </div>
+
+        <DateRangeSelector 
+          value={dateRange} 
+          onChange={setDateRange} 
+        />
       </div>
 
-      {/* KPI Dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <MetricCard
-          title="Total Impressions"
-          value={metrics.impressions.value}
-          change={metrics.impressions.change}
-          trend={metrics.impressions.trend}
-        />
-        <MetricCard
-          title="Total Engagement"
-          value={metrics.engagement.value}
-          change={metrics.engagement.change}
-          trend={metrics.engagement.trend}
-        />
-        <MetricCard
-          title="Total Followers"
-          value={metrics.followers.value}
-          change={metrics.followers.change}
-          trend={metrics.followers.trend}
-        />
-        <MetricCard
-          title="Engagement Rate"
-          value={metrics.engagementRate.value}
-          change={metrics.engagementRate.change}
-          trend={metrics.engagementRate.trend}
-          suffix="%"
-        />
-      </div>
+      {/* Overview KPI Cards */}
+      {overview && <OverviewMetrics metrics={overview} />}
 
       {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <EngagementChart />
-        <PlatformComparison />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {engagementData.length > 0 && (
+          <EngagementChart data={engagementData} />
+        )}
+        {platformStats.length > 0 && (
+          <PlatformComparison data={platformStats} />
+        )}
       </div>
 
-      {/* Top Posts */}
-      <TopPosts />
+      {/* Top Posts Table */}
+      {topPosts.length > 0 && (
+        <TopPostsTable posts={topPosts} />
+      )}
+
+      {/* Empty State */}
+      {!loading && overview && overview.totalPosts === 0 && (
+        <div className="text-center py-12 bg-gray-50 rounded-lg">
+          <p className="text-gray-600 text-lg">No analytics data available yet</p>
+          <p className="text-gray-500 text-sm mt-2">
+            Start posting content to see your analytics here
+          </p>
+        </div>
+      )}
     </div>
   );
 }

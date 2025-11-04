@@ -1,3371 +1,4280 @@
-# XOCIAL: Enterprise-Grade SRS for Cursor-Native Development
-## AI-Powered Social Media Management Platform - Technical Blueprint
+Software Requirements Specification (SRS)** optimized for Cursor AI development, Next.js 15.5+, Vercel, and Supabase. This document will serve as your comprehensive blueprint for systematic development.
 
 ---
 
-## EXECUTIVE FRAMEWORK
-
-This document provides architectural specifications optimized for Cursor IDE's latest Composer, multi-file editing, and native AI capabilities, leveraging modern stack technologies for enterprise scalability.
-
----
-
-## 1. FOUNDATIONAL ARCHITECTURE & DEVELOPMENT STRATEGY
-
-### 1.1 Development Paradigm
-- **Primary IDE**: Cursor with Composer for multi-file orchestration
-- **Runtime Environment**: Bun (superseding Node.js for 40-80% performance gains)
-- **Package Management**: Bun package manager for lock-file integrity
-- **Development Server**: Bun runtime with hot-reload capabilities
-- **Code Generation**: Cursor's Composer for context-aware file generation
-
-### 1.2 Repository Structure for Cursor Optimization
-```
-xocial/
-├── .cursor/
-│   ├── rules.md (AI guidelines for consistent generation)
-│   ├── architecture.md (Reference for Composer)
-│   └── component-patterns.md (Design system specifications)
-├── apps/
-│   ├── web/ (Next.js frontend)
-│   ├── api/ (Bun-native backend)
-│   └── dashboard/ (Vercel deployment)
-├── packages/
-│   ├── ui/ (Shared component library)
-│   ├── types/ (Shared TypeScript definitions)
-│   ├── auth/ (Authentication logic)
-│   ├── db/ (Supabase client & migrations)
-│   └── utils/ (Shared utilities)
-├── services/
-│   ├── ai/ (OpenAI integration)
-│   ├── social-apis/ (Third-party API handlers)
-│   ├── analytics/ (Data processing)
-│   └── webhooks/ (Event listeners)
-├── infrastructure/
-│   ├── docker/ (Containerization configs)
-│   ├── supabase/ (Database migrations & seed data)
-│   ├── vercel/ (Deployment configurations)
-│   └── bun/ (Runtime optimization configs)
-└── docs/
-    ├── architecture/
-    ├── api-contracts/
-    └── cursor-guides/
-```
+# 📘 XOCIAL - ADVANCED SOFTWARE REQUIREMENTS SPECIFICATION (SRS)
+## Enterprise-Grade AI-Powered Social Media Management Platform
+### Version 2.0 - Optimized for Cursor AI Development
 
 ---
 
-## 2. UI/UX DESIGN SYSTEM FOR ENTERPRISE CONSISTENCY
+## 📋 TABLE OF CONTENTS
 
-### 2.1 Design System Architecture
-
-**Layer 1: Design Tokens (Single Source of Truth)**
-- Create `packages/design-tokens/tokens.json` containing:
-  - Color palette (primary, secondary, semantic: success/error/warning/info)
-  - Typography scale (font families, sizes, weights, line heights)
-  - Spacing scale (4px base unit: 4, 8, 12, 16, 24, 32, 48, 64)
-  - Border radius system (2px, 4px, 8px, 12px, 16px)
-  - Shadow elevation system (1-5 levels for depth hierarchy)
-  - Animation curves (easing functions for consistency)
-  - Z-index strategy (layering hierarchy)
-
-**Layer 2: Component Library Structure**
-```
-packages/ui/
-├── primitives/ (Base components)
-│   ├── Button/ (variants: primary, secondary, ghost, danger)
-│   ├── Input/ (text, email, password, number, date)
-│   ├── Select/ (dropdown with search)
-│   ├── Checkbox/ & Radio/
-│   ├── Modal/ (dialog wrapper)
-│   ├── Popover/ & Tooltip/
-│   ├── Badge/ (status indicators)
-│   ├── Avatar/ (user profile pictures)
-│   ├── Skeleton/ (loading states)
-│   └── Spinner/ (async operations)
-├── layouts/ (Structural components)
-│   ├── Container/ (max-width wrapper)
-│   ├── Grid/ (responsive 12-col system)
-│   ├── Flex/ (flexbox abstraction)
-│   ├── Stack/ (vertical/horizontal spacing)
-│   └── Sidebar/ (navigation layout)
-├── cards/ (Content containers)
-│   ├── Card/ (basic container)
-│   ├── PostCard/ (social media post display)
-│   ├── MetricCard/ (analytics display)
-│   ├── EngagementCard/ (engagement metrics)
-│   └── ScheduleCard/ (scheduled posts)
-├── data-display/ (Information visualization)
-│   ├── Table/ (sortable, filterable)
-│   ├── DataGrid/ (virtualized large lists)
-│   ├── List/ (basic list rendering)
-│   ├── Timeline/ (chronological display)
-│   └── StatusBadge/ (post status indicators)
-├── forms/ (Complex form components)
-│   ├── FormField/ (wrapper with validation)
-│   ├── FormSection/ (grouped fields)
-│   ├── MultiSelect/ (tag selection)
-│   ├── DateRange/ (calendar picker)
-│   └── RichTextEditor/ (content creation)
-└── hooks/ (Reusable logic)
-    ├── useForm/ (form state management)
-    ├── useAsync/ (API call handling)
-    ├── useDebounce/ (input throttling)
-    ├── useLocalStorage/ (client-side persistence)
-    └── useInfiniteScroll/ (pagination)
-```
-
-### 2.2 Design Token Implementation Strategy
-
-**Tailwind CSS Customization with Bun**
-- Create `tailwind.config.ts` extending Tailwind with custom tokens
-- Use Bun's native TypeScript support to generate Tailwind config from JSON tokens
-- Implement CSS custom properties (variables) for dynamic theming
-- Create dark/light mode variants using Tailwind's `@apply` directive
-
-**Font System**
-- Primary Font: Inter (headings & UI) - load via next/font optimization
-- Secondary Font: Fira Code (code blocks) - system font fallback for performance
-- Font Scale: 12px (xs) → 14px (sm) → 16px (base) → 18px (lg) → 24px (xl) → 32px (2xl) → 48px (3xl)
-- Font Weights: 400 (regular), 500 (medium), 600 (semibold), 700 (bold)
-
-### 2.3 Component Specification by Page
-
-#### **X Page: Multi-Account Management**
-
-**Layout Tree:**
-```
-X_Page
-├── PageHeader
-│   ├── Title ("Manage Accounts")
-│   ├── SubtitleDescription
-│   └── Action_Button_AddAccount (primary, xl size)
-├── AccountsSection
-│   ├── TabSelector (Facebook | Instagram | YouTube | LinkedIn | Twitter)
-│   ├── AccountGrid
-│   │   └── AccountCard[] (repeating, 3-col responsive grid)
-│   │       ├── Header
-│   │       │   ├── Avatar (64x64px)
-│   │       │   ├── AccountName & Handle
-│   │       │   └── StatusBadge (connected/disconnected)
-│   │       ├── MetricsRow
-│   │       │   ├── Followers (IconText)
-│   │       │   ├── EngagementRate (IconText)
-│   │       │   └── TotalPosts (IconText)
-│   │       ├── ActionButtons
-│   │       │   ├── ViewProfile (ghost)
-│   │       │   ├── Disconnect (danger)
-│   │       │   └── Settings (secondary)
-│   │       └── Divider
-│   └── EmptyState (when no accounts)
-└── PostsSection
-    ├── SectionHeader ("Recent Posts")
-    ├── FilterRow
-    │   ├── PlatformFilter (multi-select)
-    │   ├── DateRange (calendar)
-    │   └── SearchInput (debounced)
-    ├── PostsGrid (masonry or uniform 4-col)
-    │   └── PostCard[] (scrollable container)
-    │       ├── PlatformBadge (top-left)
-    │       ├── PostImage/Video (responsive)
-    │       ├── PostCaption (truncated, expandable)
-    │       ├── EngagementMetrics
-    │       │   ├── Likes (icon + count)
-    │       │   ├── Comments (icon + count)
-    │       │   ├── Shares (icon + count)
-    │       │   └── Views (icon + count)
-    │       ├── PublishDate & Time
-    │       ├── HoverOverlay
-    │       │   ├── ViewComments (opens mini-modal)
-    │       │   ├── ReplyDirect (opens reply form)
-    │       │   ├── ViewAnalytics (opens detail view)
-    │       │   └── MoreActions (dropdown menu)
-    │       └── LoadingState (skeleton, on-fetch)
-    └── InfiniteScroll_Trigger (for pagination)
-
-CommentsMiniModal:
-  ├── Header
-  │   ├── Title ("Comments")
-  │   ├── CloseButton
-  │   └── CommentCount_Badge
-  ├── CommentsList (scrollable, max-height: 400px)
-  │   └── Comment[] (threaded if replies)
-  │       ├── CommentAuthor (avatar + name)
-  │       ├── CommentText
-  │       ├── CommentTime
-  │       ├── LikeButton (if platform supports)
-  │       └── ReplyButton (if platform supports)
-  ├── DividerLine
-  └── ReplyInput
-      ├── RichTextArea (minimal, char limit)
-      ├── CharCounter (remaining chars)
-      └── SendButton (primary, disabled if empty)
-```
-
-**Component Specifications:**
-- **AccountCard**: Animated on hover (scale: 1.02, shadow elevation: 2→4)
-- **PostCard**: Lazy-loaded images, skeleton loading state during fetch
-- **Metrics Display**: Icons from lucide-react for consistency
-- **Modal**: Smooth fade-in, backdrop blur (glassmorphism effect)
-- **Grid Responsiveness**: 4-col (desktop) → 2-col (tablet) → 1-col (mobile)
-
-#### **O Page: Content Calendar**
-
-**Layout Tree:**
-```
-O_Page
-├── PageHeader
-│   ├── Title ("Content Calendar")
-│   ├── MonthNavigation
-│   │   ├── PrevMonth_Button
-│   │   ├── MonthYear_Display (formatted: "October 2025")
-│   │   ├── NextMonth_Button
-│   │   └── JumpToDate_Picker
-│   └── ViewToggle (Month | Week | Day | Agenda)
-├── CalendarSection
-│   ├── DayLabels (Sun, Mon, Tue...)
-│   ├── CalendarGrid
-│   │   └── DayCell[] (42 cells for 6-week view)
-│   │       ├── DayNumber
-│   │       ├── PostCountBadge (red circle, count)
-│   │       ├── PostPreviewThumbnails[] (up to 3 images, stacked)
-│   │       ├── OnClick_Behavior: Opens DayPostsPanel
-│   │       └── DragArea (for post rescheduling)
-│   └── LegendSection
-│       ├── DraftIndicator (gray dot)
-│       ├── ScheduledIndicator (blue dot)
-│       ├── PublishedIndicator (green dot)
-│       └── FailedIndicator (red dot)
-└── DayPostsPanel (right sidebar, sticky)
-    ├── PanelHeader
-    │   ├── SelectedDate_Display
-    │   ├── PostCount_Badge
-    │   └── CloseButton
-    ├── PostsList (scrollable)
-    │   └── ScheduledPost[] (expandable)
-    │       ├── PostPreviewImage (small)
-    │       ├── PostCaption (2-line truncate)
-    │       ├── ScheduleTime (HH:MM format)
-    │       ├── Platforms (platform badges)
-    │       ├── StatusBadge (draft/scheduled/published/failed)
-    │       ├── ExpandButton (shows full details)
-    │       ├── EditButton (secondary)
-    │       ├── DeleteButton (danger, with confirmation)
-    │       └── RescheduleButton (opens date picker)
-    ├── PlatformFilter (checkboxes)
-    │   ├── Facebook ☑
-    │   ├── Instagram ☑
-    │   ├── YouTube ☑
-    │   ├── LinkedIn ☑
-    │   └── Twitter ☑
-    └── AddNewPost_Button (primary, full-width)
-
-ExpandedPostDetail:
-  ├── FullPostCaption
-  ├── AllAttachedImages/Videos (carousel)
-  ├── Hashtags (as tag badges)
-  ├── SelectedPlatforms (full list)
-  ├── ScheduledTime (editable)
-  ├── CreatedDate & Author
-  ├── ActionButtons
-  │   ├── Edit (secondary)
-  │   ├── Reschedule (secondary)
-  │   ├── Publish Now (primary)
-  │   └── Delete (danger)
-  └── PlatformToggle (enable/disable per-platform publishing)
-
-RescheduleModal:
-  ├── Header ("Reschedule Post")
-  ├── CalendarPicker (DateRange)
-  ├── TimePicker (24-hour format)
-  ├── AffectedPlatforms (info alert if some platforms deselected)
-  ├── ConfirmButton (primary)
-  └── CancelButton (ghost)
-```
-
-**Component Specifications:**
-- **CalendarGrid**: CSS Grid 7 columns, fixed day-cell heights
-- **PostPreviewThumbnails**: Max 3 shown, 4th+ indicated by "+2 more" badge
-- **DayCell**: Cursor pointer on hover, background color change (lightblue)
-- **PostsList**: Virtual scrolling (windowing) if >50 posts on a single day
-- **DragArea**: Drag-to-reschedule with visual feedback (drag ghost, timeline guide)
-- **StatusBadges**: Color-coded (draft: gray, scheduled: blue, published: green, failed: red)
-
-#### **C Page: AI Content Creation**
-
-**Layout Tree:**
-```
-C_Page
-├── PageHeader
-│   ├── Title ("AI Content Assistant")
-│   ├── HelpText ("Describe your idea, let AI help you create")
-│   └── TemplateLibrary_Button (ghost)
-├── TwoColumnLayout
-│   ├── LeftColumn (60% width, sticky sidebar)
-│   │   ├── InputSection
-│   │   │   ├── SectionTitle ("Content Brief")
-│   │   │   ├── BriefInput (TextArea)
-│   │   │   │   ├── Placeholder ("e.g., 'Summer product launch for water bottles'")
-│   │   │   │   ├── CharCounter (max 500 chars)
-│   │   │   │   └── OnChange: Debounced AI preview
-│   │   │   ├── Divider
-│   │   │   ├── ConfigSection
-│   │   │   │   ├── TargetPlatforms (MultiSelect Dropdown)
-│   │   │   │   │   ├── Facebook ☑
-│   │   │   │   │   ├── Instagram ☑
-│   │   │   │   │   ├── YouTube ☑
-│   │   │   │   │   ├── LinkedIn ☑
-│   │   │   │   │   └── Twitter ☑
-│   │   │   │   ├── ContentType (Radio buttons)
-│   │   │   │   │   ├── Promotional
-│   │   │   │   │   ├── Educational
-│   │   │   │   │   ├── Entertaining
-│   │   │   │   │   ├── Inspirational
-│   │   │   │   │   └── Community
-│   │   │   │   ├── ToneOfVoice (Select dropdown)
-│   │   │   │   │   ├── Professional
-│   │   │   │   │   ├── Casual
-│   │   │   │   │   ├── Humorous
-│   │   │   │   │   ├── Motivational
-│   │   │   │   │   └── Friendly
-│   │   │   │   ├── TargetAudience (Text input, tags)
-│   │   │   │   ├── KeywordsToInclude (MultiSelect tag input)
-│   │   │   │   └── BudgetCaps (if for ads)
-│   │   │   ├── Divider
-│   │   │   ├── ActionButtons
-│   │   │   │   ├── GenerateContent (primary, large)
-│   │   │   │   └── ClearAll (ghost)
-│   │   │   └── LoadingState (spinner + "AI is crafting your content...")
-│   │   └── HistorySection (scrollable)
-│   │       ├── SectionTitle ("Generation History")
-│   │       └── HistoryItem[] (clickable, restores config)
-│   │           ├── Timestamp
-│   │           ├── BriefPreview
-│   │           └── PlatformsUsed (badges)
-│   │
-│   └── RightColumn (40% width, scrollable)
-│       ├── PreviewSection
-│       │   ├── SectionTitle ("AI-Generated Content")
-│       │   ├── PlatformTabs (Instagram | Facebook | LinkedIn | Twitter | YouTube)
-│       │   ├── TabContent
-│       │   │   ├── Content
-│       │   │   │   ├── GeneratedCaption (editable TextArea)
-│       │   │   │   ├── Hashtags (editable tag input, auto-wrapped)
-│       │   │   │   ├── VideoDescription (if YouTube)
-│       │   │   │   └── Emoji_Suggestions (clickable chips)
-│       │   │   ├── CharCounter (per-platform limits)
-│       │   │   ├── PreviewBox (simulated platform appearance)
-│       │   │   │   ├── PlatformHeader (logo, username)
-│       │   │   │   ├── PreviewContent (rendered text)
-│       │   │   │   ├── PreviewEngagement (mock likes/comments)
-│       │   │   │   └── PlatformFooter
-│       │   │   └── Actions
-│       │   │       ├── RegenerateContent (secondary)
-│       │   │       ├── Copy (ghost, with tooltip "Copied!")
-│       │   │       ├── SaveAsDraft (secondary)
-│       │   │       └── SchedulePost (primary)
-│       │   └── EmptyState (before generation)
-│       └── RefineSection
-│           ├── SectionTitle ("Refine & Optimize")
-│           ├── SuggestionChips[] (clickable)
-│           │   ├── "Add emoji"
-│           │   ├── "Add urgency"
-│           │   ├── "Add call-to-action"
-│           │   ├── "More casual"
-│           │   ├── "More formal"
-│           │   └── "Optimize for engagement"
-│           └── ApplySuggestion_AutoUpdate
-
-SchedulePostModal (from preview):
-  ├── Header ("Schedule Post")
-  ├── Platforms (display selected)
-  ├── ScheduleDate (DatePicker)
-  ├── ScheduleTime (TimePicker)
-  ├── Caption (textarea, last generated)
-  ├── Preview (per-platform)
-  ├── ConfirmButton (primary)
-  └── CancelButton (ghost)
-```
-
-**Component Specifications:**
-- **TwoColumnLayout**: Responsive - stacks at <1024px viewport
-- **InputSection**: Sticky at top with "Generate" button always visible
-- **TextArea Components**: Auto-expand on content, max 4 rows then scrollable
-- **CharCounter**: Color changes to orange at 80%, red at 100%
-- **Platform Tabs**: Smooth transition, preserves scroll position
-- **PreviewBox**: Simulates actual platform UI (search for design specifications)
-- **HistorySection**: Infinite scroll if >20 items, with lazy loading
-- **SuggestionChips**: Animated bounce on hover, background color on active
-
-#### **A Page: Analytics & Insights**
-
-**Layout Tree:**
-```
-A_Page
-├── PageHeader
-│   ├── Title ("Analytics & Insights")
-│   ├── DateRange_Picker (preset: Last 7 days | 30 days | 90 days | Custom)
-│   ├── PlatformFilter (MultiSelect)
-│   └── ExportReport_Button (ghost)
-├── KPIDashboard (Cards grid, 4-col responsive)
-│   ├── MetricCard_Impressions
-│   │   ├── MetricTitle ("Total Impressions")
-│   │   ├── MetricValue (large, bold number)
-│   │   ├── MetricChange (% change, up/down arrow, green/red)
-│   │   ├── MetricSparkline (tiny line chart)
-│   │   └── OnClick_Behavior: Navigate to detailed impressions view
-│   ├── MetricCard_Engagement
-│   ├── MetricCard_Followers
-│   └── MetricCard_EngagementRate
-├── Divider
-├── ChartsSection (responsive grid, 2x2 layout)
-│   ├── Chart_Impressions_TimeSeries
-│   │   ├── ChartTitle ("Impressions Over Time")
-│   │   ├── LineChart (recharts)
-│   │   │   ├── XAxis (dates, formatted)
-│   │   │   ├── YAxis (count)
-│   │   │   ├── Tooltip (custom, shows date + value)
-│   │   │   ├── Legend (platform colors)
-│   │   │   └── Responsive container
-│   │   └── ChartControls (zoom, pan)
-│   ├── Chart_Engagement_Distribution
-│   │   ├── ChartTitle ("Engagement Breakdown")
-│   │   ├── PieChart (recharts, donut style)
-│   │   │   ├── Segments (Likes | Comments | Shares | Saves)
-│   │   │   ├── Tooltip (count + %)
-│   │   │   ├── Legend (clickable, toggle segments)
-│   │   │   └── CenterLabel (total engagement)
-│   │   └── OnSegmentClick: Drill down to details
-│   ├── Chart_TopPosts_Performance
-│   │   ├── ChartTitle ("Top Performing Posts")
-│   │   ├── HorizontalBarChart (recharts)
-│   │   │   ├── YAxis (post titles/dates)
-│   │   │   ├── XAxis (engagement count)
-│   │   │   ├── Tooltip (full post preview)
-│   │   │   └── Segments (colored by metric)
-│   │   └── OnBarClick: Navigate to post detail
-│   └── Chart_Platform_Comparison
-│       ├── ChartTitle ("Platform Performance")
-│       ├── GroupedBarChart (recharts)
-│       │   ├── XAxis (platforms)
-│       │   ├── YAxis (metric value)
-│       │   ├── GroupedBars (Impressions | Engagement | Followers)
-│       │   └── Tooltip (compound info)
-│       └── OnLegendClick: Toggle metric visibility
-├── Divider
-├── TopicsPerformance (Tabular section)
-│   ├── SectionTitle ("Performance by Topic")
-│   ├── TableHeader
-│   │   ├── Topic (sortable)
-│   │   ├── Posts (sortable)
-│   │   ├── TotalImpressions (sortable)
-│   │   ├── AvgEngagement (sortable)
-│   │   ├── EngagementRate (sortable)
-│   │   └── TrendIndicator (sortable)
-│   └── TableRows[] (virtualized if >100 rows)
-│       ├── TopicName (clickable → detailed analysis)
-│       ├── PostCount
-│       ├── ImpressionSum
-│       ├── EngagementAverage
-│       ├── EngagementRatePercent (bar indicator)
-│       └── TrendArrow (up/down/neutral)
-└── CustomReportSection
-    ├── SectionTitle ("Generate Custom Report")
-    ├── ReportTemplate (Select)
-    │   ├── Executive Summary
-    │   ├── Detailed Analytics
-    │   ├── Competitor Comparison
-    │   └── Custom Selection
-    ├── ReportFormat (Radio)
-    │   ├── PDF (primary)
-    │   └── Excel
-    ├── DeliveryMethod (Radio)
-    │   ├── Download Now
-    │   └── Email Report
-    ├── GenerateButton (primary)
-    └── LastReportGenerated (timestamp)
-
-DetailedAnalysisModal (from chart drill-down):
-  ├── Header (metric name + date range)
-  ├── DetailedChart (larger, more interactive)
-  ├── StatisticsPanel
-  │   ├── Peak Value (date)
-  │   ├── Lowest Value (date)
-  │   ├── Average
-  │   ├── 7-Day Trend
-  │   └── 30-Day Trend
-  ├── DataTable (day-by-day breakdown, exportable)
-  ├── Insights_AI (generated recommendations)
-  └── CloseButton
-```
-
-**Component Specifications:**
-- **MetricCard**: Bordered, with subtle background color, hover shadow elevation
-- **Charts**: All using recharts for consistency, responsive containers
-- **LineChart**: Smooth curves, tooltip follow mouse, legend toggleable
-- **PieChart**: Donut style with center label, legend clickable to toggle
-- **BarChart**: Rounded corners, gradient fills (platform-specific colors)
-- **Table**: Sticky headers, alternating row backgrounds, hover highlight
-- **Virtualization**: DataTable with >50 rows uses windowing library
-- **Color Coding**: Each platform gets unique color (Facebook: blue, Instagram: gradient, YouTube: red, LinkedIn: blue, Twitter: light-blue)
-
-#### **L Page: Growth Strategy & Leverage**
-
-**Layout Tree:**
-```
-L_Page
-├── PageHeader
-│   ├── Title ("Growth Strategy")
-│   ├── SubtitleDescription ("AI-Powered recommendations for your content pipeline")
-│   └── RefreshStrategy_Button (ghost)
-├── StrategyOverviewSection
-│   ├── WeeklyFocusTopic
-│   │   ├── SectionTitle ("This Week's Focus")
-│   │   ├── FocusCard (highlighted, gradient background)
-│   │   │   ├── FocusTitle (large heading)
-│   │   │   ├── FocusDescription
-│   │   │   ├── RecommendedContentTypes[] (badges)
-│   │   │   ├── PlatformRecommendations (small cards)
-│   │   │   │   ├── Platform1 (Instagram, 80% recommended)
-│   │   │   │   ├── Platform2 (TikTok/YouTube, 70% recommended)
-│   │   │   │   └── Platform3 (LinkedIn, 60% recommended)
-│   │   │   ├── ContentCountRecommendation ("Post 3-5 times this week")
-│   │   │   ├── BestTimeToPost (hours, based on audience analysis)
-│   │   │   └── LearnMore_Link (collapsible explanation)
-│   │   └── CopyStrategy_Button (secondary)
-│   └── NextWeekPreview
-│       ├── SectionTitle ("Upcoming Focus Areas")
-│       └── PreviewCards[] (3 cards, horizontal scroll)
-│           ├── DateRange
-│           ├── TopicTitle
-│           ├── Platforms (badges)
-│           └── ContentCount (recommended posts)
-├── Divider
-├── StrategyPipelineSection
-│   ├── SectionTitle ("Content Pipeline")
-│   ├── PipelineVisual (timeline/flowchart)
-│   │   └── Week[] (scrollable horizontal)
-│   │       ├── WeekNumber & Dates
-│   │       ├── FocusTopic
-│   │       ├── RecommendedPosts[] (Drag-and-drop area)
-│   │       │   ├── ContentType_Badge
-│   │       │   ├── ContentDescription (truncated)
-│   │       │   ├── PlatformMatch (icon indicator)
-│   │       │   ├── EstimatedEngagement (%)
-│   │       │   └── DragHandle
-│   │       └── AddContent_Button (ghost)
-│   └── LegendSection
-│       ├── HighEngagementChance (green indicator)
-│       ├── MediumEngagementChance (yellow indicator)
-│       └── ContentGap_Warning (red indicator)
-├── Divider
-├── StrategyOptionsSection (Expandable cards)
-│   ├── StrategyOption_1
-│   │   ├── Header
-│   │   │   ├── StrategyIcon (product awareness icon)
-│   │   │   ├── StrategyTitle ("Product Awareness Campaign")
-│   │   │   └── ImplementButton (primary)
-│   │   ├── CollapsedDescription (brief)
-│   │   └── ExpandedContent
-│   │       ├── DetailedDescription
-│   │       ├── Timeline (6 weeks)
-│   │       ├── ExpectedResults
-│   │       │   ├── ImpressionsGain ("Expected +40%")
-│   │       │   ├── EngagementGain ("Expected +25%")
-│   │       │   ├── FollowersGain ("Expected +15%")
-│   │       │   └── ConversionRate ("Expected +8%")
-│   │       ├── ContentPipeline (5-6 weeks of suggested posts)
-│   │       │   └── WeeklyPost[] (expandable)
-│   │       │       ├── WeekNumber
-│   │       │       ├── PostIdea
-│   │       │       ├── ContentType
-│   │       │       ├── Platforms
-│   │       │       ├── HashtagSuggestions
-│   │       │       └── GenerateContent_Link (links to C page)
-│   │       ├── ResourcesNeeded (icons + list)
-│   │       │   ├── Graphics (design files)
-│   │       │   ├── Video (duration)
-│   │       │   └── Budget (ad spend)
-│   │       ├── SuccessMetrics
-│   │       │   ├── PrimaryMetric
-│   │       │   ├── SecondaryMetrics[] (list)
-│   │       │   └── TrackingDashboard_Link
-│   │       └── ImplementNow_Button (primary, full-width)
-│   ├── StrategyOption_2 ("Influencer Partnership Program")
-│   ├── StrategyOption_3 ("Seasonal & Trend-Based Strategy")
-│   └── StrategyOption_4 ("Community Engagement Boost")
-└── AIInsightsPanel (sticky right sidebar on desktop)
-    ├── PanelTitle ("AI Insights")
-    ├── TrendingTopics (this month)
-    │   └── Topic[] (clickable chips, sorted by relevance)
-    ├── AudienceInsights
-    │   ├── PeakEngagementTime (day + hour)
-    │   ├── TopAudience_Geography
-    │   ├── AgeGroup_Distribution (pie chart mini)
-    │   └── InterestCategories[] (top 5)
-    ├── CompetitorHighlights
-    │   ├── TopCompetitor (name + metrics)
-    │   ├── CompetitorTrend (they're gaining 12% monthly)
-    │   └── OpportunitiesVsCompetitor (list)
-    └── ImplementStrategy_QuickLink (button)
+1. [Strategic Architecture Overview](#1-strategic-architecture-overview)
+2. [System Design Philosophy](#2-system-design-philosophy)
+3. [Comprehensive UI/UX Design System](#3-comprehensive-uiux-design-system)
+4. [Database Architecture & Security](#4-database-architecture--security)
+5. [Backend Architecture & API Design](#5-backend-architecture--api-design)
+6. [Frontend Architecture & State Management](#6-frontend-architecture--state-management)
+7. [Error Handling & Debugging Strategy](#7-error-handling--debugging-strategy)
+8. [Performance Optimization Blueprint](#8-performance-optimization-blueprint)
+9. [Security & Authentication Framework](#9-security--authentication-framework)
+10. [Deployment & DevOps Strategy](#10-deployment--devops-strategy)
+11. [Development Workflow & Best Practices](#11-development-workflow--best-practices)
+12. [Testing & Quality Assurance](#12-testing--quality-assurance)
 
 ---
 
-## 3. AUTHENTICATION & SECURITY ARCHITECTURE
+## 1. STRATEGIC ARCHITECTURE OVERVIEW
 
-### 3.1 Authentication Flow with Supabase
-
-**Tier 1: Initial Authentication (User Registration/Login)**
+### 1.1 Multi-Layer Architecture Pattern
 
 ```
-Authentication Flow Diagram:
-
-CLIENT (React/Next.js)
-    ↓
-[User enters credentials or clicks "Sign in with Google/Facebook"]
-    ↓
-Supabase Auth Service (client SDK)
-    ↓ (encrypted HTTPS)
-Supabase Backend
-    ├─→ [Verify credentials against users table]
-    ├─→ [Generate JWT token (expires 1 hour)]
-    ├─→ [Generate Refresh Token (expires 30 days)]
-    └─→ Send tokens to client
-    ↓
-Client stores tokens:
-    ├─→ Access Token: sessionStorage (cleared on close) + memory variable
-    ├─→ Refresh Token: In-memory only (NEVER localStorage)
-    └─→ User metadata: React Context/Zustand state
-    ↓
-[User authenticated, can access dashboard]
+┌─────────────────────────────────────────────────────────────────┐
+│                     PRESENTATION LAYER                           │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
+│  │   X      │  │    O     │  │    C     │  │   I/A/L  │       │
+│  │ Accounts │  │ Calendar │  │ AI Tools │  │ Analytics│       │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘       │
+│              Next.js 15.5+ App Router                           │
+│              React Server Components + Client Components        │
+└─────────────────────────────────────────────────────────────────┘
+                            ↕ API Routes
+┌─────────────────────────────────────────────────────────────────┐
+│                     APPLICATION LAYER                            │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
+│  │   Auth   │  │   API    │  │  OAuth   │  │ Webhooks │       │
+│  │ Services │  │Middleware│  │ Services │  │ Handlers │       │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘       │
+│              Edge Runtime + Node.js Runtime                     │
+└─────────────────────────────────────────────────────────────────┘
+                            ↕ Data Layer
+┌─────────────────────────────────────────────────────────────────┐
+│                     DATA LAYER                                   │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
+│  │ Supabase │  │   RLS    │  │  Zustand │  │  Redis   │       │
+│  │PostgreSQL│  │ Policies │  │  Store   │  │  Cache   │       │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘       │
+└─────────────────────────────────────────────────────────────────┘
+                            ↕ External APIs
+┌─────────────────────────────────────────────────────────────────┐
+│                     INTEGRATION LAYER                            │
+│  ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌────────┐         │
+│  │ FB │ │ IG │ │ TW │ │ LI │ │ YT │ │ TT │ │ OpenAI │         │
+│  └────┘ └────┘ └────┘ └────┘ └────┘ └────┘ └────────┘         │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Implementation Specifications:**
-
-- **Registration Flow:**
-  - User form with email, password (min 12 chars, mixed case, numbers, symbols)
-  - Email verification via Supabase (6-digit code sent to email, 10-min expiry)
-  - Password hashing: Supabase uses bcrypt (salt rounds: 10)
-  - Upon verification: Auto-create user profile row in Supabase database
-
-- **Login Flow:**
-  - User submits email + password
-  - Supabase performs bcrypt comparison (constant-time to prevent timing attacks)
-  - JWT generation: HS256 algorithm, includes user_id and role claims
-  - Refresh token generation: Stored in Supabase with rotation tracking
-
-- **OAuth2 Social Sign-In:**
-  - Supported providers: Google, Facebook, GitHub, LinkedIn
-  - Redirect to provider → user consents → provider returns auth code
-  - Supabase exchanges code for access token with provider
-  - Supabase creates/links user record in database
-  - Return JWT to client application
-
-- **Token Management:**
-  - Access Token: Stored in React state + sessionStorage, included in all API headers as `Authorization: Bearer {token}`
-  - Refresh Token: Bun server-side only (HttpOnly cookie if SSR, otherwise React state)
-  - Token refresh: Automatic on 401 response; client calls `/api/auth/refresh` endpoint
-  - Logout: Clear tokens, revoke refresh token in Supabase, clear React state
-
-### 3.2 Role-Based Access Control (RBAC)
-
-**User Roles Hierarchy:**
+### 1.2 Data Flow Architecture
 
 ```
-Database Schema (users table):
-
-user_id: UUID (primary key)
-email: string (unique)
-role: enum ['admin', 'manager', 'content_creator', 'viewer']
-permissions: JSONB {
-  'x_page': ['view', 'create', 'edit', 'delete'],
-  'o_page': ['view', 'create', 'edit', 'delete', 'publish'],
-  'c_page': ['view', 'create', 'edit'],
-  'a_page': ['view', 'view_advanced'],
-  'l_page': ['view'],
-  'i_page': ['view'] (always locked, coming soon)
-}
-created_at: timestamp
-updated_at: timestamp
-verification_status: enum ['pending', 'verified', 'blocked']
-```
-
-**Permission Matrix:**
-
-| Role | X (Manage) | O (Calendar) | C (Create) | A (Analyze) | L (Strategy) | I (Influence) |
-|------|-----------|-------------|-----------|------------|-------------|--------------|
-| Admin | Full | Full | Full | Full | Full | View |
-| Manager | Full | Full | Full | Full | Full | View |
-| Content Creator | View Only | Full | Full | View Basic | View | View |
-| Viewer | View Only | View Only | View Only | View | View | View |
-
-**Implementation in Cursor/Next.js:**
-- Create `packages/auth/rbac.ts` with permission checking utilities
-- Use middleware (Next.js `_middleware.ts`) to enforce RBAC on protected routes
-- Component-level permission checks using custom hooks (`usePermission`, `useCanAccess`)
-- Toast notification if user attempts restricted action
-
-### 3.3 Data Encryption & Storage Security
-
-**End-to-End Encryption Strategy:**
-
-1. **Sensitive Fields (AES-256-GCM):**
-   - OAuth access tokens (Facebook, Instagram, YouTube, LinkedIn, Twitter)
-   - User passwords (hashed with bcrypt, salted)
-   - API keys and secrets
-   - User bio/personal information
-
-2. **Supabase RLS (Row-Level Security):**
-   ```
-   All tables must have RLS policies:
-   
-   posts table:
-   - SELECT: users can only see their own posts OR posts from teams they're member of
-   - INSERT: only team members with 'create' permission
-   - UPDATE: only post creator or team admins
-   - DELETE: only post creator or team admins
-   
-   social_accounts table:
-   - SELECT: user can only see accounts they connected
-   - INSERT: user can only create accounts for themselves
-   - UPDATE: only account owner
-   - DELETE: only account owner
-   ```
-
-3. **Client-Side Data Handling:**
-   - Avoid storing sensitive data in React state/localStorage
-   - Use secure headers: `Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options`
-   - Implement CSRF protection via tokens for state-changing operations
-   - Sanitize all user inputs before rendering (XSS prevention)
-
-4. **API Secrets Management:**
-   - Store in Bun environment variables (`.env.local`, never committed)
-   - Rotate secrets every 90 days
-   - Use Vercel's environment variable management for production
-   - Implement API key rate limiting per user/account
-
-### 3.4 Multi-Factor Authentication (Future Enhancement)
-
-**MFA Flow (Optional for Phase 2):**
-- After password verification, prompt user for TOTP code
-- Supabase sends SMS or email with OTP (6 digits, 5-min expiry)
-- User enters code, Supabase verifies
-- Generate JWT only after MFA verification
-
----
-
-## 4. DATABASE ARCHITECTURE WITH SUPABASE
-
-### 4.1 Database Schema Design
-
-**Core Tables Structure:**
-
-```
-USERS TABLE
-├── user_id: UUID (primary key)
-├── email: string (unique, indexed)
-├── password_hash: string (bcrypt, never returned in queries)
-├── username: string (unique)
-├── avatar_url: string (URL to CDN image)
-├── role: enum (admin, manager, content_creator, viewer)
-├── permissions: JSONB (role-based permissions)
-├── email_verified: boolean
-├── created_at: timestamp (auto)
-├── updated_at: timestamp (auto)
-└── deleted_at: timestamp (soft delete support)
-
-SOCIAL_ACCOUNTS TABLE (user-facing in X page)
-├── account_id: UUID (primary key)
-├── user_id: UUID (foreign key → users)
-├── platform: enum (facebook, instagram, youtube, linkedin, twitter)
-├── platform_user_id: string (platform-specific ID, indexed)
-├── platform_username: string
-├── access_token: string (encrypted with AES-256)
-├── refresh_token: string (encrypted, nullable)
-├── token_expires_at: timestamp (nullable, for refresh logic)
-├── followers_count: integer (cached, updated daily)
-├── account_status: enum (active, inactive, error, revoked)
-├── last_synced_at: timestamp
-├── created_at: timestamp (auto)
-├── updated_at: timestamp (auto)
-└── metadata: JSONB (platform-specific: verification badge, bio, etc.)
-
-POSTS TABLE (used by X, O, A, L pages)
-├── post_id: UUID (primary key)
-├── user_id: UUID (foreign key → users)
-├── platform_ids: UUID array (foreign key → social_accounts)
-├── content: text (caption/description, indexed for search)
-├── media_urls: text array (images/videos, stored as URLs)
-├── status: enum (draft, scheduled, published, failed, archived)
-├── scheduled_at: timestamp (nullable, for O page)
-├── published_at: timestamp (nullable, when actually published)
-├── platforms: enum array (which platforms to post to)
-├── hashtags: text array (indexed, for search/filtering)
-├── mentions: text array (@ mentions)
-├── character_count: integer (for validation)
-├── ai_generated: boolean (flag for tracking AI usage)
-├── ai_generation_id: string (link to OpenAI API call)
-├── created_at: timestamp (auto)
-├── updated_at: timestamp (auto)
-└── metadata: JSONB (platform-specific: video_duration, thumbnail_url, etc.)
-
-ENGAGEMENT_METRICS TABLE (A page real-time data)
-├── metric_id: UUID (primary key)
-├── post_id: UUID (foreign key → posts)
-├── platform: enum (facebook, instagram, youtube, linkedin, twitter)
-├── metric_type: enum (likes, comments, shares, views, saves)
-├── count: integer (current count)
-├── daily_change: integer (change from yesterday)
-├── recorded_at: timestamp (when metric was captured)
-├── created_at: timestamp (auto)
-└── archived_at: timestamp (when post no longer tracked)
-
-COMMENTS TABLE (for comments mini-modal in X page)
-├── comment_id: UUID (primary key)
-├── post_id: UUID (foreign key → posts)
-├── platform: enum
-├── platform_comment_id: string (platform's comment ID for API operations)
-├── author: string (commenter name)
-├── author_id: string (platform user ID)
-├── comment_text: text
-├── likes_count: integer (platform-specific)
-├── parent_comment_id: UUID (for threading, nullable)
-├── created_at: timestamp (platform's timestamp)
-└── synced_at: timestamp (when pulled from platform API)
-
-CONTENT_CALENDAR TABLE (O page scheduling)
-├── calendar_id: UUID (primary key)
-├── user_id: UUID (foreign key)
-├── month: integer
-├── year: integer
-├── posts_count: integer (denormalized for fast queries)
-├── created_at: timestamp
-└── updated_at: timestamp
-
-ANALYTICS_REPORTS TABLE (A page report generation)
-├── report_id: UUID (primary key)
-├── user_id: UUID (foreign key)
-├── report_type: enum (executive_summary, detailed, competitor, custom)
-├── date_range_start: timestamp
-├── date_range_end: timestamp
-├── platforms: enum array
-├── generated_at: timestamp (auto)
-├── report_url: string (CDN URL where PDF/Excel stored)
-├── metrics_snapshot: JSONB (cached metrics at generation time)
-└── downloaded: boolean
-
-STRATEGY_RECOMMENDATIONS TABLE (L page data)
-├── strategy_id: UUID (primary key)
-├── user_id: UUID (foreign key)
-├── strategy_type: enum (product_awareness, influencer_partnership, seasonal, community_engagement)
-├── recommended_week: integer
-├── recommended_year: integer
-├── focus_topic: string
-├── content_suggestions: JSONB array (suggested post ideas)
-├── expected_results: JSONB {
-│   impressions_gain: integer,
-│   engagement_gain: integer,
-│   followers_gain: integer
-│ }
-├── status: enum (active, implemented, completed, skipped)
-├── created_at: timestamp
-└── updated_at: timestamp
-
-API_CALL_LOG TABLE (debugging & rate limiting)
-├── log_id: UUID (primary key)
-├── user_id: UUID (foreign key, nullable for anonymous)
-├── endpoint: string (which API called)
-├── platform: string (facebook, instagram, etc., nullable)
-├── status_code: integer (200, 401, 429, 500, etc.)
-├── response_time_ms: integer (for performance tracking)
-├── error_message: text (nullable, for failed calls)
-├── created_at: timestamp (auto)
-└── metadata: JSONB (request size, response size, etc.)
-
-WEBHOOK_EVENTS TABLE (tracking incoming webhooks from platforms)
-├── event_id: UUID (primary key)
-├── account_id: UUID (foreign key → social_accounts)
-├── event_type: string (post_comment, like_notification, follower_update)
-├── platform: enum
-├── payload: JSONB (raw webhook data)
-├── processed: boolean
-├── processed_at: timestamp (nullable)
-└── created_at: timestamp (auto)
-```
-
-### 4.2 Database Relationships & Foreign Keys
-
-**Visual Relationship Diagram:**
-
-```
-users (1) ────→ (many) social_accounts
-              ├─→ (many) posts
-              ├─→ (many) analytics_reports
-              ├─→ (many) strategy_recommendations
-              └─→ (many) api_call_logs
-
-social_accounts (1) ────→ (many) posts
-                        ├─→ (many) engagement_metrics
-                        ├─→ (many) comments
-                        └─→ (many) webhook_events
-
-posts (1) ────→ (many) engagement_metrics
-           ├─→ (many) comments
-           └─→ (many) content_calendar entries
-```
-
-### 4.3 Indexing Strategy (Query Performance)
-
-**Required Indexes for Optimal Performance:**
-
-```
-CREATE INDEX idx_posts_user_id_status ON posts(user_id, status);
-  → O page: fetch scheduled posts by user, filtered by status
-
-CREATE INDEX idx_posts_scheduled_at ON posts(scheduled_at)
-  WHERE status = 'scheduled';
-  → O page: retrieve posts within date range
-
-CREATE INDEX idx_engagement_metrics_post_created ON 
-  engagement_metrics(post_id, created_at DESC);
-  → A page: fetch metrics for chart rendering
-
-CREATE INDEX idx_social_accounts_user_platform ON 
-  social_accounts(user_id, platform);
-  → X page: fetch accounts by platform quickly
-
-CREATE INDEX idx_comments_post_platform ON 
-  comments(post_id, platform);
-  → X page: comments mini-modal rendering
-
-CREATE INDEX idx_posts_content_search ON posts 
-  USING GIN(to_tsvector('english', content));
-  → Full-text search for post discovery
-
-CREATE INDEX idx_api_logs_user_created ON 
-  api_call_log(user_id, created_at DESC);
-  → Rate limiting & quota checks
-
-CREATE INDEX idx_webhook_events_account_processed ON 
-  webhook_events(account_id, processed);
-  → Webhook processing queue
-```
-
-### 4.4 Data Synchronization Strategy
-
-**Real-Time Sync Architecture:**
-
-```
-SYNC FLOW (every 15 minutes, staggered per account):
-
-Bun Backend Service (BG Job)
-  ├─→ Query accounts with last_synced_at > 15 mins ago
-  ├─→ For each account:
-  │   ├─→ Call platform API (Facebook Graph, Instagram, etc.)
-  │   ├─→ Fetch new posts, comments, engagement metrics
-  │   ├─→ Update posts table (new rows, engagement_metrics)
-  │   ├─→ Update comments table (if new comments exist)
-  │   ├─→ Update social_accounts.followers_count
-  │   ├─→ Log API call to api_call_log (for debugging)
-  │   └─→ Update last_synced_at timestamp
-  └─→ Cache updated metrics in Redis (optional, for speed)
-
-Webhook Listener (Real-time events):
-  ├─→ Receive webhook from Facebook/Instagram/YouTube
-  ├─→ Validate webhook signature (prevent spoofing)
-  ├─→ Parse event (new comment, like, follow)
-  ├─→ Insert into webhook_events table
-  ├─→ Trigger processing (update engagement_metrics or comments)
-  └─→ Broadcast to client via WebSocket (optional enhancement)
+┌──────────────────────────────────────────────────────────────────┐
+│                      USER INTERACTION FLOW                        │
+└──────────────────────────────────────────────────────────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 1: Authentication & Authorization                           │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ middleware.ts → Auth Check → RLS Context Setup          │   │
+│  │   - JWT Token Validation                                 │   │
+│  │   - Session Management                                   │   │
+│  │   - Role-Based Access Control (RBAC)                     │   │
+│  │   - Workspace Context Injection                          │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 2: Request Processing                                       │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ API Route Handler                                        │   │
+│  │   ↓                                                      │   │
+│  │ Input Validation (Zod Schema)                           │   │
+│  │   ↓                                                      │   │
+│  │ Business Logic Layer                                     │   │
+│  │   ↓                                                      │   │
+│  │ Error Handling Wrapper                                   │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 3: Data Operations                                          │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ Supabase Client (with RLS automatically applied)         │   │
+│  │   ↓                                                      │   │
+│  │ Query Optimization & Indexing                           │   │
+│  │   ↓                                                      │   │
+│  │ Transaction Management                                   │   │
+│  │   ↓                                                      │   │
+│  │ Cache Strategy (Redis/Memory)                           │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 4: Response Handling                                        │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ Data Transformation                                      │   │
+│  │   ↓                                                      │   │
+│  │ Response Serialization                                   │   │
+│  │   ↓                                                      │   │
+│  │ HTTP Status Code Assignment                             │   │
+│  │   ↓                                                      │   │
+│  │ Logging & Monitoring                                     │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 5. BACKEND ARCHITECTURE WITH BUN & VERCEL
+## 2. SYSTEM DESIGN PHILOSOPHY
 
-### 5.1 Bun Runtime Optimization
+### 2.1 Core Design Principles
 
-**Why Bun Over Node.js:**
+**1. Atomic Design Methodology**
+- **Atoms**: Buttons, inputs, labels, icons
+- **Molecules**: Form fields, search bars, cards
+- **Organisms**: Navigation bars, forms, grids
+- **Templates**: Page layouts
+- **Pages**: Complete views
 
-| Aspect | Node.js | Bun |
-|--------|---------|-----|
-| Startup Time | 200-300ms | 20-30ms |
-| Package Installation | 15-30s | 3-5s |
-| Runtime Performance | Baseline | 40-80% faster |
-| Memory Usage | Higher | 30% lower |
-| TypeScript Support | Via ts-node | Native |
-| File System APIs | Node modules | Fast native APIs |
-| SQLite Support | Requires addon | Native built-in |
-| Compatibility | Industry standard | Growing ecosystem |
+**2. Server-First Architecture**
+- Default to React Server Components (RSC)
+- Client components only when necessary:
+  - User interactions (onClick, onChange)
+  - Browser APIs (localStorage, window)
+  - React hooks (useState, useEffect)
+  - Third-party libraries requiring client-side
 
-**Bun Configuration (`bunfig.toml`):**
+**3. Progressive Enhancement**
+- Base functionality without JavaScript
+- Enhanced experience with JavaScript
+- Graceful degradation
 
-```toml
-[build]
-target = "bun"
-outdir = "./dist"
-minify = { syntax = true, whitespace = true, identifiers = true }
+**4. Zero-Trust Security Model**
+- Every request validated
+- RLS enforced at database level
+- API routes protected
+- Input sanitization mandatory
 
-[test]
-root = "./tests"
-preload = ["./tests/setup.ts"]
-
-[install]
-frozenLockfile = true
-dev = true
-
-[[bunx.config]]
-name = "dev"
-cmd = "bun run src/index.ts"
-
-[[bunx.config]]
-name = "build"
-cmd = "bun run build"
-
-[[bunx.config]]
-name = "start"
-cmd = "bun run dist/index.js"
-```
-
-### 5.2 Backend Service Architecture
-
-**Microservices Decomposition:**
+### 2.2 Development Decision Tree
 
 ```
-API GATEWAY (Express.js running on Bun)
-├── Port: 3001
-├── Request validation & authentication middleware
-├── Rate limiting & quota enforcement
-├── Request/response logging
-└── Error handling & normalization
-
-├─→ AUTH SERVICE
-│   ├── /api/auth/register (POST)
-│   ├── /api/auth/login (POST)
-│   ├── /api/auth/logout (POST)
-│   ├── /api/auth/refresh (POST)
-│   ├── /api/auth/verify-email (POST)
-│   ├── /api/auth/oauth/callback (GET)
-│   └── /api/auth/me (GET, protected)
-
-├─→ SOCIAL ACCOUNTS SERVICE
-│   ├── /api/accounts (GET) → fetch all connected accounts
-│   ├── /api/accounts/connect (POST) → initiate OAuth
-│   ├── /api/accounts/:id (GET) → account details
-│   ├── /api/accounts/:id (PUT) → update account settings
-│   ├── /api/accounts/:id (DELETE) → disconnect account
-│   └── /api/accounts/:id/sync (POST) → force sync
-
-├─→ POSTS SERVICE
-│   ├── /api/posts (GET) → fetch posts (paginated, filtered)
-│   ├── /api/posts (POST) → create new post
-│   ├── /api/posts/:id (GET) → post detail
-│   ├── /api/posts/:id (PUT) → edit post
-│   ├── /api/posts/:id (DELETE) → delete post
-│   ├── /api/posts/:id/publish (POST) → publish immediately
-│   ├── /api/posts/:id/schedule (POST) → schedule for later
-│   └── /api/posts/:id/comments (GET) → fetch comments
-
-├─→ AI CONTENT SERVICE
-│   ├── /api/ai/generate (POST) → generate caption/hashtags
-│   │   Input: { brief, platforms[], tone, audience, keywords }
-│   │   Output: { caption, hashtags, description, emojis }
-│   ├── /api/ai/refine (POST) → apply suggestions
-│   ├── /api/ai/optimize (POST) → optimize for engagement
-│   └── /api/ai/history (GET) → generation history
-
-├─→ ANALYTICS SERVICE
-│   ├── /api/analytics/metrics (GET) → KPI dashboard data
-│   ├── /api/analytics/time-series (GET) → chart data
-│   ├── /api/analytics/posts/top (GET) → top performing posts
-│   ├── /api/analytics/topics (GET) → topic performance
-│   ├── /api/analytics/report/generate (POST) → create report
-│   ├── /api/analytics/report/:id/download (GET) → download PDF/Excel
-│   └── /api/analytics/export (POST) → export raw data
-
-├─→ STRATEGY SERVICE
-│   ├── /api/strategy/weekly (GET) → weekly recommendations
-│   ├── /api/strategy/pipeline (GET) → content pipeline
-│   ├── /api/strategy/options (GET) → available strategies
-│   └── /api/strategy/:id/implement (POST) → activate strategy
-
-├─→ WEBHOOK SERVICE
-│   ├── /webhooks/facebook (POST) → Facebook events
-│   ├── /webhooks/instagram (POST) → Instagram events
-│   ├── /webhooks/youtube (POST) → YouTube events
-│   ├── /webhooks/linkedin (POST) → LinkedIn events
-│   └── /webhooks/twitter (POST) → Twitter events
-
-└─→ HEALTH & MONITORING
-    ├── /health (GET) → service status
-    ├── /metrics (GET) → Prometheus metrics
-    └── /logs (GET, admin) → application logs
-```
-
-### 5.3 API Request/Response Patterns
-
-**Standardized Response Format:**
-
-```javascript
-// Success Response (200-299 status)
-{
-  success: true,
-  data: { /* requested data */ },
-  meta: {
-    timestamp: "2025-10-16T14:30:00Z",
-    request_id: "req_abc123xyz", // for tracing
-    version: "1.0"
-  }
-}
-
-// Paginated Response
-{
-  success: true,
-  data: [ /* array of items */ ],
-  pagination: {
-    page: 1,
-    per_page: 20,
-    total: 150,
-    pages: 8,
-    has_next: true,
-    has_prev: false
-  },
-  meta: { /* ... */ }
-}
-
-// Error Response (4xx, 5xx status)
-{
-  success: false,
-  error: {
-    code: "INVALID_REQUEST", // machine-readable
-    message: "Email is required", // user-friendly
-    field: "email", // if validation error
-    suggestion: "Please provide a valid email address" // helpful hint
-  },
-  meta: {
-    request_id: "req_def456uvw",
-    timestamp: "2025-10-16T14:31:00Z"
-  }
-}
-```
-
-### 5.4 Error Handling & Recovery
-
-**Comprehensive Error Handling Strategy:**
-
-```
-ERROR CATEGORIES & RESPONSES:
-
-1. AUTHENTICATION ERRORS (401)
-   ├── Missing token → "Authentication required"
-   ├── Expired token → Attempt auto-refresh, then prompt re-login
-   ├── Invalid token → Clear auth, redirect to login
-   └── Insufficient permissions → "Access denied"
-
-2. VALIDATION ERRORS (400)
-   ├── Missing required field → List which fields
-   ├── Invalid format (email, date, etc.) → Show expected format
-   ├── Character limit exceeded → Show limit
-   └── Constraint violation → Explain unique, min/max constraints
-
-3. RESOURCE ERRORS (404)
-   ├── Post not found → "This post was deleted or doesn't exist"
-   ├── Account not found → "Please reconnect this account"
-   └── User not found → "Session expired, please login again"
-
-4. RATE LIMIT ERRORS (429)
-   ├── Too many requests → "Too many requests. Retry after 60 seconds"
-   ├── API quota exceeded → "Monthly limit reached. Upgrade plan?"
-   └── Platform rate limit → "Platform temporarily unavailable"
-
-5. PLATFORM API ERRORS (varies)
-   ├── Facebook Graph API down → "Facebook is temporarily unavailable"
-   ├── Instagram API error → "Couldn't sync Instagram data"
-   ├── Token revoked → "Please reconnect your account"
-   └── Insufficient permissions → "Reconnect account with required permissions"
-
-6. SERVER ERRORS (500-599)
-   ├── Database connection failed → Retry with exponential backoff
-   ├── Service unavailable → Show maintenance message
-   ├── Unhandled exception → Log to Sentry, show generic error
-   └── Timeout → "Request took too long, please try again"
-
-RECOVERY MECHANISMS:
-
-Circuit Breaker Pattern:
-  ├── Monitor API call success rate
-  ├── If >50% failures in 5-min window: OPEN (reject calls)
-  ├── Wait 30 seconds, then HALF-OPEN (allow 1 test call)
-  ├── If test succeeds: CLOSED (resume normal)
-  └── If test fails: back to OPEN
-
-Exponential Backoff Retry:
-  ├── Attempt 1: Immediate
-  ├── Attempt 2: Wait 2 seconds
-  ├── Attempt 3: Wait 4 seconds
-  ├── Attempt 4: Wait 8 seconds
-  ├── Attempt 5: Wait 16 seconds (then fail permanently)
-  └── Max jitter: ±20% to prevent thundering herd
-
-Graceful Degradation:
-  ├── Analytics unavailable → Show cached data from last successful sync
-  ├── AI generation failed → Show empty state with retry option
-  ├── Comments sync failed → Show previously cached comments
-  └── Metrics delay → Show "last updated 2 hours ago" notice
-```
-
-### 5.5 Performance Optimization
-
-**Bun-Specific Performance Tuning:**
-
-```
-CACHING STRATEGY:
-
-Level 1: In-Memory Cache (Bun process)
-  ├── User profile data (cache 5 minutes)
-  ├── Social account list (cache 10 minutes)
-  ├── Recent posts (cache 2 minutes)
-  └── Analytics metrics (cache 5 minutes)
-
-Level 2: Redis Cache (shared across servers)
-  ├── Frequently accessed posts (cache 1 hour)
-  ├── Analytics dashboard data (cache 15 minutes)
-  ├── User permissions/roles (cache 30 minutes)
-  └── Social account metadata (cache 1 hour)
-
-Level 3: Database Query Optimization
-  ├── Use prepared statements (prevent SQL injection)
-  ├── Batch queries: fetch 10 posts in 1 query vs 10 queries
-  ├── Denormalization: posts.followers_count (avoid JOINs)
-  └── Pagination: limit 20, offset math (don't fetch all rows)
-
-QUERY OPTIMIZATION EXAMPLES:
-
-❌ Slow:
-SELECT * FROM posts WHERE user_id = 123;
-SELECT * FROM engagement_metrics WHERE post_id = 456;
-// Result: 10 queries per post rendering
-
-✅ Fast:
-SELECT p.* FROM posts p WHERE p.user_id = 123 
-  AND p.status IN ('published', 'scheduled') 
-  LIMIT 20 OFFSET 0;
-SELECT em.* FROM engagement_metrics em 
-  WHERE em.post_id = ANY($1) 
-  LIMIT 500; // Batch fetch all metrics
-// Result: 2 queries for entire page
-
-DATABASE CONNECTION POOLING:
-
-├── Min connections: 5
-├── Max connections: 20
-├── Idle timeout: 30 seconds
-├── Connection validation: ping every 60 seconds
-└── Reconnect on timeout
-
-COMPRESSION:
-
-├── Enable gzip on all JSON responses (90%+ size reduction)
-├── Enable brotli for modern browsers (10% better than gzip)
-└── Exclude already-compressed content (images, videos)
-```
-
-### 5.6 Background Jobs & Scheduling
-
-**Bun Worker Threads for Async Tasks:**
-
-```
-SCHEDULED TASKS:
-
-Job: SyncSocialMediaMetrics
-├── Frequency: Every 15 minutes
-├── Duration: ~5-10 seconds per user
-├── Implementation: Bun worker thread + cron schedule
-├── Process:
-│   ├── Query all accounts with last_synced_at > 15 mins
-│   ├── For each account, call platform API
-│   ├── Update posts table with new engagement metrics
-│   ├── Update social_accounts.followers_count
-│   └── Mark last_synced_at = now()
-└── Failure handling: Log error, retry in next cycle
-
-Job: PublishScheduledPosts
-├── Frequency: Every 1 minute (check for posts due)
-├── Duration: ~1 second per post
-├── Implementation: Bun worker thread
-├── Process:
-│   ├── Query posts WHERE status='scheduled' AND scheduled_at <= now()
-│   ├── For each post:
-│   │   ├── Call platform APIs (multi-platform posting)
-│   │   ├── Update post status to 'publishing'
-│   │   ├── Capture platform post IDs
-│   │   └── Update status to 'published' on success
-│   └── Log results
-└── Retry logic: Up to 3 retries on failure, then mark as failed
-
-Job: GenerateStrategyRecommendations
-├── Frequency: Weekly (Monday 10 AM)
-├── Duration: ~30-60 seconds per user
-├── Implementation: Bun worker thread + cron
-├── Process:
-│   ├── Query analytics data for past 30 days
-│   ├── Analyze engagement patterns
-│   ├── Call OpenAI API for strategy recommendations
-│   ├── Insert into strategy_recommendations table
-│   └── Send email notification to user
-└── Optimization: Parallel processing for multiple users
-
-Job: CleanupExpiredData
-├── Frequency: Daily (2 AM)
-├── Duration: ~5-10 seconds
-├── Implementation: Bun worker thread
-├── Process:
-│   ├── Delete webhook_events older than 30 days
-│   ├── Archive engagement_metrics older than 90 days
-│   ├── Delete api_call_log older than 30 days
-│   └── Vacuum database (free unused space)
-└── Safety: Run in transaction, log deletions
-
-Job: GenerateAnalyticsReports
-├── Frequency: On-demand (triggered by user)
-├── Duration: ~15-30 seconds
-├── Implementation: Bun worker thread + queue system
-├── Process:
-│   ├── Fetch analytics data for date range
-│   ├── Generate charts/graphs using Chart.js
-│   ├── Compile PDF or Excel file
-│   ├── Upload to CDN (AWS S3)
-│   ├── Store URL in analytics_reports table
-│   └── Send download link via email
-└── Caching: Cache report for 7 days (user can re-download)
-
-IMPLEMENTATION WITH BUN:
-
-// Using Bun's native cron support
-import { CronJob } from "cron";
-
-const syncJob = new CronJob('*/15 * * * *', async () => {
-  console.log('Starting metrics sync...');
-  await syncSocialMediaMetrics();
-});
-
-// Or using background tasks in worker threads
-const worker = new Worker(new URL('./workers/sync-task.ts', import.meta.url).href);
-worker.onmessage = (msg) => console.log('Worker result:', msg.data);
-worker.postMessage({ command: 'sync' });
+┌─────────────────────────────────────────────────────────────┐
+│         NEW FEATURE DEVELOPMENT DECISION TREE               │
+└─────────────────────────────────────────────────────────────┘
+                          START
+                            ↓
+              ┌─────────────────────────┐
+              │ Does it need user       │
+              │ interaction?            │
+              └─────────────────────────┘
+                    ↓           ↓
+                  YES          NO
+                    ↓           ↓
+         ┌──────────────┐  ┌──────────────┐
+         │ Client       │  │ Server       │
+         │ Component    │  │ Component    │
+         └──────────────┘  └──────────────┘
+                ↓                  ↓
+      ┌──────────────┐   ┌──────────────┐
+      │ Add 'use     │   │ Fetch data   │
+      │ client'      │   │ directly     │
+      └──────────────┘   └──────────────┘
+                ↓                  ↓
+      ┌──────────────┐   ┌──────────────┐
+      │ Use hooks    │   │ Pass as      │
+      │ (useState,   │   │ props to     │
+      │ useEffect)   │   │ children     │
+      └──────────────┘   └──────────────┘
+                ↓                  ↓
+      ┌──────────────────────────────┐
+      │ Does it need global state?    │
+      └──────────────────────────────┘
+            ↓               ↓
+          YES              NO
+            ↓               ↓
+      ┌──────────┐    ┌──────────┐
+      │ Zustand  │    │ Local    │
+      │ Store    │    │ State    │
+      └──────────┘    └──────────┘
 ```
 
 ---
 
-## 6. FRONTEND ARCHITECTURE WITH NEXT.JS & VERCEL
+## 3. COMPREHENSIVE UI/UX DESIGN SYSTEM
 
-### 6.1 Next.js Project Structure (Optimized for Cursor)
+### 3.1 Design Token System
 
-```
-apps/web/ (Vercel deployment)
-├── app/ (App Router - Next.js 13+)
-│   ├── (auth)/
-│   │   ├── login/
-│   │   │   ├── page.tsx (login page component)
-│   │   │   ├── layout.tsx (auth layout, no sidebar)
-│   │   │   ├── components/
-│   │   │   │   ├── LoginForm.tsx
-│   │   │   │   ├── SocialOAuthButtons.tsx
-│   │   │   │   └── ForgotPasswordLink.tsx
-│   │   │   └── actions.ts (server actions for auth)
-│   │   ├── register/
-│   │   │   ├── page.tsx
-│   │   │   ├── layout.tsx
-│   │   │   └── components/
-│   │   │       ├── RegisterForm.tsx
-│   │   │       └── TermsAcceptance.tsx
-│   │   ├── verify-email/
-│   │   │   └── page.tsx
-│   │   └── reset-password/
-│   │       └── page.tsx
-│   │
-│   ├── (dashboard)/
-│   │   ├── layout.tsx (main dashboard layout with sidebar)
-│   │   ├── middleware.ts (protected route authentication)
-│   │   ├── x/
-│   │   │   ├── page.tsx (X - Multi-Account Management)
-│   │   │   ├── components/
-│   │   │   │   ├── AccountCard.tsx
-│   │   │   │   ├── PostCard.tsx
-│   │   │   │   ├── CommentsMiniModal.tsx
-│   │   │   │   ├── PostsGrid.tsx
-│   │   │   │   ├── AccountsSection.tsx
-│   │   │   │   ├── FilterBar.tsx
-│   │   │   │   └── ConnectAccountFlow.tsx
-│   │   │   ├── hooks/
-│   │   │   │   ├── useAccounts.ts
-│   │   │   │   ├── usePosts.ts
-│   │   │   │   └── useEngagementMetrics.ts
-│   │   │   └── actions.ts (server actions: fetch posts, sync)
-│   │   │
-│   │   ├── o/
-│   │   │   ├── page.tsx (O - Content Calendar)
-│   │   │   ├── components/
-│   │   │   │   ├── CalendarGrid.tsx
-│   │   │   │   ├── DayCell.tsx
-│   │   │   │   ├── DayPostsPanel.tsx
-│   │   │   │   ├── MonthNavigation.tsx
-│   │   │   │   ├── ScheduledPostCard.tsx
-│   │   │   │   ├── RescheduleModal.tsx
-│   │   │   │   └── PostPreviewThumbnails.tsx
-│   │   │   ├── hooks/
-│   │   │   │   ├── useCalendarData.ts
-│   │   │   │   └── useDragReschedule.ts
-│   │   │   └── actions.ts
-│   │   │
-│   │   ├── c/
-│   │   │   ├── page.tsx (C - AI Content Creation)
-│   │   │   ├── components/
-│   │   │   │   ├── ContentBriefInput.tsx
-│   │   │   │   ├── ConfigurationPanel.tsx
-│   │   │   │   ├── PreviewPanel.tsx
-│   │   │   │   ├── PlatformTabs.tsx
-│   │   │   │   ├── GeneratedCaption.tsx
-│   │   │   │   ├── HashtagSuggestions.tsx
-│   │   │   │   ├── RefineSection.tsx
-│   │   │   │   ├── SchedulePostModal.tsx
-│   │   │   │   └── GenerationHistory.tsx
-│   │   │   ├── hooks/
-│   │   │   │   ├── useAIGeneration.ts
-│   │   │   │   ├── useContentPreview.ts
-│   │   │   │   └── useGenerationHistory.ts
-│   │   │   └── actions.ts (call OpenAI API)
-│   │   │
-│   │   ├── a/
-│   │   │   ├── page.tsx (A - Analytics & Insights)
-│   │   │   ├── components/
-│   │   │   │   ├── KPIDashboard.tsx
-│   │   │   │   ├── MetricCard.tsx
-│   │   │   │   ├── ChartsSection.tsx
-│   │   │   │   ├── TimeSeriesChart.tsx
-│   │   │   │   ├── EngagementPieChart.tsx
-│   │   │   │   ├── TopPostsBarChart.tsx
-│   │   │   │   ├── PlatformComparisonChart.tsx
-│   │   │   │   ├── TopicsPerformanceTable.tsx
-│   │   │   │   ├── CustomReportGenerator.tsx
-│   │   │   │   ├── DateRangePicker.tsx
-│   │   │   │   └── DetailedAnalysisModal.tsx
-│   │   │   ├── hooks/
-│   │   │   │   ├── useAnalyticsData.ts
-│   │   │   │   ├── useChartData.ts
-│   │   │   │   └── useReportGeneration.ts
-│   │   │   └── actions.ts
-│   │   │
-│   │   ├── l/
-│   │   │   ├── page.tsx (L - Growth Strategy)
-│   │   │   ├── components/
-│   │   │   │   ├── WeeklyFocusCard.tsx
-│   │   │   │   ├── NextWeekPreview.tsx
-│   │   │   │   ├── ContentPipelineTimeline.tsx
-│   │   │   │   ├── StrategyOptionCard.tsx
-│   │   │   │   ├── StrategyDetailsModal.tsx
-│   │   │   │   ├── AIInsightsPanel.tsx
-│   │   │   │   ├── TrendingTopics.tsx
-│   │   │   │   └── ImplementStrategyButton.tsx
-│   │   │   ├── hooks/
-│   │   │   │   ├── useStrategyRecommendations.ts
-│   │   │   │   ├── useContentPipeline.ts
-│   │   │   │   └── useAIInsights.ts
-│   │   │   └── actions.ts
-│   │   │
-│   │   ├── i/
-│   │   │   └── page.tsx (I - Coming Soon placeholder)
-│   │   │
-│   │   └── settings/
-│   │       ├── page.tsx (User settings)
-│   │       ├── components/
-│   │       │   ├── ProfileSettings.tsx
-│   │       │   ├── SecuritySettings.tsx
-│   │       │   ├── NotificationPreferences.tsx
-│   │       │   ├── BillingInfo.tsx
-│   │       │   └── DangerZone.tsx
-│   │       └── actions.ts
-│   │
-│   ├── api/ (Route handlers)
-│   │   ├── auth/
-│   │   │   ├── register/route.ts
-│   │   │   ├── login/route.ts
-│   │   │   ├── logout/route.ts
-│   │   │   ├── refresh/route.ts
-│   │   │   └── oauth/callback/route.ts
-│   │   │
-│   │   ├── accounts/
-│   │   │   ├── route.ts (GET all, POST create)
-│   │   │   ├── [id]/route.ts (GET, PUT, DELETE)
-│   │   │   └── [id]/sync/route.ts (POST force sync)
-│   │   │
-│   │   ├── posts/
-│   │   │   ├── route.ts (GET paginated, POST create)
-│   │   │   ├── [id]/route.ts (GET, PUT, DELETE)
-│   │   │   ├── [id]/publish/route.ts (POST publish now)
-│   │   │   ├── [id]/schedule/route.ts (POST schedule)
-│   │   │   └── [id]/comments/route.ts (GET comments)
-│   │   │
-│   │   ├── ai/
-│   │   │   ├── generate/route.ts (POST AI generation)
-│   │   │   ├── refine/route.ts (POST apply suggestions)
-│   │   │   └── history/route.ts (GET generation history)
-│   │   │
-│   │   ├── analytics/
-│   │   │   ├── metrics/route.ts (GET KPI data)
-│   │   │   ├── time-series/route.ts (GET chart data)
-│   │   │   ├── posts/top/route.ts (GET top posts)
-│   │   │   └── report/generate/route.ts (POST generate report)
-│   │   │
-│   │   ├── strategy/
-│   │   │   ├── weekly/route.ts (GET recommendations)
-│   │   │   ├── pipeline/route.ts (GET content pipeline)
-│   │   │   └── options/route.ts (GET available strategies)
-│   │   │
-│   │   ├── webhooks/
-│   │   │   ├── facebook/route.ts (POST webhook handler)
-│   │   │   ├── instagram/route.ts
-│   │   │   ├── youtube/route.ts
-│   │   │   ├── linkedin/route.ts
-│   │   │   └── twitter/route.ts
-│   │   │
-│   │   └── health/
-│   │       └── route.ts (GET service health)
-│   │
-│   ├── global.css (Tailwind directives)
-│   ├── layout.tsx (root layout)
-│   └── page.tsx (landing page / redirect to /x)
-│
-├── components/
-│   ├── shared/
-│   │   ├── Sidebar.tsx (navigation, X.O.C.I.A.L menu)
-│   │   ├── Header.tsx (top bar with user menu)
-│   │   ├── TopNavigation.tsx
-│   │   ├── UserMenu.tsx
-│   │   ├── NotificationBell.tsx
-│   │   └── Breadcrumbs.tsx
-│   │
-│   ├── ui/ (shadcn-style components)
-│   │   ├── Button.tsx
-│   │   ├── Card.tsx
-│   │   ├── Modal.tsx
-│   │   ├── Input.tsx
-│   │   ├── Select.tsx
-│   │   ├── Checkbox.tsx
-│   │   ├── Badge.tsx
-│   │   ├── Spinner.tsx
-│   │   ├── Skeleton.tsx
-│   │   ├── Avatar.tsx
-│   │   ├── Tooltip.tsx
-│   │   ├── Popover.tsx
-│   │   ├── Tabs.tsx
-│   │   ├── Alert.tsx
-│   │   ├── Toast.tsx
-│   │   └── ... (all primitives)
-│   │
-│   ├── layouts/
-│   │   ├── Container.tsx
-│   │   ├── Grid.tsx
-│   │   ├── Flex.tsx
-│   │   ├── Stack.tsx
-│   │   └── TwoColumn.tsx
-│   │
-│   ├── forms/
-│   │   ├── FormField.tsx
-│   │   ├── FormSection.tsx
-│   │   ├── useForm.ts (custom hook)
-│   │   └── validation.ts
-│   │
-│   └── analytics/
-│       ├── LineChart.tsx
-│       ├── PieChart.tsx
-│       ├── BarChart.tsx
-│       └── ChartContainer.tsx
-│
-├── hooks/
-│   ├── useAuth.ts (authentication context)
-│   ├── useUser.ts (current user data)
-│   ├── useAsync.ts (API calls with loading/error)
-│   ├── useDebounce.ts (input throttling)
-│   ├── useLocalStorage.ts (client-side persistence)
-│   ├── useInfiniteScroll.ts (pagination)
-│   ├── usePermission.ts (RBAC checking)
-│   ├── useToast.ts (toast notifications)
-│   └── usePlatformAPI.ts (social media API calls)
-│
-├── lib/
-│   ├── api-client.ts (fetch wrapper with auth)
-│   ├── auth.ts (JWT token management)
-│   ├── supabase.ts (Supabase client initialization)
-│   ├── constants.ts (app-wide constants)
-│   ├── format.ts (date, number formatting utilities)
-│   ├── validators.ts (email, password validation)
-│   ├── errors.ts (custom error classes)
-│   └── permissions.ts (RBAC logic)
-│
-├── store/ (Zustand state management)
-│   ├── authStore.ts (user, token, permissions)
-│   ├── uiStore.ts (sidebar collapsed, theme, modals)
-│   ├── postsStore.ts (posts cache, filters)
-│   ├── analyticsStore.ts (cached analytics data)
-│   └── notificationStore.ts (toast messages)
-│
-├── types/
-│   ├── index.ts (all TypeScript interfaces)
-│   ├── auth.ts (AuthUser, JWT payload, etc.)
-│   ├── posts.ts (Post, ScheduledPost, etc.)
-│   ├── accounts.ts (SocialAccount, Platform types)
-│   ├── analytics.ts (AnalyticsMetric, Chart data)
-│   ├── strategy.ts (Strategy recommendation types)
-│   └── api.ts (API request/response shapes)
-│
-├── services/
-│   ├── authService.ts (login, register, logout logic)
-│   ├── postsService.ts (fetch, create, edit, delete)
-│   ├── accountsService.ts (manage social accounts)
-│   ├── aiService.ts (call OpenAI API)
-│   ├── analyticsService.ts (fetch analytics data)
-│   ├── strategyService.ts (get recommendations)
-│   └── webhookService.ts (handle incoming webhooks)
-│
-├── styles/
-│   ├── globals.css (Tailwind imports, CSS custom props)
-│   ├── colors.css (design token colors as CSS vars)
-│   ├── typography.css (font definitions)
-│   └── animations.css (custom animations)
-│
-├── utils/
-│   ├── cn.ts (classname utility)
-│   ├── logger.ts (client-side logging)
-│   └── sentry.ts (error tracking integration)
-│
-├── public/
-│   ├── images/
-│   ├── icons/
-│   └── fonts/
-│
-├── .env.local (development secrets)
-├── .env.production (production secrets)
-├── next.config.js (Next.js configuration)
-├── tsconfig.json (TypeScript configuration)
-├── tailwind.config.js (Tailwind customization)
-└── package.json
-```
-
-### 6.2 State Management with Zustand
-
-**Why Zustand Over Redux:**
-- Smaller bundle size (3KB vs 15KB for Redux)
-- Less boilerplate
-- Better TypeScript support
-- Simpler learning curve
-- Direct mutation-like API
-
-**Store Architecture:**
+**Create a centralized design token file:**
 
 ```typescript
-// store/authStore.ts
+// src/lib/design-tokens.ts
+
+export const DesignTokens = {
+  // 🎨 COLOR SYSTEM (Based on HSL for easy manipulation)
+  colors: {
+    // Primary Brand Colors
+    primary: {
+      50: 'hsl(221, 83%, 97%)',   // Lightest
+      100: 'hsl(221, 83%, 93%)',
+      200: 'hsl(221, 77%, 85%)',
+      300: 'hsl(221, 76%, 75%)',
+      400: 'hsl(221, 70%, 63%)',
+      500: 'hsl(221, 66%, 53%)',  // Base
+      600: 'hsl(221, 63%, 45%)',
+      700: 'hsl(221, 60%, 37%)',
+      800: 'hsl(221, 57%, 29%)',
+      900: 'hsl(221, 54%, 21%)',  // Darkest
+      DEFAULT: 'hsl(221, 66%, 53%)',
+    },
+    
+    // Semantic Colors
+    success: {
+      light: 'hsl(145, 63%, 95%)',
+      DEFAULT: 'hsl(145, 63%, 49%)',
+      dark: 'hsl(145, 63%, 35%)',
+    },
+    warning: {
+      light: 'hsl(38, 92%, 95%)',
+      DEFAULT: 'hsl(38, 92%, 50%)',
+      dark: 'hsl(38, 92%, 35%)',
+    },
+    error: {
+      light: 'hsl(0, 84%, 95%)',
+      DEFAULT: 'hsl(0, 84%, 60%)',
+      dark: 'hsl(0, 84%, 40%)',
+    },
+    info: {
+      light: 'hsl(199, 89%, 95%)',
+      DEFAULT: 'hsl(199, 89%, 48%)',
+      dark: 'hsl(199, 89%, 35%)',
+    },
+    
+    // Neutral Grays
+    gray: {
+      50: 'hsl(220, 13%, 98%)',
+      100: 'hsl(220, 13%, 95%)',
+      200: 'hsl(220, 13%, 91%)',
+      300: 'hsl(220, 9%, 78%)',
+      400: 'hsl(220, 9%, 65%)',
+      500: 'hsl(220, 9%, 46%)',
+      600: 'hsl(220, 13%, 36%)',
+      700: 'hsl(220, 14%, 27%)',
+      800: 'hsl(220, 15%, 20%)',
+      900: 'hsl(220, 15%, 13%)',
+    },
+    
+    // Platform-Specific Colors
+    platforms: {
+      facebook: 'hsl(221, 44%, 41%)',
+      instagram: 'hsl(329, 100%, 50%)',
+      twitter: 'hsl(203, 89%, 53%)',
+      linkedin: 'hsl(201, 100%, 35%)',
+      youtube: 'hsl(0, 100%, 50%)',
+      tiktok: 'hsl(0, 0%, 0%)',
+    },
+  },
+  
+  // 📝 TYPOGRAPHY SYSTEM
+  typography: {
+    fontFamily: {
+      sans: ['Inter', 'system-ui', 'sans-serif'],
+      mono: ['JetBrains Mono', 'Menlo', 'monospace'],
+    },
+    fontSize: {
+      // Scale: Major Third (1.250)
+      xs: ['0.75rem', { lineHeight: '1rem' }],      // 12px
+      sm: ['0.875rem', { lineHeight: '1.25rem' }],  // 14px
+      base: ['1rem', { lineHeight: '1.5rem' }],     // 16px
+      lg: ['1.125rem', { lineHeight: '1.75rem' }],  // 18px
+      xl: ['1.25rem', { lineHeight: '1.875rem' }],  // 20px
+      '2xl': ['1.5rem', { lineHeight: '2rem' }],    // 24px
+      '3xl': ['1.875rem', { lineHeight: '2.25rem' }], // 30px
+      '4xl': ['2.25rem', { lineHeight: '2.5rem' }], // 36px
+      '5xl': ['3rem', { lineHeight: '1' }],         // 48px
+    },
+    fontWeight: {
+      normal: '400',
+      medium: '500',
+      semibold: '600',
+      bold: '700',
+    },
+  },
+  
+  // 📏 SPACING SYSTEM (Based on 4px grid)
+  spacing: {
+    px: '1px',
+    0: '0',
+    1: '0.25rem',  // 4px
+    2: '0.5rem',   // 8px
+    3: '0.75rem',  // 12px
+    4: '1rem',     // 16px
+    5: '1.25rem',  // 20px
+    6: '1.5rem',   // 24px
+    8: '2rem',     // 32px
+    10: '2.5rem',  // 40px
+    12: '3rem',    // 48px
+    16: '4rem',    // 64px
+    20: '5rem',    // 80px
+    24: '6rem',    // 96px
+  },
+  
+  // 🔲 BORDER RADIUS
+  borderRadius: {
+    none: '0',
+    sm: '0.25rem',   // 4px
+    DEFAULT: '0.5rem', // 8px
+    md: '0.75rem',   // 12px
+    lg: '1rem',      // 16px
+    xl: '1.5rem',    // 24px
+    full: '9999px',
+  },
+  
+  // 🌑 SHADOWS
+  shadows: {
+    sm: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+    DEFAULT: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
+    md: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+    lg: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+    xl: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
+    inner: 'inset 0 2px 4px 0 rgb(0 0 0 / 0.05)',
+  },
+  
+  // ⏱️ ANIMATION TIMING
+  animation: {
+    duration: {
+      fast: '150ms',
+      normal: '250ms',
+      slow: '350ms',
+    },
+    easing: {
+      ease: 'cubic-bezier(0.4, 0, 0.2, 1)',
+      easeIn: 'cubic-bezier(0.4, 0, 1, 1)',
+      easeOut: 'cubic-bezier(0, 0, 0.2, 1)',
+      easeInOut: 'cubic-bezier(0.4, 0, 0.2, 1)',
+    },
+  },
+  
+  // 📱 BREAKPOINTS
+  breakpoints: {
+    sm: '640px',   // Mobile landscape
+    md: '768px',   // Tablet portrait
+    lg: '1024px',  // Tablet landscape / Desktop
+    xl: '1280px',  // Desktop
+    '2xl': '1536px', // Large desktop
+  },
+  
+  // 📐 Z-INDEX SCALE
+  zIndex: {
+    dropdown: 1000,
+    sticky: 1100,
+    modal: 1200,
+    popover: 1300,
+    tooltip: 1400,
+    notification: 1500,
+  },
+} as const;
+```
+
+### 3.2 Component Architecture Blueprint
+
+**Component File Structure:**
+
+```
+src/components/
+├── ui/                    # Atomic components (atoms)
+│   ├── button.tsx
+│   ├── input.tsx
+│   ├── card.tsx
+│   ├── badge.tsx
+│   ├── avatar.tsx
+│   ├── skeleton.tsx
+│   └── ...
+├── shared/                # Composed components (molecules)
+│   ├── header.tsx
+│   ├── sidebar.tsx
+│   ├── page-header.tsx
+│   ├── data-table.tsx
+│   └── ...
+├── features/             # Feature-specific organisms
+│   ├── posts/
+│   │   ├── post-card.tsx
+│   │   ├── post-composer.tsx
+│   │   └── post-list.tsx
+│   ├── analytics/
+│   │   ├── metric-card.tsx
+│   │   ├── engagement-chart.tsx
+│   │   └── top-posts-table.tsx
+│   └── ...
+└── layouts/              # Page templates
+    ├── dashboard-layout.tsx
+    ├── auth-layout.tsx
+    └── marketing-layout.tsx
+```
+
+### 3.3 UI Component Specifications
+
+**Button Component Specifications:**
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                    BUTTON COMPONENT SPEC                        │
+└────────────────────────────────────────────────────────────────┘
+
+VARIANTS:
+┌─────────────┬───────────────┬─────────────────────────────────┐
+│ Variant     │ Use Case      │ Visual Style                    │
+├─────────────┼───────────────┼─────────────────────────────────┤
+│ primary     │ Main actions  │ Solid bg, white text            │
+│ secondary   │ Alt actions   │ Outline, colored border         │
+│ ghost       │ Subtle        │ Transparent, hover bg           │
+│ destructive │ Delete/Remove │ Red bg, white text              │
+│ link        │ Navigation    │ Underline on hover              │
+└─────────────┴───────────────┴─────────────────────────────────┘
+
+SIZES:
+┌──────┬──────────┬──────────┬─────────┬────────────┐
+│ Size │ Height   │ Padding  │ Font    │ Icon Size  │
+├──────┼──────────┼──────────┼─────────┼────────────┤
+│ sm   │ 32px     │ 12px     │ 14px    │ 16px       │
+│ md   │ 40px     │ 16px     │ 16px    │ 20px       │
+│ lg   │ 48px     │ 20px     │ 18px    │ 24px       │
+└──────┴──────────┴──────────┴─────────┴────────────┘
+
+STATES:
+┌──────────┬────────────────────────────────────────────────┐
+│ State    │ Visual Changes                                 │
+├──────────┼────────────────────────────────────────────────┤
+│ default  │ Base styling                                   │
+│ hover    │ Brightness +10%, scale 1.02                    │
+│ active   │ Brightness -10%, scale 0.98                    │
+│ focus    │ Ring: 2px offset, primary color                │
+│ disabled │ Opacity 50%, cursor not-allowed                │
+│ loading  │ Spinner icon, opacity 80%, pointer-events none │
+└──────────┴────────────────────────────────────────────────┘
+
+ACCESSIBILITY:
+✓ aria-label for icon-only buttons
+✓ aria-busy="true" when loading
+✓ aria-disabled="true" when disabled
+✓ Keyboard navigation (Tab, Enter, Space)
+✓ Focus visible indicator
+✓ Minimum touch target: 44x44px
+```
+
+### 3.4 Layout Grid System
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                    RESPONSIVE GRID SYSTEM                       │
+└────────────────────────────────────────────────────────────────┘
+
+12-COLUMN GRID:
+┌──────────────────────────────────────────────────────────────┐
+│ 1  │ 2  │ 3  │ 4  │ 5  │ 6  │ 7  │ 8  │ 9  │ 10 │ 11 │ 12  │
+└──────────────────────────────────────────────────────────────┘
+
+BREAKPOINT BEHAVIOR:
+┌────────┬──────────┬────────┬────────┬────────────────────┐
+│ Screen │ Container│ Gutter │ Margin │ Columns            │
+├────────┼──────────┼────────┼────────┼────────────────────┤
+│ Mobile │ 100%     │ 16px   │ 16px   │ 4 (span-3 each)    │
+│ Tablet │ 768px    │ 24px   │ 24px   │ 8 (span-6 or 4)    │
+│ Desktop│ 1280px   │ 32px   │ auto   │ 12 (flexible)      │
+└────────┴──────────┴────────┴────────┴────────────────────┘
+
+COMMON LAYOUT PATTERNS:
+┌──────────────────────────────────────────────────────────────┐
+│ DASHBOARD LAYOUT (Desktop)                                   │
+│ ┌──────┬──────────────────────────────────────────────────┐ │
+│ │Sidebar│              Main Content Area                  │ │
+│ │ 2col │                   10 columns                     │ │
+│ │      │                                                  │ │
+│ │Nav   │  ┌───────────────────────────────────────────┐  │ │
+│ │Items │  │         Page Header                       │  │ │
+│ │      │  └───────────────────────────────────────────┘  │ │
+│ │      │  ┌──────────┬──────────┬──────────┬─────────┐  │ │
+│ │      │  │  Card    │  Card    │  Card    │  Card   │  │ │
+│ │      │  │  3col    │  3col    │  3col    │  3col   │  │ │
+│ │      │  └──────────┴──────────┴──────────┴─────────┘  │ │
+│ │      │  ┌──────────────────┬────────────────────────┐  │ │
+│ │      │  │   Main Section   │    Sidebar Section    │  │ │
+│ │      │  │      8 col       │        4 col          │  │ │
+│ │      │  └──────────────────┴────────────────────────┘  │ │
+│ └──────┴──────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 3.5 Page-Specific Layout Trees
+
+**X PAGE (Multi-Account Management):**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  PAGE: /x (Multi-Account Management)                            │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+      ┌───────────────────────┴──────────────────────────┐
+      │                                                   │
+┌─────────────┐                                  ┌───────────────┐
+│ PageHeader  │                                  │ AccountsGrid  │
+│ - Title     │                                  │ (Organism)    │
+│ - Actions   │                                  └───────────────┘
+└─────────────┘                                          │
+      │                                         ┌────────┴────────┐
+      │                                         │                 │
+┌─────────────────┐                    ┌───────────────┐ ┌───────────────┐
+│ ConnectButton   │                    │ AccountCard   │ │ AccountCard   │
+│ (Molecule)      │                    │ (Molecule)    │ │ (Molecule)    │
+│ - Icon          │                    └───────────────┘ └───────────────┘
+│ - Label         │                            │
+│ - onClick       │                    ┌───────┴────────┐
+└─────────────────┘                    │                │
+                              ┌────────────────┐ ┌─────────────┐
+                              │ Avatar (Atom)  │ │ Badge (Atom)│
+                              │ Name           │ │ Status      │
+                              │ Platform Icon  │ │ Metrics     │
+                              │ Metrics        │ └─────────────┘
+                              └────────────────┘
+                                      │
+                      ┌───────────────┴────────────────┐
+                      │                                │
+              ┌───────────────┐              ┌─────────────────┐
+              │ RecentPosts   │              │ AccountActions  │
+              │ (Organism)    │              │ (Molecule)      │
+              └───────────────┘              └─────────────────┘
+                      │                                │
+          ┌───────────┴────────┐          ┌───────────┴────────┐
+          │                    │          │                    │
+  ┌───────────────┐   ┌───────────────┐ ┌────────┐   ┌────────┐
+  │ PostCard      │   │ PostCard      │ │ Sync   │   │ Delete │
+  │ (Molecule)    │   │ (Molecule)    │ │ Button │   │ Button │
+  └───────────────┘   └───────────────┘ └────────┘   └────────┘
+
+INTERACTION FLOW:
+1. User lands on page → Server Component fetches accounts
+2. AccountsGrid renders with SSR data
+3. Click "Connect Account" → OAuth modal (Client Component)
+4. Select platform → Redirect to OAuth → Callback → Refresh data
+5. Click account card → Expand to show recent posts
+6. Click "Sync" → Optimistic UI update → API call → Refresh
+7. Hover post card → Show quick actions (like, comment, share)
+```
+
+**O PAGE (Content Calendar):**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  PAGE: /o (Organize - Content Calendar)                         │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+      ┌───────────────────────┴──────────────────────────┐
+      │                                                   │
+┌─────────────┐                                  ┌───────────────┐
+│ CalendarNav │                                  │ CalendarGrid  │
+│ (Molecule)  │                                  │ (Organism)    │
+└─────────────┘                                  └───────────────┘
+      │                                                  │
+┌─────┴──────┐                           ┌──────────────┴────────┐
+│            │                           │                       │
+│ ← → Today  │                  ┌────────────────┐      ┌────────────────┐
+│ Month/Year │                  │ DayCell (Mon)  │      │ DayCell (Tue)  │
+└────────────┘                  │ (Molecule)     │      │ (Molecule)     │
+                                └────────────────┘      └────────────────┘
+                                        │
+                        ┌───────────────┴────────────────┐
+                        │                                │
+                ┌───────────────┐              ┌─────────────────┐
+                │ Date Badge    │              │ Post Indicators │
+                │ (Atom)        │              │ (Molecule)      │
+                └───────────────┘              └─────────────────┘
+                                                        │
+                                        ┌───────────────┴────────┐
+                                        │                        │
+                                ┌───────────────┐        ┌───────────────┐
+                                │ FB Dot        │        │ IG Dot        │
+                                │ (2 posts)     │        │ (1 post)      │
+                                └───────────────┘        └───────────────┘
+
+INTERACTION FLOW:
+1. Load calendar → Server fetches posts for month
+2. Render grid with post indicators
+3. Click day → Slide-in panel (DayPostsPanel)
+4. Panel shows: List of scheduled posts for that day
+5. Click post → Edit modal opens
+6. Drag post → Highlight valid drop zones
+7. Drop on new day → Optimistic update → API call
+8. Platform checkbox toggle → Update post platforms
+9. Delete post → Confirmation → Optimistic removal → API call
+
+STATE MANAGEMENT:
+- calendarStore (Zustand):
+  - selectedMonth: Date
+  - selectedDay: Date | null
+  - posts: Post[]
+  - isLoading: boolean
+  - filters: { platforms: string[], status: string[] }
+```
+
+**C PAGE (AI Content Creation):**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  PAGE: /c (Create - AI Content Generation)                      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+      ┌───────────────────────┴──────────────────────────┐
+      │                                                   │
+┌─────────────┐                                  ┌───────────────┐
+│ AIPrompt    │                                  │ PreviewPanel  │
+│ Section     │                                  │ (Organism)    │
+│ (Organism)  │                                  └───────────────┘
+└─────────────┘                                          │
+      │                                    ┌─────────────┴──────────┐
+      │                                    │                        │
+┌─────┴──────┐                    ┌───────────────┐      ┌────────────────┐
+│ Textarea   │                    │ Platform Tabs │      │ Post Preview   │
+│ (Prompt)   │                    │ FB│IG│TW│LI  │      │ (Platform UI)  │
+│            │                    └───────────────┘      └────────────────┘
+│ "Write... "│                            │
+└────────────┘                    ┌───────┴────────┐
+      │                           │                │
+┌─────┴──────┐              ┌─────────┐      ┌─────────┐
+│ AI Options │              │ Content │      │ Hashtags│
+│ Dropdown   │              │ Text    │      │ List    │
+│ - Tone     │              │ Editor  │      │ #growth │
+│ - Length   │              │ (Edit)  │      │ #social │
+│ - Style    │              └─────────┘      └─────────┘
+└────────────┘
+      │
+┌─────┴──────┐
+│ Generate   │
+│ Button     │
+└────────────┘
+
+AI GENERATION FLOW:
+1. User types prompt: "Write a post about launching new product"
+2. Select tone: "Professional", length: "Medium", style: "Informative"
+3. Click "Generate" → Loading state
+4. API: POST /api/ai/generate
+   - Body: { prompt, tone, length, style, platforms: ['facebook', 'instagram'] }
+5. OpenAI generates content (streaming response)
+6. Display generated text in editor (character by character animation)
+7. Generate hashtags → API: POST /api/ai/hashtags
+8. Display platform-specific previews
+9. User can:
+   - Edit text directly
+   - Regenerate
+   - Save as template
+   - Schedule post
+   - Publish immediately
+
+COMPONENT STATE:
+- prompt: string
+- generatedContent: Record<Platform, string>
+- hashtags: string[]
+- isGenerating: boolean
+- selectedPlatforms: Platform[]
+- aiOptions: { tone, length, style }
+```
+
+---
+
+## 4. DATABASE ARCHITECTURE & SECURITY
+
+### 4.1 Complete Database Schema
+
+```sql
+-- ═══════════════════════════════════════════════════════════════
+-- XOCIAL DATABASE SCHEMA
+-- PostgreSQL 15+ with Supabase Extensions
+-- ═══════════════════════════════════════════════════════════════
+
+-- ENABLE EXTENSIONS
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";  -- For fuzzy search
+
+-- ───────────────────────────────────────────────────────────────
+-- TABLE 1: users (managed by Supabase Auth)
+-- ───────────────────────────────────────────────────────────────
+-- Note: This table is in auth.users schema
+-- We reference it but don't create it
+
+-- ───────────────────────────────────────────────────────────────
+-- TABLE 2: profiles (extends auth.users)
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT UNIQUE NOT NULL,
+  full_name TEXT,
+  avatar_url TEXT,
+  timezone TEXT DEFAULT 'UTC',
+  preferences JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for performance
+CREATE INDEX idx_profiles_email ON profiles(email);
+CREATE INDEX idx_profiles_created_at ON profiles(created_at DESC);
+
+-- ───────────────────────────────────────────────────────────────
+-- TABLE 3: workspaces (multi-tenancy)
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.workspaces (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  slug TEXT UNIQUE NOT NULL,
+  owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  settings JSONB DEFAULT '{}'::jsonb,
+  plan TEXT DEFAULT 'free' CHECK (plan IN ('free', 'pro', 'enterprise')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_workspaces_owner ON workspaces(owner_id);
+CREATE INDEX idx_workspaces_slug ON workspaces(slug);
+
+-- ───────────────────────────────────────────────────────────────
+-- TABLE 4: workspace_members (team collaboration)
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.workspace_members (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  role TEXT DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'editor', 'viewer')),
+  permissions JSONB DEFAULT '[]'::jsonb,
+  invited_by UUID REFERENCES auth.users(id),
+  joined_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(workspace_id, user_id)
+);
+
+CREATE INDEX idx_workspace_members_workspace ON workspace_members(workspace_id);
+CREATE INDEX idx_workspace_members_user ON workspace_members(user_id);
+
+-- ───────────────────────────────────────────────────────────────
+-- TABLE 5: social_accounts (connected platforms)
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.social_accounts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL CHECK (platform IN ('facebook', 'instagram', 'twitter', 'linkedin', 'youtube', 'tiktok')),
+  platform_user_id TEXT NOT NULL,
+  platform_username TEXT,
+  platform_display_name TEXT,
+  avatar_url TEXT,
+  access_token TEXT NOT NULL,  -- Encrypted at application level
+  refresh_token TEXT,           -- Encrypted at application level
+  token_expires_at TIMESTAMPTZ,
+  scopes TEXT[],
+  is_active BOOLEAN DEFAULT true,
+  last_synced_at TIMESTAMPTZ,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(workspace_id, platform, platform_user_id)
+);
+
+CREATE INDEX idx_social_accounts_workspace ON social_accounts(workspace_id);
+CREATE INDEX idx_social_accounts_platform ON social_accounts(platform);
+CREATE INDEX idx_social_accounts_user ON social_accounts(user_id);
+CREATE INDEX idx_social_accounts_active ON social_accounts(is_active) WHERE is_active = true;
+
+-- ───────────────────────────────────────────────────────────────
+-- TABLE 6: posts (content management)
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.posts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+  created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  
+  -- Content
+  content TEXT NOT NULL,
+  platforms TEXT[] NOT NULL,  -- ['facebook', 'instagram', ...]
+  media_urls TEXT[],
+  media_ids UUID[],
+  
+  -- Scheduling
+  status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'scheduled', 'publishing', 'published', 'failed')),
+  scheduled_at TIMESTAMPTZ,
+  published_at TIMESTAMPTZ,
+  
+  -- AI metadata
+  ai_generated BOOLEAN DEFAULT false,
+  ai_prompt TEXT,
+  ai_metadata JSONB,
+  
+  -- Platform-specific content
+  platform_content JSONB DEFAULT '{}'::jsonb,  -- { facebook: {...}, instagram: {...} }
+  
+  -- Publishing results
+  external_ids JSONB DEFAULT '{}'::jsonb,  -- { facebook: "123_456", instagram: "789" }
+  error_message TEXT,
+  
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_posts_workspace ON posts(workspace_id);
+CREATE INDEX idx_posts_status ON posts(status);
+CREATE INDEX idx_posts_scheduled ON posts(scheduled_at) WHERE status = 'scheduled';
+CREATE INDEX idx_posts_published ON posts(published_at DESC) WHERE status = 'published';
+CREATE INDEX idx_posts_created_by ON posts(created_by);
+
+-- Full-text search index
+CREATE INDEX idx_posts_content_search ON posts USING gin(to_tsvector('english', content));
+
+-- ───────────────────────────────────────────────────────────────
+-- TABLE 7: post_analytics (engagement metrics)
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.post_analytics (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  external_post_id TEXT NOT NULL,
+  
+  -- Engagement metrics
+  likes INTEGER DEFAULT 0,
+  comments INTEGER DEFAULT 0,
+  shares INTEGER DEFAULT 0,
+  saves INTEGER DEFAULT 0,
+  views INTEGER DEFAULT 0,
+  clicks INTEGER DEFAULT 0,
+  reach INTEGER DEFAULT 0,
+  impressions INTEGER DEFAULT 0,
+  
+  -- Calculated metrics
+  engagement_rate DECIMAL(5,2),  -- Percentage
+  
+  -- Time series data
+  metrics_history JSONB DEFAULT '[]'::jsonb,  -- [{timestamp, likes, comments, ...}, ...]
+  
+  last_synced_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  
+  UNIQUE(post_id, platform)
+);
+
+CREATE INDEX idx_post_analytics_post ON post_analytics(post_id);
+CREATE INDEX idx_post_analytics_platform ON post_analytics(platform);
+CREATE INDEX idx_post_analytics_engagement ON post_analytics(engagement_rate DESC NULLS LAST);
+
+-- ───────────────────────────────────────────────────────────────
+-- TABLE 8: media (uploaded files)
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.media (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+  uploaded_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  
+  file_name TEXT NOT NULL,
+  file_size INTEGER NOT NULL,
+  mime_type TEXT NOT NULL,
+  storage_path TEXT NOT NULL,  -- Path in Supabase Storage
+  url TEXT NOT NULL,
+  
+  -- Media metadata
+  width INTEGER,
+  height INTEGER,
+  duration INTEGER,  -- For videos
+  thumbnail_url TEXT,
+  
+  -- AI analysis
+  ai_labels TEXT[],
+  ai_description TEXT,
+  
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_media_workspace ON media(workspace_id);
+CREATE INDEX idx_media_uploaded_by ON media(uploaded_by);
+CREATE INDEX idx_media_mime_type ON media(mime_type);
+
+-- ───────────────────────────────────────────────────────────────
+-- TABLE 9: content_templates (reusable content)
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.content_templates (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+  created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  
+  name TEXT NOT NULL,
+  description TEXT,
+  category TEXT,  -- 'promotion', 'engagement', 'announcement', etc.
+  
+  content TEXT NOT NULL,
+  platforms TEXT[],
+  media_urls TEXT[],
+  hashtags TEXT[],
+  
+  -- Template metadata
+  variables TEXT[],  -- Placeholders like {{product_name}}
+  use_count INTEGER DEFAULT 0,
+  
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_templates_workspace ON content_templates(workspace_id);
+CREATE INDEX idx_templates_category ON content_templates(category);
+
+-- ───────────────────────────────────────────────────────────────
+-- TABLE 10: ai_generations (AI usage tracking)
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.ai_generations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  
+  type TEXT NOT NULL CHECK (type IN ('content', 'hashtags', 'strategy', 'refine', 'analyze')),
+  prompt TEXT NOT NULL,
+  result TEXT NOT NULL,
+  
+  -- API usage
+  model TEXT,  -- 'gpt-4', 'gpt-3.5-turbo', etc.
+  tokens_used INTEGER,
+  cost DECIMAL(10,4),
+  
+  -- Metadata
+  parameters JSONB,
+  feedback INTEGER CHECK (feedback BETWEEN 1 AND 5),  -- User rating
+  
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_ai_generations_workspace ON ai_generations(workspace_id);
+CREATE INDEX idx_ai_generations_type ON ai_generations(type);
+CREATE INDEX idx_ai_generations_created ON ai_generations(created_at DESC);
+
+-- ───────────────────────────────────────────────────────────────
+-- TABLE 11: webhook_events (real-time updates)
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.webhook_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  platform TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  external_id TEXT,
+  payload JSONB NOT NULL,
+  processed BOOLEAN DEFAULT false,
+  processed_at TIMESTAMPTZ,
+  error TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_webhook_events_platform ON webhook_events(platform);
+CREATE INDEX idx_webhook_events_processed ON webhook_events(processed) WHERE processed = false;
+CREATE INDEX idx_webhook_events_created ON webhook_events(created_at DESC);
+
+-- Auto-archive old webhook events (retention: 30 days)
+CREATE INDEX idx_webhook_events_cleanup ON webhook_events(created_at) WHERE created_at < NOW() - INTERVAL '30 days';
+```
+
+### 4.2 Row Level Security (RLS) Policies
+
+```sql
+-- ═══════════════════════════════════════════════════════════════
+-- ROW LEVEL SECURITY (RLS) POLICIES
+-- ═══════════════════════════════════════════════════════════════
+
+-- Enable RLS on all tables
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE social_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE post_analytics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE media ENABLE ROW LEVEL SECURITY;
+ALTER TABLE content_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_generations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE webhook_events ENABLE ROW LEVEL SECURITY;
+
+-- ───────────────────────────────────────────────────────────────
+-- HELPER FUNCTION: Get user's workspaces
+-- ───────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION user_workspaces(user_uuid UUID)
+RETURNS SETOF UUID AS $$
+  SELECT workspace_id 
+  FROM workspace_members 
+  WHERE user_id = user_uuid;
+$$ LANGUAGE SQL STABLE;
+
+-- ───────────────────────────────────────────────────────────────
+-- HELPER FUNCTION: Check workspace permission
+-- ───────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION has_workspace_permission(
+  workspace_uuid UUID,
+  user_uuid UUID,
+  required_role TEXT DEFAULT 'viewer'
+)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM workspace_members
+    WHERE workspace_id = workspace_uuid
+      AND user_id = user_uuid
+      AND CASE required_role
+          WHEN 'owner' THEN role = 'owner'
+          WHEN 'admin' THEN role IN ('owner', 'admin')
+          WHEN 'editor' THEN role IN ('owner', 'admin', 'editor')
+          WHEN 'viewer' THEN role IN ('owner', 'admin', 'editor', 'viewer')
+          ELSE false
+        END
+  );
+$$ LANGUAGE SQL STABLE SECURITY DEFINER;
+
+-- ───────────────────────────────────────────────────────────────
+-- RLS POLICIES: profiles
+-- ───────────────────────────────────────────────────────────────
+CREATE POLICY "Users can view own profile"
+  ON profiles FOR SELECT
+  USING (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile"
+  ON profiles FOR UPDATE
+  USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert own profile"
+  ON profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
+-- ───────────────────────────────────────────────────────────────
+-- RLS POLICIES: workspaces
+-- ───────────────────────────────────────────────────────────────
+CREATE POLICY "Users can view their workspaces"
+  ON workspaces FOR SELECT
+  USING (
+    id IN (SELECT user_workspaces(auth.uid()))
+    OR owner_id = auth.uid()
+  );
+
+CREATE POLICY "Users can create workspaces"
+  ON workspaces FOR INSERT
+  WITH CHECK (auth.uid() = owner_id);
+
+CREATE POLICY "Owners can update workspaces"
+  ON workspaces FOR UPDATE
+  USING (has_workspace_permission(id, auth.uid(), 'owner'));
+
+CREATE POLICY "Owners can delete workspaces"
+  ON workspaces FOR DELETE
+  USING (owner_id = auth.uid());
+
+-- ───────────────────────────────────────────────────────────────
+-- RLS POLICIES: workspace_members
+-- ───────────────────────────────────────────────────────────────
+CREATE POLICY "Users can view workspace members"
+  ON workspace_members FOR SELECT
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'viewer'));
+
+CREATE POLICY "Admins can invite members"
+  ON workspace_members FOR INSERT
+  WITH CHECK (has_workspace_permission(workspace_id, auth.uid(), 'admin'));
+
+CREATE POLICY "Admins can update members"
+  ON workspace_members FOR UPDATE
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'admin'));
+
+CREATE POLICY "Admins can remove members"
+  ON workspace_members FOR DELETE
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'admin'));
+
+-- ───────────────────────────────────────────────────────────────
+-- RLS POLICIES: social_accounts
+-- ───────────────────────────────────────────────────────────────
+CREATE POLICY "Users can view workspace social accounts"
+  ON social_accounts FOR SELECT
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'viewer'));
+
+CREATE POLICY "Editors can connect accounts"
+  ON social_accounts FOR INSERT
+  WITH CHECK (has_workspace_permission(workspace_id, auth.uid(), 'editor'));
+
+CREATE POLICY "Editors can update accounts"
+  ON social_accounts FOR UPDATE
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'editor'));
+
+CREATE POLICY "Editors can delete accounts"
+  ON social_accounts FOR DELETE
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'editor'));
+
+-- ───────────────────────────────────────────────────────────────
+-- RLS POLICIES: posts
+-- ───────────────────────────────────────────────────────────────
+CREATE POLICY "Users can view workspace posts"
+  ON posts FOR SELECT
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'viewer'));
+
+CREATE POLICY "Editors can create posts"
+  ON posts FOR INSERT
+  WITH CHECK (has_workspace_permission(workspace_id, auth.uid(), 'editor'));
+
+CREATE POLICY "Editors can update posts"
+  ON posts FOR UPDATE
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'editor'));
+
+CREATE POLICY "Editors can delete posts"
+  ON posts FOR DELETE
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'editor'));
+
+-- ───────────────────────────────────────────────────────────────
+-- RLS POLICIES: post_analytics
+-- ───────────────────────────────────────────────────────────────
+CREATE POLICY "Users can view analytics for workspace posts"
+  ON post_analytics FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM posts
+      WHERE posts.id = post_analytics.post_id
+        AND has_workspace_permission(posts.workspace_id, auth.uid(), 'viewer')
+    )
+  );
+
+-- System can insert/update analytics (service role only)
+-- No public policies for INSERT/UPDATE
+
+-- ───────────────────────────────────────────────────────────────
+-- RLS POLICIES: media
+-- ───────────────────────────────────────────────────────────────
+CREATE POLICY "Users can view workspace media"
+  ON media FOR SELECT
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'viewer'));
+
+CREATE POLICY "Editors can upload media"
+  ON media FOR INSERT
+  WITH CHECK (has_workspace_permission(workspace_id, auth.uid(), 'editor'));
+
+CREATE POLICY "Editors can delete media"
+  ON media FOR DELETE
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'editor'));
+
+-- ───────────────────────────────────────────────────────────────
+-- RLS POLICIES: content_templates
+-- ───────────────────────────────────────────────────────────────
+CREATE POLICY "Users can view workspace templates"
+  ON content_templates FOR SELECT
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'viewer'));
+
+CREATE POLICY "Editors can create templates"
+  ON content_templates FOR INSERT
+  WITH CHECK (has_workspace_permission(workspace_id, auth.uid(), 'editor'));
+
+CREATE POLICY "Editors can update templates"
+  ON content_templates FOR UPDATE
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'editor'));
+
+CREATE POLICY "Editors can delete templates"
+  ON content_templates FOR DELETE
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'editor'));
+
+-- ───────────────────────────────────────────────────────────────
+-- RLS POLICIES: ai_generations
+-- ───────────────────────────────────────────────────────────────
+CREATE POLICY "Users can view workspace AI generations"
+  ON ai_generations FOR SELECT
+  USING (has_workspace_permission(workspace_id, auth.uid(), 'viewer'));
+
+CREATE POLICY "Users can create AI generations"
+  ON ai_generations FOR INSERT
+  WITH CHECK (has_workspace_permission(workspace_id, auth.uid(), 'editor'));
+
+-- ───────────────────────────────────────────────────────────────
+-- RLS POLICIES: webhook_events
+-- ───────────────────────────────────────────────────────────────
+-- Webhook events are system-managed (service role only)
+-- No public policies
+```
+
+### 4.3 Database Optimization Strategies
+
+**Performance Indexing Strategy:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               DATABASE OPTIMIZATION STRATEGIES                   │
+└─────────────────────────────────────────────────────────────────┘
+
+1. B-TREE INDEXES (Default - For exact matches & ranges)
+   ┌──────────────────┬────────────────────────────────────────┐
+   │ Table            │ Indexed Columns                        │
+   ├──────────────────┼────────────────────────────────────────┤
+   │ posts            │ workspace_id, status, scheduled_at     │
+   │ social_accounts  │ workspace_id, platform, is_active      │
+   │ post_analytics   │ post_id, platform, engagement_rate     │
+   │ media            │ workspace_id, uploaded_by              │
+   └──────────────────┴────────────────────────────────────────┘
+
+2. GIN INDEXES (For JSONB & arrays)
+   - posts.platform_content (JSONB operations)
+   - posts.content (full-text search with tsvector)
+   - media.ai_labels (array containment)
+
+3. PARTIAL INDEXES (Filtered for specific conditions)
+   - posts WHERE status = 'scheduled' (upcoming posts)
+   - social_accounts WHERE is_active = true (active only)
+   - webhook_events WHERE processed = false (unprocessed)
+
+4. COMPOSITE INDEXES (Multi-column queries)
+   - workspace_members(workspace_id, user_id)
+   - social_accounts(workspace_id, platform, platform_user_id)
+   - post_analytics(post_id, platform)
+
+5. QUERY OPTIMIZATION RULES:
+   ✓ Always include workspace_id in WHERE clause (partition key)
+   ✓ Use LIMIT for paginated queries
+   ✓ Avoid SELECT * (specify columns)
+   ✓ Use .select() with specific columns in Supabase queries
+   ✓ Implement cursor-based pagination for large datasets
+
+6. CACHING STRATEGY:
+   - Level 1: React Query (client-side, 5min stale)
+   - Level 2: Vercel Edge Cache (API responses, 1min stale)
+   - Level 3: Redis (session data, tokens, 15min TTL)
+   - Level 4: PostgreSQL (query result cache)
+
+7. CONNECTION POOLING:
+   - Use Supabase connection pooler (pgBouncer)
+   - Transaction mode for short-lived connections
+   - Session mode for long-lived connections
+   - Max connections: 100 (adjust based on plan)
+```
+
+### 4.4 Data Backup & Recovery Strategy
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  BACKUP & RECOVERY STRATEGY                      │
+└─────────────────────────────────────────────────────────────────┘
+
+AUTOMATED BACKUPS (Supabase Pro):
+┌──────────────┬────────────────┬─────────────────────────────┐
+│ Frequency    │ Retention      │ What's Backed Up            │
+├──────────────┼────────────────┼─────────────────────────────┤
+│ Daily        │ 7 days         │ Full database snapshot      │
+│ Weekly       │ 4 weeks        │ Full database + media       │
+│ Monthly      │ 3 months       │ Archive snapshot            │
+│ Real-time    │ 7 days WAL     │ Point-in-time recovery      │
+└──────────────┴────────────────┴─────────────────────────────┘
+
+RECOVERY PROCEDURES:
+1. Point-in-Time Recovery (PITR):
+   - Restore to any point within last 7 days
+   - Use Supabase Dashboard → Database → Backups
+   - RTO: < 1 hour, RPO: < 1 minute
+
+2. Table-Level Recovery:
+   - Export specific tables using pg_dump
+   - Restore to staging environment
+   - Validate data integrity
+   - Import to production
+
+3. Disaster Recovery:
+   - Maintain 3-2-1 backup rule:
+     - 3 copies of data
+     - 2 different storage types
+     - 1 off-site backup
+   - Test recovery quarterly
+   - Document recovery procedures
+
+MONITORING:
+- Set up alerts for:
+  ✓ Failed backup jobs
+  ✓ Database size approaching limits
+  ✓ Connection pool exhaustion
+  ✓ Slow query performance (> 1s)
+  ✓ RLS policy violations
+```
+
+---
+
+## 5. BACKEND ARCHITECTURE & API DESIGN
+
+### 5.1 API Architecture Pattern
+
+**RESTful API Structure:**
+
+```
+/api/
+├── auth/
+│   ├── login/           POST   - Authenticate user
+│   ├── register/        POST   - Create new account
+│   └── refresh/         POST   - Refresh access token
+│
+├── accounts/            GET    - List social accounts
+│                        POST   - Connect new account
+│   └── [id]/
+│       ├── route.ts     GET    - Get account details
+│       │                PATCH  - Update account
+│       │                DELETE - Disconnect account
+│       └── sync/        POST   - Trigger sync
+│
+├── posts/               GET    - List posts (paginated)
+│                        POST   - Create new post
+│   ├── [id]/
+│   │   └── route.ts     GET    - Get post details
+│   │                    PATCH  - Update post
+│   │                    DELETE - Delete post
+│   ├── bulk/            POST   - Bulk operations
+│   └── publish/         POST   - Publish immediately
+│
+├── analytics/
+│   ├── overview/        GET    - Dashboard metrics
+│   ├── engagement/      GET    - Engagement data
+│   ├── platform-stats/  GET    - Per-platform stats
+│   ├── top-posts/       GET    - Best performing posts
+│   └── export/          GET    - Export CSV/PDF
+│
+├── ai/
+│   ├── generate/        POST   - Generate content
+│   ├── refine/          POST   - Improve existing content
+│   ├── hashtags/        POST   - Generate hashtags
+│   ├── analyze/         POST   - Analyze content performance
+│   └── variations/      POST   - Create content variations
+│
+├── strategy/
+│   ├── weekly/          GET    - Weekly recommendations
+│   ├── best-times/      GET    - Optimal posting times
+│   ├── content-ideas/   GET    - AI content suggestions
+│   └── insights/        GET    - Performance insights
+│
+├── templates/           GET    - List templates
+│                        POST   - Create template
+│   └── [id]/
+│       └── route.ts     GET    - Get template
+│                        PATCH  - Update template
+│                        DELETE - Delete template
+│
+├── media/               GET    - List media files
+│   ├── upload/          POST   - Upload new media
+│   └── [id]/            GET    - Get media details
+│                        DELETE - Delete media
+│
+├── oauth/
+│   ├── connect/         GET    - Initiate OAuth flow
+│   ├── facebook/        GET    - Facebook callback
+│   ├── instagram/       GET    - Instagram callback
+│   ├── twitter/         GET    - Twitter callback
+│   ├── linkedin/        GET    - LinkedIn callback
+│   ├── youtube/         GET    - YouTube callback
+│   └── tiktok/          GET    - TikTok callback
+│
+├── webhooks/
+│   ├── facebook/        POST   - Facebook webhook
+│   ├── instagram/       POST   - Instagram webhook
+│   └── twitter/         POST   - Twitter webhook
+│
+└── cron/
+    ├── publish/         GET    - Auto-publish scheduled posts
+    └── sync-metrics/    GET    - Sync engagement metrics
+```
+
+### 5.2 API Implementation Template
+
+**Standard API Route Handler Pattern:**
+
+```typescript
+// src/app/api/posts/route.ts
+
+import { NextRequest, NextResponse } from 'next/server';
+import { createRouteHandlerClient } from '@/lib/supabase/server';
+import { z } from 'zod';
+
+// ═══════════════════════════════════════════════════════════════
+// VALIDATION SCHEMAS
+// ═══════════════════════════════════════════════════════════════
+const createPostSchema = z.object({
+  workspaceId: z.string().uuid(),
+  content: z.string().min(1).max(5000),
+  platforms: z.array(z.enum(['facebook', 'instagram', 'twitter', 'linkedin', 'youtube', 'tiktok'])).min(1),
+  mediaIds: z.array(z.string().uuid()).optional(),
+  scheduledAt: z.string().datetime().optional(),
+  platformContent: z.record(z.any()).optional(),
+});
+
+const querySchema = z.object({
+  workspaceId: z.string().uuid(),
+  status: z.enum(['draft', 'scheduled', 'published', 'failed']).optional(),
+  platform: z.string().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+});
+
+// ═══════════════════════════════════════════════════════════════
+// GET /api/posts - List posts with pagination
+// ═══════════════════════════════════════════════════════════════
+export async function GET(request: NextRequest) {
+  try {
+    // 1. Initialize Supabase client with auth context
+    const supabase = createRouteHandlerClient();
+    
+    // 2. Verify authentication
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
+    if (authError || !session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    
+    // 3. Parse and validate query parameters
+    const searchParams = Object.fromEntries(request.nextUrl.searchParams);
+    const validation = querySchema.safeParse(searchParams);
+    
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: 'Validation failed', details: validation.error.errors },
+        { status: 400 }
+      );
+    }
+    
+    const { workspaceId, status, platform, page, limit } = validation.data;
+    
+    // 4. Build query with filters
+    let query = supabase
+      .from('posts')
+      .select('*, created_by:profiles!posts_created_by_fkey(id, full_name, avatar_url)', { count: 'exact' })
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: false })
+      .range((page - 1) * limit, page * limit - 1);
+    
+    if (status) {
+      query = query.eq('status', status);
+    }
+    
+    if (platform) {
+      query = query.contains('platforms', [platform]);
+    }
+    
+    // 5. Execute query (RLS automatically applied)
+    const { data: posts, error: queryError, count } = await query;
+    
+    if (queryError) {
+      console.error('[API] Error fetching posts:', queryError);
+      return NextResponse.json(
+        { error: 'Failed to fetch posts' },
+        { status: 500 }
+      );
+    }
+    
+    // 6. Return paginated response
+    return NextResponse.json({
+      data: posts,
+      pagination: {
+        page,
+        limit,
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limit),
+      },
+    });
+    
+  } catch (error) {
+    console.error('[API] Unexpected error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// POST /api/posts - Create new post
+// ═══════════════════════════════════════════════════════════════
+export async function POST(request: NextRequest) {
+  try {
+    // 1. Initialize Supabase client
+    const supabase = createRouteHandlerClient();
+    
+    // 2. Verify authentication
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
+    if (authError || !session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    
+    // 3. Parse and validate request body
+    const body = await request.json();
+    const validation = createPostSchema.safeParse(body);
+    
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: 'Validation failed', details: validation.error.errors },
+        { status: 400 }
+      );
+    }
+    
+    const postData = validation.data;
+    
+    // 4. Verify workspace access (RLS will enforce, but we check explicitly)
+    const { data: workspace, error: workspaceError } = await supabase
+      .from('workspaces')
+      .select('id')
+      .eq('id', postData.workspaceId)
+      .single();
+    
+    if (workspaceError || !workspace) {
+      return NextResponse.json(
+        { error: 'Workspace not found or access denied' },
+        { status: 403 }
+      );
+    }
+    
+    // 5. Validate media IDs if provided
+    if (postData.mediaIds && postData.mediaIds.length > 0) {
+      const { data: mediaFiles, error: mediaError } = await supabase
+        .from('media')
+        .select('id, url')
+        .in('id', postData.mediaIds)
+        .eq('workspace_id', postData.workspaceId);
+      
+      if (mediaError || mediaFiles.length !== postData.mediaIds.length) {
+        return NextResponse.json(
+          { error: 'Invalid media IDs' },
+          { status: 400 }
+        );
+      }
+    }
+    
+    // 6. Create post
+    const { data: post, error: insertError } = await supabase
+      .from('posts')
+      .insert({
+        workspace_id: postData.workspaceId,
+        created_by: session.user.id,
+        content: postData.content,
+        platforms: postData.platforms,
+        media_ids: postData.mediaIds,
+        status: postData.scheduledAt ? 'scheduled' : 'draft',
+        scheduled_at: postData.scheduledAt,
+        platform_content: postData.platformContent || {},
+      })
+      .select()
+      .single();
+    
+    if (insertError) {
+      console.error('[API] Error creating post:', insertError);
+      return NextResponse.json(
+        { error: 'Failed to create post' },
+        { status: 500 }
+      );
+    }
+    
+    // 7. Log activity (optional)
+    console.log(`[API] Post created: ${post.id} by user ${session.user.id}`);
+    
+    // 8. Return created post
+    return NextResponse.json(
+      { data: post },
+      { status: 201 }
+    );
+    
+  } catch (error) {
+    console.error('[API] Unexpected error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HELPER: Error response builder
+// ═══════════════════════════════════════════════════════════════
+function errorResponse(message: string, status: number, details?: any) {
+  return NextResponse.json(
+    { error: message, details },
+    { status }
+  );
+}
+```
+
+### 5.3 API Middleware Pattern
+
+```typescript
+// src/lib/api-middleware.ts
+
+import { NextRequest, NextResponse } from 'next/server';
+import { createRouteHandlerClient } from '@/lib/supabase/server';
+import { z, ZodSchema } from 'zod';
+
+// ═══════════════════════════════════════════════════════════════
+// TYPE DEFINITIONS
+// ═══════════════════════════════════════════════════════════════
+type ApiHandler = (
+  request: NextRequest,
+  context: {
+    user: { id: string; email: string };
+    params?: any;
+  }
+) => Promise<NextResponse>;
+
+type MiddlewareOptions = {
+  requireAuth?: boolean;
+  validateBody?: ZodSchema;
+  validateQuery?: ZodSchema;
+  allowedMethods?: string[];
+};
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN MIDDLEWARE WRAPPER
+// ═══════════════════════════════════════════════════════════════
+export function withMiddleware(
+  handler: ApiHandler,
+  options: MiddlewareOptions = {}
+) {
+  return async (request: NextRequest, routeContext?: any) => {
+    const {
+      requireAuth = true,
+      validateBody,
+      validateQuery,
+      allowedMethods,
+    } = options;
+
+    try {
+      // 1. Method validation
+      if (allowedMethods && !allowedMethods.includes(request.method)) {
+        return NextResponse.json(
+          { error: `Method ${request.method} not allowed` },
+          { status: 405 }
+        );
+      }
+
+      // 2. Authentication check
+      let user = null;
+      if (requireAuth) {
+        const supabase = createRouteHandlerClient();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error || !session) {
+          return NextResponse.json(
+            { error: 'Unauthorized' },
+            { status: 401 }
+          );
+        }
+        
+        user = {
+          id: session.user.id,
+          email: session.user.email!,
+        };
+      }
+
+      // 3. Body validation
+      if (validateBody && ['POST', 'PUT', 'PATCH'].includes(request.method)) {
+        try {
+          const body = await request.json();
+          const validation = validateBody.safeParse(body);
+          
+          if (!validation.success) {
+            return NextResponse.json(
+              {
+                error: 'Validation failed',
+                details: validation.error.errors,
+              },
+              { status: 400 }
+            );
+          }
+          
+          // Attach validated data to request
+          (request as any).validatedBody = validation.data;
+        } catch {
+          return NextResponse.json(
+            { error: 'Invalid JSON body' },
+            { status: 400 }
+          );
+        }
+      }
+
+      // 4. Query validation
+      if (validateQuery) {
+        const searchParams = Object.fromEntries(request.nextUrl.searchParams);
+        const validation = validateQuery.safeParse(searchParams);
+        
+        if (!validation.success) {
+          return NextResponse.json(
+            {
+              error: 'Invalid query parameters',
+              details: validation.error.errors,
+            },
+            { status: 400 }
+          );
+        }
+        
+        (request as any).validatedQuery = validation.data;
+      }
+
+      // 5. Call handler with context
+      return await handler(request, {
+        user: user!,
+        params: routeContext?.params,
+      });
+
+    } catch (error) {
+      console.error('[Middleware] Unexpected error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RATE LIMITING MIDDLEWARE (Vercel Edge Config)
+// ═══════════════════════════════════════════════════════════════
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+export function withRateLimit(
+  handler: ApiHandler,
+  options: { maxRequests: number; windowMs: number }
+) {
+  return async (request: NextRequest, context: any) => {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown';
+    const key = `rate_limit:${ip}`;
+    const now = Date.now();
+    
+    const current = rateLimitMap.get(key);
+    
+    if (!current || now > current.resetAt) {
+      // Reset window
+      rateLimitMap.set(key, {
+        count: 1,
+        resetAt: now + options.windowMs,
+      });
+    } else if (current.count >= options.maxRequests) {
+      // Rate limit exceeded
+      return NextResponse.json(
+        {
+          error: 'Too many requests',
+          retryAfter: Math.ceil((current.resetAt - now) / 1000),
+        },
+        { status: 429 }
+      );
+    } else {
+      // Increment counter
+      current.count++;
+    }
+    
+    return handler(request, context);
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// USAGE EXAMPLE
+// ═══════════════════════════════════════════════════════════════
+/*
+export const POST = withMiddleware(
+  async (request, { user, params }) => {
+    const body = (request as any).validatedBody;
+    
+    // Your handler logic here
+    return NextResponse.json({ success: true });
+  },
+  {
+    requireAuth: true,
+    validateBody: createPostSchema,
+    allowedMethods: ['POST'],
+  }
+);
+*/
+```
+
+---
+
+## 6. FRONTEND ARCHITECTURE & STATE MANAGEMENT
+
+### 6.1 State Management Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                STATE MANAGEMENT ARCHITECTURE                     │
+└─────────────────────────────────────────────────────────────────┘
+
+                    ┌─────────────────────┐
+                    │   User Interaction  │
+                    └──────────┬──────────┘
+                              │
+            ┌─────────────────┴─────────────────┐
+            │                                   │
+    ┌───────────────┐                  ┌───────────────┐
+    │ Local State   │                  │ Global State  │
+    │ (useState)    │                  │ (Zustand)     │
+    └───────────────┘                  └───────────────┘
+            │                                   │
+            │                          ┌────────┴────────┐
+            │                          │                 │
+            │                  ┌───────────────┐ ┌──────────────┐
+            │                  │ UI Store      │ │ Auth Store   │
+            │                  │ - theme       │ │ - user       │
+            │                  │ - sidebar     │ │ - session    │
+            │                  │ - modals      │ │ - workspace  │
+            │                  └───────────────┘ └──────────────┘
+            │
+            └──────────────┬───────────────────────────────────┐
+                          │                                   │
+                  ┌───────────────┐                  ┌────────────────┐
+                  │ Server State  │                  │ Optimistic UI  │
+                  │ (React Query) │                  │ Updates        │
+                  └───────────────┘                  └────────────────┘
+                          │
+            ┌─────────────┼─────────────┐
+            │             │             │
+    ┌───────────┐ ┌──────────────┐ ┌──────────┐
+    │ Cache     │ │ Mutations    │ │ Refresh  │
+    │ (5min)    │ │ (POST/PUT)   │ │ (Manual) │
+    └───────────┘ └──────────────┘ └──────────┘
+```
+
+### 6.2 Zustand Store Implementation
+
+```typescript
+// src/store/authStore.ts
+
 import { create } from 'zustand';
-import type { AuthUser, JWT } from '@/types/auth';
+import { devtools, persist } from 'zustand/middleware';
+
+// ═══════════════════════════════════════════════════════════════
+// TYPE DEFINITIONS
+// ═══════════════════════════════════════════════════════════════
+interface User {
+  id: string;
+  email: string;
+  fullName: string | null;
+  avatarUrl: string | null;
+}
+
+interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+  role: 'owner' | 'admin' | 'editor' | 'viewer';
+}
 
 interface AuthState {
   // State
-  user: AuthUser | null;
-  accessToken: string | null;
-  isAuthenticated: boolean;
+  user: User | null;
+  workspace: Workspace | null;
   isLoading: boolean;
-  error: string | null;
   
   // Actions
-  login: (email: string, password: string) => Promise<void>;
+  setUser: (user: User | null) => void;
+  setWorkspace: (workspace: Workspace | null) => void;
+  setLoading: (isLoading: boolean) => void;
   logout: () => void;
-  setUser: (user: AuthUser) => void;
-  refreshToken: (token: string) => Promise<void>;
-  clearError: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  accessToken: null,
-  isAuthenticated: false,
-  isLoading: false,
-  error: null,
-  
-  login: async (email, password) => {
-    set({ isLoading: true });
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
-      });
-      const { data } = await res.json();
-      set({
-        user: data.user,
-        accessToken: data.accessToken,
-        isAuthenticated: true,
-        isLoading: false,
-      });
-    } catch (err) {
-      set({ error: err.message, isLoading: false });
-    }
-  },
-  
-  logout: () => {
-    set({
-      user: null,
-      accessToken: null,
-      isAuthenticated: false,
-    });
-  },
-  
-  setUser: (user) => set({ user }),
-  refreshToken: async (token) => {
-    const res = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken: token }),
-    });
-    const { data } = await res.json();
-    set({ accessToken: data.accessToken });
-  },
-  
-  clearError: () => set({ error: null }),
-}));
-```
-
-### 6.3 Client-Side Data Fetching & Caching
-
-**Pattern: SWR (Stale-While-Revalidate)**
-
-```typescript
-// hooks/useAsync.ts - Wrapper around fetch with caching
-import useSWR from 'swr';
-import { useAuthStore } from '@/store/authStore';
-
-const fetcher = async (url: string) => {
-  const { accessToken } = useAuthStore.getState();
-  const res = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-    },
-  });
-  
-  if (!res.ok) {
-    if (res.status === 401) {
-      // Token expired, refresh and retry
-      await useAuthStore.getState().refreshToken();
-      return fetcher(url);
-    }
-    throw new Error('Failed to fetch');
-  }
-  
-  return res.json();
-};
-
-export function usePosts(userId: string) {
-  const { data, error, isLoading, mutate } = useSWR(
-    `/api/posts?user_id=${userId}`,
-    fetcher,
-    {
-      revalidateOnFocus: false,
-      dedupingInterval: 60000, // 1 minute
-      focusThrottleInterval: 300000, // 5 minutes
-    }
-  );
-  
-  return {
-    posts: data?.data || [],
-    isLoading,
-    error,
-    refetch: mutate,
-  };
-}
-```
-
-### 6.4 Server Actions vs Route Handlers
-
-**When to Use Each:**
-
-```typescript
-// Route Handler: External API calls, webhooks
-// POST /api/posts
-export async function POST(request: Request) {
-  const { caption, platforms } = await request.json();
-  
-  // Call backend API
-  const res = await fetch(`${BACKEND_URL}/api/posts`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${backendToken}` },
-    body: JSON.stringify({ caption, platforms }),
-  });
-  
-  return Response.json(res.json());
-}
-
-// Server Action: Direct database operations, sensitive logic
-// app/x/actions.ts
-'use server';
-
-import { createClient } from '@supabase/supabase-js';
-import { auth } from '@/lib/auth';
-
-export async function fetchUserPosts() {
-  const user = await auth.getCurrentUser();
-  if (!user) throw new Error('Unauthorized');
-  
-  const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_KEY! // Service key, never client-side
-  );
-  
-  const { data, error } = await supabase
-    .from('posts')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(20);
-  
-  if (error) throw error;
-  return data;
-}
-```
-
-### 6.5 Performance Optimization in Next.js
-
-**Image Optimization:**
-
-```typescript
-// ✅ Good: Using Next.js Image component
-import Image from 'next/image';
-
-export function PostCard({ imageUrl }: { imageUrl: string }) {
-  return (
-    <Image
-      src={imageUrl}
-      alt="Post image"
-      width={400}
-      height={400}
-      placeholder="blur"
-      blurDataURL={blurHash} // low-quality placeholder
-      priority={false} // lazy load by default
-      quality={85} // 85% quality, 15% savings
-    />
-  );
-}
-
-// ❌ Bad: Native img tag
-<img src={imageUrl} alt="Post image" />
-```
-
-**Code Splitting:**
-
-```typescript
-// ✅ Good: Dynamic imports for heavy components
-import dynamic from 'next/dynamic';
-
-const AnalyticsCharts = dynamic(
-  () => import('@/components/analytics/ChartsSection'),
-  {
-    loading: () => <Skeleton />,
-    ssr: false, // Don't render on server, only client
-  }
+// ═══════════════════════════════════════════════════════════════
+// AUTH STORE
+// ═══════════════════════════════════════════════════════════════
+export const useAuthStore = create<AuthState>()(
+  devtools(
+    persist(
+      (set) => ({
+        // Initial state
+        user: null,
+        workspace: null,
+        isLoading: true,
+        
+        // Actions
+        setUser: (user) => set({ user }),
+        setWorkspace: (workspace) => set({ workspace }),
+        setLoading: (isLoading) => set({ isLoading }),
+        logout: () => set({ user: null, workspace: null }),
+      }),
+      {
+        name: 'auth-storage',
+        partialize: (state) => ({
+          // Only persist these fields
+          user: state.user,
+          workspace: state.workspace,
+        }),
+      }
+    ),
+    { name: 'AuthStore' }
+  )
 );
 
-export function AnalyticsPage() {
-  return (
-    <div>
-      <MetricsCards /> {/* Small, renders immediately */}
-      <AnalyticsCharts /> {/* Loaded on-demand */}
-    </div>
-  );
-}
+// ═══════════════════════════════════════════════════════════════
+// SELECTORS (Optimized re-renders)
+// ═══════════════════════════════════════════════════════════════
+export const useUser = () => useAuthStore((state) => state.user);
+export const useWorkspace = () => useAuthStore((state) => state.workspace);
+export const useIsAuthenticated = () => useAuthStore((state) => !!state.user);
 ```
-
-**Hydration Mismatch Prevention:**
 
 ```typescript
-// ✅ Good: Client-side marker
-'use client';
+// src/store/postsStore.ts
 
-import { useEffect, useState } from 'react';
+import { create } from 'zustand';
+import { devtools } from 'zustand/middleware';
+import { Post } from '@/types';
 
-export function DateFormatter({ date }: { date: string }) {
-  const [mounted, setMounted] = useState(false);
+// ═══════════════════════════════════════════════════════════════
+// POSTS STORE (Client-side cache & optimistic updates)
+// ═══════════════════════════════════════════════════════════════
+interface PostsState {
+  // State
+  posts: Post[];
+  selectedPost: Post | null;
+  filters: {
+    status?: string;
+    platform?: string;
+    dateRange?: { start: Date; end: Date };
+  };
   
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // Actions
+  setPosts: (posts: Post[]) => void;
+  addPost: (post: Post) => void;
+  updatePost: (id: string, updates: Partial<Post>) => void;
+  deletePost: (id: string) => void;
+  setSelectedPost: (post: Post | null) => void;
+  setFilters: (filters: PostsState['filters']) => void;
   
-  if (!mounted) return null; // Don't render on server
-  
-  return new Date(date).toLocaleDateString();
+  // Computed
+  getFilteredPosts: () => Post[];
 }
-```
 
----
-
-## 7. DEBUGGING & ERROR HANDLING STRATEGY
-
-### 7.1 Error Tracking & Monitoring
-
-**Multi-Layer Error Tracking:**
-
-```
-Layer 1: Client-Side (Sentry)
-  ├── Capture unhandled exceptions
-  ├── Log console.error calls
-  ├── Track performance (page load, API latency)
-  ├── Breadcrumb tracking (user actions before error)
-  └── Session replay (record user interaction leading to error)
-
-Layer 2: API/Backend (Bun logging)
-  ├── Log all API requests (method, endpoint, duration)
-  ├── Log database queries (SQL, execution time)
-  ├── Log platform API calls (response status, errors)
-  ├── Error stack traces with context
-  └── Performance metrics per endpoint
-
-Layer 3: Database (Supabase)
-  ├── Query performance analysis
-  ├── Connection pool monitoring
-  ├── Replication lag detection
-  └── Storage usage tracking
-
-Layer 4: Infrastructure (Vercel)
-  ├── Deployment logs
-  ├── Build failures
-  ├── Runtime errors
-  └── Performance analytics
-```
-
-**Sentry Integration Example:**
-
-```typescript
-// lib/sentry.ts - Client-side setup
-import * as Sentry from "@sentry/nextjs";
-
-Sentry.init({
-  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-  environment: process.env.NODE_ENV,
-  tracesSampleRate: 1.0, // Adjust for production
-  integrations: [
-    new Sentry.Replay({
-      maskAllText: true,
-      blockAllMedia: true, // Don't record sensitive content
+export const usePostsStore = create<PostsState>()(
+  devtools(
+    (set, get) => ({
+      posts: [],
+      selectedPost: null,
+      filters: {},
+      
+      setPosts: (posts) => set({ posts }),
+      
+      addPost: (post) =>
+        set((state) => ({
+          posts: [post, ...state.posts],
+        })),
+      
+      updatePost: (id, updates) =>
+        set((state) => ({
+          posts: state.posts.map((post) =>
+            post.id === id ? { ...post, ...updates } : post
+          ),
+          selectedPost:
+            state.selectedPost?.id === id
+              ? { ...state.selectedPost, ...updates }
+              : state.selectedPost,
+        })),
+      
+      deletePost: (id) =>
+        set((state) => ({
+          posts: state.posts.filter((post) => post.id !== id),
+          selectedPost:
+            state.selectedPost?.id === id ? null : state.selectedPost,
+        })),
+      
+      setSelectedPost: (post) => set({ selectedPost: post }),
+      
+      setFilters: (filters) => set({ filters }),
+      
+      getFilteredPosts: () => {
+        const { posts, filters } = get();
+        let filtered = posts;
+        
+        if (filters.status) {
+          filtered = filtered.filter((p) => p.status === filters.status);
+        }
+        
+        if (filters.platform) {
+          filtered = filtered.filter((p) =>
+            p.platforms.includes(filters.platform!)
+          );
+        }
+        
+        if (filters.dateRange) {
+          const { start, end } = filters.dateRange;
+          filtered = filtered.filter((p) => {
+            const date = new Date(p.scheduledAt || p.createdAt);
+            return date >= start && date <= end;
+          });
+        }
+        
+        return filtered;
+      },
     }),
-  ],
-});
-
-// Usage in components
-try {
-  await publishPost(postId);
-} catch (error) {
-  Sentry.captureException(error, {
-    tags: {
-      page: 'x',
-      action: 'publish_post',
-      post_id: postId,
-    },
-    contexts: {
-      post: {
-        id: postId,
-        platforms: post.platforms,
-        caption_length: post.caption.length,
-      },
-    },
-  });
-}
-```
-
-### 7.2 Structured Logging
-
-**Logging Standards:**
-
-```typescript
-// lib/logger.ts
-interface LogContext {
-  userId?: string;
-  requestId?: string;
-  endpoint?: string;
-  duration?: number;
-  [key: string]: any;
-}
-
-export const logger = {
-  info: (message: string, context?: LogContext) => {
-    console.log(JSON.stringify({
-      level: 'INFO',
-      timestamp: new Date().toISOString(),
-      message,
-      ...context,
-    }));
-  },
-  
-  error: (message: string, error?: Error, context?: LogContext) => {
-    console.error(JSON.stringify({
-      level: 'ERROR',
-      timestamp: new Date().toISOString(),
-      message,
-      error: {
-        name: error?.name,
-        message: error?.message,
-        stack: error?.stack,
-      },
-      ...context,
-    }));
-  },
-  
-  warn: (message: string, context?: LogContext) => {
-    console.warn(JSON.stringify({
-      level: 'WARN',
-      timestamp: new Date().toISOString(),
-      message,
-      ...context,
-    }));
-  },
-};
-
-// Usage in Bun backend
-logger.info('User login attempt', {
-  userId: user.id,
-  email: user.email,
-  requestId: req.id,
-});
-
-logger.error('Post publication failed', publishError, {
-  postId: post.id,
-  platforms: post.platforms,
-  endpoint: '/api/posts/:id/publish',
-  duration: 5000,
-});
-```
-
-### 7.3 Health Checks & Monitoring
-
-**Health Check Endpoints:**
-
-```typescript
-// api/health/route.ts
-export async function GET() {
-  const checks = {
-    timestamp: new Date().toISOString(),
-    status: 'healthy',
-    services: {
-      database: 'checking...',
-      redis: 'checking...',
-      openai: 'checking...',
-      supabase: 'checking...',
-    },
-  };
-  
-  try {
-    // Check database connection
-    const supabase = createClient(...);
-    await supabase.from('users').select('count()', { count: 'exact', head: true });
-    checks.services.database = 'ok';
-  } catch (e) {
-    checks.services.database = 'error';
-    checks.status = 'degraded';
-  }
-  
-  try {
-    // Check OpenAI API
-    const response = await openai.models.list();
-    checks.services.openai = 'ok';
-  } catch (e) {
-    checks.services.openai = 'error';
-    checks.status = 'degraded';
-  }
-  
-  return Response.json(checks, {
-    status: checks.status === 'healthy' ? 200 : 503,
-  });
-}
-```
-
----
-
-## 8. SUPABASE-SPECIFIC OPTIMIZATIONS
-
-### 8.1 Real-Time Subscriptions
-
-**WebSocket Subscriptions for Live Updates:**
-
-```typescript
-// hooks/usePostsRealtime.ts
-import { RealtimeChannel } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
-import { useEffect, useState } from 'react';
-
-export function usePostsRealtime(userId: string) {
-  const [posts, setPosts] = useState([]);
-  const [subscription, setSubscription] = useState<RealtimeChannel | null>(null);
-  
-  useEffect(() => {
-    // Subscribe to post changes for this user
-    const channel = supabase
-      .channel(`posts:${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*', // All events: INSERT, UPDATE, DELETE
-          schema: 'public',
-          table: 'posts',
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setPosts(prev => [payload.new, ...prev]);
-          } else if (payload.eventType === 'UPDATE') {
-            setPosts(prev =>
-              prev.map(p => p.id === payload.new.id ? payload.new : p)
-            );
-          } else if (payload.eventType === 'DELETE') {
-            setPosts(prev => prev.filter(p => p.id !== payload.old.id));
-          }
-        }
-      )
-      .subscribe();
-    
-    setSubscription(channel);
-    
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [userId]);
-  
-  return { posts };
-}
-```
-
-### 8.2 Batch Operations
-
-**Efficient Bulk Updates:**
-
-```typescript
-// services/analyticsService.ts
-export async function updateEngagementMetrics(
-  metrics: EngagementMetric[]
-) {
-  const supabase = createClient(...);
-  
-  // ✅ Good: Single batch upsert
-  const { data, error } = await supabase
-    .from('engagement_metrics')
-    .upsert(metrics, { onConflict: 'post_id,platform' });
-  
-  return { data, error };
-}
-
-// ❌ Bad: Individual updates
-for (const metric of metrics) {
-  await supabase
-    .from('engagement_metrics')
-    .update(metric)
-    .eq('post_id', metric.post_id);
-  // Results in N queries instead of 1
-}
-```
-
-### 8.3 Row-Level Security (RLS) Policies
-
-**Enforcing Data Isolation:**
-
-```sql
--- Enable RLS on all tables
-ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE engagement_metrics ENABLE ROW LEVEL SECURITY;
-ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can only see their own posts
-CREATE POLICY "users_see_own_posts" ON posts
-  FOR SELECT
-  USING (auth.uid() = user_id);
-
--- Policy: Users can only update/delete their own posts
-CREATE POLICY "users_update_own_posts" ON posts
-  FOR UPDATE
-  USING (auth.uid() = user_id);
-
-CREATE POLICY "users_delete_own_posts" ON posts
-  FOR DELETE
-  USING (auth.uid() = user_id);
-
--- Policy: Users can insert posts for themselves
-CREATE POLICY "users_insert_posts" ON posts
-  FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
--- Policy for team collaboration
-CREATE POLICY "team_members_see_team_posts" ON posts
-  FOR SELECT
-  USING (
-    auth.uid() = user_id OR
-    EXISTS (
-      SELECT 1 FROM team_members
-      WHERE team_members.user_id = auth.uid()
-      AND team_members.team_id = posts.team_id
-    )
-  );
-```
-
----
-
-## 9. VERCEL DEPLOYMENT & OPTIMIZATION
-
-### 9.1 Vercel Configuration
-
-**vercel.json - Deployment Settings:**
-
-```json
-{
-  "buildCommand": "bun run build",
-  "devCommand": "bun run dev",
-  "installCommand": "bun install",
-  "framework": "nextjs",
-  "nodeVersion": "20.x",
-  "regions": ["iad1"],
-  "functions": {
-    "api/**/*.ts": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
-    "api/webhooks/**/*.ts": {
-      "maxDuration": 30,
-      "memory": 512
-    }
-  },
-  "env": {
-    "NEXT_PUBLIC_SUPABASE_URL": "@supabase_url",
-    "NEXT_PUBLIC_SUPABASE_KEY": "@supabase_anon_key",
-    "SUPABASE_SERVICE_KEY": "@supabase_service_key",
-    "OPENAI_API_KEY": "@openai_key"
-  },
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "no-cache, no-store, must-revalidate"
-        },
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        }
-      ]
-    },
-    {
-      "source": "/static/(.*)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
-      ]
-    }
-  ],
-  "redirects": [
-    {
-      "source": "/",
-      "destination": "/x",
-      "permanent": false
-    }
-  ]
-}
-```
-
-### 9.2 Edge Middleware for Performance
-
-**middleware.ts - Request Processing at Edge:**
-
-```typescript
-import { NextRequest, NextResponse } from 'next/server';
-import { jwtVerify } from 'jose';
-
-const secret = new TextEncoder().encode(
-  process.env.JWT_SECRET!
+    { name: 'PostsStore' }
+  )
 );
-
-export async function middleware(request: NextRequest) {
-  const pathname = request.nextUrl.pathname;
-  
-  // Skip middleware for public routes
-  if (pathname.startsWith('/auth') || pathname === '/') {
-    return NextResponse.next();
-  }
-  
-  // Verify authentication token
-  const token = request.cookies.get('auth')?.value;
-  
-  if (!token) {
-    return NextResponse.redirect(new URL('/auth/login', request.url));
-  }
-  
-  try {
-    await jwtVerify(token, secret);
-    return NextResponse.next();
-  } catch (error) {
-    return NextResponse.redirect(new URL('/auth/login', request.url));
-  }
-}
-
-export const config = {
-  matcher: [
-    '/((?!auth|api/auth|_next/static|_next/image|favicon.ico).*)',
-  ],
-};
 ```
 
-### 9.3 Incremental Static Regeneration (ISR)
-
-**Static Pages with Dynamic Updates:**
+### 6.3 React Query Integration
 
 ```typescript
-// app/blog/[slug]/page.tsx - Blog post that updates every hour
-export const revalidate = 3600; // Revalidate every 1 hour
+// src/hooks/use-posts.ts
 
-export async function generateStaticParams() {
-  const posts = await fetch(`${API_URL}/api/blog/posts`).then(r => r.json());
-  return posts.map(post => ({
-    slug: post.slug,
-  }));
-}
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useWorkspace } from '@/store/authStore';
+import { usePostsStore } from '@/store/postsStore';
+import { Post } from '@/types';
 
-export default async function BlogPost({ params }) {
-  const post = await fetch(
-    `${API_URL}/api/blog/posts/${params.slug}`
-  ).then(r => r.json());
+// ═══════════════════════════════════════════════════════════════
+// API CLIENT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+async function fetchPosts(workspaceId: string, filters?: any) {
+  const params = new URLSearchParams({ workspaceId, ...filters });
+  const response = await fetch(`/api/posts?${params}`);
   
-  return (
-    <article>
-      <h1>{post.title}</h1>
-      <p>{post.content}</p>
-    </article>
-  );
-}
-```
-
-### 9.4 Analytics & Monitoring on Vercel
-
-**Web Vitals Tracking:**
-
-```typescript
-// lib/analytics.ts - Send Web Vitals to Vercel Analytics
-import { getCLS, getFCP, getFID, getLCP, getTTFB } from 'web-vitals';
-
-export function reportWebVitals(metric) {
-  const body = JSON.stringify(metric);
-  
-  if (navigator.sendBeacon) {
-    navigator.sendBeacon('/api/analytics/vitals', body);
-  } else {
-    fetch('/api/analytics/vitals', { body, method: 'POST' });
+  if (!response.ok) {
+    throw new Error('Failed to fetch posts');
   }
+  
+  return response.json();
 }
 
-getCLS(reportWebVitals);
-getFCP(reportWebVitals);
-getFID(reportWebVitals);
-getLCP(reportWebVitals);
-getTTFB(reportWebVitals);
+async function createPost(data: Partial<Post>) {
+  const response = await fetch('/api/posts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to create post');
+  }
+  
+  return response.json();
+}
+
+async function updatePost(id: string, data: Partial<Post>) {
+  const response = await fetch(`/api/posts/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to update post');
+  }
+  
+  return response.json();
+}
+
+async function deletePost(id: string) {
+  const response = await fetch(`/api/posts/${id}`, {
+    method: 'DELETE',
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to delete post');
+  }
+  
+  return response.json();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CUSTOM HOOKS
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Hook to fetch and cache posts
+ */
+export function usePosts(filters?: any) {
+  const workspace = useWorkspace();
+  const setPosts = usePostsStore((state) => state.setPosts);
+  
+  return useQuery({
+    queryKey: ['posts', workspace?.id, filters],
+    queryFn: () => fetchPosts(workspace!.id, filters),
+    enabled: !!workspace,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    onSuccess: (data) => {
+      setPosts(data.data);
+    },
+  });
+}
+
+/**
+ * Hook to create a new post with optimistic updates
+ */
+export function useCreatePost() {
+  const queryClient = useQueryClient();
+  const workspace = useWorkspace();
+  const addPost = usePostsStore((state) => state.addPost);
+  
+  return useMutation({
+    mutationFn: createPost,
+    
+    // Optimistic update
+    onMutate: async (newPost) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['posts'] });
+      
+      // Snapshot previous value
+      const previousPosts = queryClient.getQueryData(['posts', workspace?.id]);
+      
+      // Optimistically update
+      const optimisticPost = {
+        id: `temp-${Date.now()}`,
+        ...newPost,
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+      } as Post;
+      
+      addPost(optimisticPost);
+      
+      // Return context with snapshot
+      return { previousPosts };
+    },
+    
+    // On error, rollback
+    onError: (error, variables, context) => {
+      if (context?.previousPosts) {
+        queryClient.setQueryData(
+          ['posts', workspace?.id],
+          context.previousPosts
+        );
+      }
+    },
+    
+    // Always refetch after error or success
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+    },
+  });
+}
+
+/**
+ * Hook to update a post with optimistic updates
+ */
+export function useUpdatePost() {
+  const queryClient = useQueryClient();
+  const workspace = useWorkspace();
+  const updatePostInStore = usePostsStore((state) => state.updatePost);
+  
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Post> }) =>
+      updatePost(id, data),
+    
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: ['posts'] });
+      
+      // Optimistically update
+      updatePostInStore(id, data);
+      
+      return { id };
+    },
+    
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+    },
+  });
+}
+
+/**
+ * Hook to delete a post with optimistic updates
+ */
+export function useDeletePost() {
+  const queryClient = useQueryClient();
+  const workspace = useWorkspace();
+  const deletePostFromStore = usePostsStore((state) => state.deletePost);
+  
+  return useMutation({
+    mutationFn: deletePost,
+    
+    onMutate: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: ['posts'] });
+      
+      const previousPosts = queryClient.getQueryData(['posts', workspace?.id]);
+      
+      // Optimistically remove from UI
+      deletePostFromStore(id);
+      
+      return { previousPosts };
+    },
+    
+    onError: (error, variables, context) => {
+      if (context?.previousPosts) {
+        queryClient.setQueryData(
+          ['posts', workspace?.id],
+          context.previousPosts
+        );
+      }
+    },
+    
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+    },
+  });
+}
 ```
 
 ---
 
-## 10. DETAILED PAGE COMPONENT FLOW DIAGRAMS
+## 7. ERROR HANDLING & DEBUGGING STRATEGY
 
-### 10.1 X Page - Multi-Account Management (Execution Flow)
-
-```
-USER NAVIGATES TO /x
-       ↓
-[LAYOUT.TSX] - Dashboard Layout renders
-       ├─→ Sidebar (X.O.C.I.A.L navigation)
-       ├─→ Header (user menu, notifications)
-       └─→ Main content area
-              ↓
-[X/PAGE.TSX] - Main component mounts
-       ├─→ useAuth() hook - verify user logged in
-       ├─→ useAccountsStore() - get cached accounts
-       └─→ useEffect runs on mount
-              ↓
-[SERVER ACTION] - fetchUserSocialAccounts()
-       ├─→ Verify JWT token valid
-       ├─→ Query Supabase: SELECT * FROM social_accounts WHERE user_id = $1
-       ├─→ Cache results in Zustand store
-       └─→ Return to component
-              ↓
-[UI RENDERING] - Display accounts
-       ├─→ if (loading) → show skeleton cards
-       ├─→ if (error) → show error message with retry
-       ├─→ if (accounts.length === 0) → show empty state + "Connect Account" button
-       └─→ else → render AccountCard components in grid
-              ↓
-[USER INTERACTION] - User clicks on account
-       ├─→ AccountCard click handler triggers
-       ├─→ Set selectedAccount in state
-       ├─→ Trigger useEffect to fetch posts
-              ↓
-[SERVER ACTION] - fetchPostsByAccount(accountId)
-       ├─→ Call platform API (Facebook Graph, Instagram, etc.)
-       ├─→ Parse and format response
-       ├─→ Cache posts in store
-       └─→ Return to component
-              ↓
-[UI RENDERING] - Display posts grid
-       ├─→ Map through posts array
-       ├─→ Render PostCard for each
-       │   ├─→ Load image (lazy with blur placeholder)
-       │   ├─→ Show engagement metrics
-       │   ├─→ Add hover overlay with actions
-       │   └─→ Set up intersection observer for infinite scroll
-       └─→ Listen for scroll event
-              ↓
-[INFINITE SCROLL] - User scrolls to bottom
-       ├─→ Intersection observer detects trigger element
-       ├─→ Fetch next page: offset += 20
-       ├─→ Call platform API again with pagination params
-       ├─→ Append new posts to existing array
-       └─→ Re-render posts grid
-              ↓
-[USER INTERACTION] - User hovers over post
-       ├─→ Show overlay with buttons
-       │   ├─→ "View Comments" button
-       │   ├─→ "Reply" button
-       │   └─→ "More Options" dropdown
-       └─→ Listen for clicks
-              ↓
-[COMMENT MODAL] - User clicks "View Comments"
-       ├─→ Modal component mounts
-       ├─→ useEffect triggers: fetchComments(postId)
-       ├─→ Call platform API to get comments
-       ├─→ Parse response, sort by date
-       ├─→ Render CommentsList component
-       │   ├─→ Show comment author avatar
-       │   ├─→ Show comment text
-       │   ├─→ Show comment timestamp
-       │   └─→ Show like/reply buttons (if available)
-       ├─→ Render ReplyInput at bottom
-       │   ├─→ TextArea for reply text
-       │   ├─→ CharCounter showing remaining chars
-       │   └─→ Send button
-       └─→ User types reply and clicks Send
-              ↓
-[SERVER ACTION] - postCommentReply(postId, text, platform)
-       ├─→ Validate input (not empty, within char limit)
-       ├─→ Get auth user's credentials for platform
-       ├─→ Call platform API to post comment
-       ├─→ Handle errors (rate limit, auth failure, etc.)
-       ├─→ Show success toast or error alert
-       └─→ Refetch comments to show new reply
-              ↓
-[CLEANUP] - User closes modal
-       ├─→ Modal close handler executes
-       ├─→ Clean up event listeners
-       ├─→ Reset form fields
-       └─→ Modal unmounts
-```
-
-### 10.2 O Page - Content Calendar (Data Flow)
+### 7.1 Comprehensive Error Handling Architecture
 
 ```
-USER NAVIGATES TO /o
-       ↓
-[LAYOUT + CALENDAR SETUP]
-       ├─→ Initialize month/year state (current month)
-       ├─→ useEffect: fetch calendar data for month
-              ↓
-[SERVER ACTION] - fetchCalendarData(month, year, userId)
-       ├─→ Query Supabase:
-       │   SELECT posts, status, scheduled_at 
-       │   WHERE user_id = $1 
-       │   AND scheduled_at BETWEEN month_start AND month_end
-       ├─→ Group posts by day
-       ├─→ Calculate post count per day
-       ├─→ Create calendar grid (42 cells for 6-week view)
-       └─→ Return calendar structure
-              ↓
-[RENDER CALENDAR GRID]
-       ├─→ Display day labels (Sun-Sat)
-       ├─→ For each DayCell (1-31):
-       │   ├─→ Display day number
-       │   ├─→ Display post count badge (if > 0)
-       │   ├─→ Display post preview thumbnails (max 3)
-       │   ├─→ Set onClick handler
-       │   └─→ Set drag zone for rescheduling
-       └─→ Display month navigation (prev/next buttons)
-              ↓
-[USER INTERACTION] - User clicks on day
-       ├─→ Set selectedDay state
-       ├─→ Trigger DayPostsPanel to slide in from right
-       ├─→ useEffect: fetchPostsForDay(selectedDay)
-              ↓
-[SERVER ACTION] - fetchPostsForDay(date)
-       ├─→ Query Supabase:
-       │   SELECT * FROM posts
-       │   WHERE DATE(scheduled_at) = $1 AND user_id = $2
-       │   ORDER BY scheduled_at ASC
-       ├─→ Calculate status for each post (draft/scheduled/published/failed)
-       └─→ Return post list
-              ↓
-[RENDER DAY POSTS PANEL]
-       ├─→ Display panel header (selected date, post count)
-       ├─→ For each ScheduledPost:
-       │   ├─→ Display post preview image (small)
-       │   ├─→ Display caption (truncated, 2-line)
-       │   ├─→ Display scheduled time (HH:MM format)
-       │   ├─→ Display platforms (badges: Facebook, Instagram, etc.)
-       │   ├─→ Display status badge (colored: draft, scheduled, published)
-       │   └─→ Add action buttons (Edit, Delete, Reschedule)
-       ├─→ Display platform filter checkboxes (for bulk actions)
-       └─→ Display "Add New Post" button
-              ↓
-[USER INTERACTION] - User clicks "Reschedule"
-       ├─→ RescheduleModal component mounts
-       ├─→ Modal displays current schedule time
-       ├─→ User selects new date in calendar picker
-       ├─→ User selects new time in time picker
-       ├─→ User clicks "Confirm"
-              ↓
-[SERVER ACTION] - reschedulePost(postId, newDate, newTime)
-       ├─→ Validate new date/time (must be future)
-       ├─→ Update Supabase:
-       │   UPDATE posts SET scheduled_at = $1 WHERE id = $2
-       ├─→ Show success toast
-       ├─→ Close modal
-       └─→ Refetch calendar data to update UI
-              ↓
-[DRAG TO RESCHEDULE] - Alternative: User drags post
-       ├─→ PostCard has drag handle
-       ├─→ On dragStart: show visual feedback, show timeline
-       ├─→ On dragOver: allow drop on any day cell
-       ├─→ On drop: capture new date from target cell
-       ├─→ Call reschedulePost() with new date
-       └─→ Show success animation
+┌─────────────────────────────────────────────────────────────────┐
+│              ERROR HANDLING LAYERS & STRATEGY                    │
+└─────────────────────────────────────────────────────────────────┘
+
+LAYER 1: CLIENT-SIDE ERROR BOUNDARY
+┌─────────────────────────────────────────────────────────────────┐
+│  React Error Boundary (catches render errors)                   │
+│  - Fallback UI component                                        │
+│  - Error logging to monitoring service                          │
+│  - User-friendly error messages                                 │
+│  - "Try Again" recovery action                                  │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+LAYER 2: API ERROR HANDLING
+┌─────────────────────────────────────────────────────────────────┐
+│  Try-Catch blocks in API routes                                 │
+│  - Specific error types (ValidationError, AuthError, etc.)      │
+│  - Error serialization for transport                            │
+│  - HTTP status code mapping                                     │
+│  - Error context preservation                                   │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+LAYER 3: DATABASE ERROR HANDLING
+┌─────────────────────────────────────────────────────────────────┐
+│  Supabase client error handling                                 │
+│  - RLS policy violations                                        │
+│  - Constraint violations (UNIQUE, FOREIGN KEY)                  │
+│  - Connection failures                                          │
+│  - Transaction rollback                                         │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+LAYER 4: EXTERNAL API ERROR HANDLING
+┌─────────────────────────────────────────────────────────────────┐
+│  Third-party API failures (Facebook, Twitter, OpenAI, etc.)     │
+│  - Rate limiting (429) → Exponential backoff                    │
+│  - Timeouts → Retry with circuit breaker                        │
+│  - Invalid tokens → Re-authentication flow                      │
+│  - API deprecation → Version migration                          │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+LAYER 5: MONITORING & ALERTING
+┌─────────────────────────────────────────────────────────────────┐
+│  Centralized logging and monitoring                             │
+│  - Vercel Analytics (performance metrics)                       │
+│  - Sentry (error tracking & stack traces)                       │
+│  - Supabase Logs (database queries)                             │
+│  - Custom logging service (user actions)                        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 10.3 C Page - AI Content Creation (Processing Flow)
-
-```
-USER NAVIGATES TO /c
-       ↓
-[INITIALIZE] - Page mounts
-       ├─→ Initialize form state (empty)
-       ├─→ Initialize generatedContent state
-       ├─→ Render two-column layout (input left, preview right)
-       └─→ If returning from history: populate state from clicked history item
-              ↓
-[USER INPUT] - User enters content brief
-       ├─→ User types in BriefInput textarea
-       ├─→ On each keystroke: debounce 500ms
-       ├─→ Update form state with brief text
-       ├─→ Update char counter (max 500)
-       └─→ Disable Generate button if brief < 10 chars
-              ↓
-[USER CONFIGURATION] - User selects platforms & options
-       ├─→ PlatformSelect: User checks Facebook, Instagram, LinkedIn
-       ├─→ ContentTypeSelect: User selects "Promotional"
-       ├─→ ToneSelect: User selects "Casual"
-       ├─→ Update form state with selections
-       └─→ All selections stored in Zustand state
-              ↓
-[GENERATE CLICK] - User clicks "Generate Content"
-       ├─→ Validate form (brief filled, platforms selected)
-       ├─→ Show loading spinner with "AI is crafting..."
-       ├─→ Disable Generate button (prevent double-submit)
-       └─→ Call server action: generateAIContent()
-              ↓
-[SERVER ACTION] - generateAIContent(brief, platforms, config)
-       ├─→ Validate inputs server-side
-       ├─→ Build OpenAI prompt from config
-       │   └─→ "Create a promotional, casual social media post for: {brief}"
-       ├─→ Call OpenAI API (gpt-4-turbo model)
-       │   ├─→ temperature: 0.7 (creative but not random)
-       │   ├─→ max_tokens: 1000
-       │   └─→ Stream response for faster UI update
-       ├─→ Parse OpenAI response
-       │   └─→ Extract caption, hashtags, platform-specific versions
-       ├─→ Store in database (ai_generations table for history)
-       └─→ Return structured response
-              ↓
-[STREAM RESPONSE] - AI content arrives (real-time if streaming)
-       ├─→ Update generatedContent state with caption
-       ├─→ Render in PreviewPanel, right column
-       ├─→ Show platform preview for each selected platform
-       ├─→ Hide loading spinner
-       ├─→ Enable action buttons (Copy, Refine, Schedule)
-       └─→ Add to history sidebar
-              ↓
-[PREVIEW RENDERING] - Display generated content
-       ├─→ PlatformTabs shows Instagram | Facebook | LinkedIn selected
-       ├─→ For each platform:
-       │   ├─→ Show platform-specific caption (OpenAI generates variants)
-       │   ├─→ Show hashtags (auto-wrapped with # symbols)
-       │   ├─→ Show platform preview mock
-       │   │   ├─→ Header (platform logo, username)
-       │   │   ├─→ Caption text
-       │   │   ├─→ Mock engagement (likes, comments)
-       │   │   └─→ Platform footer
-       │   ├─→ Show char counter (platform-specific limits)
-       │   ├─→ Show warning if exceeds platform limit
-       │   └─→ Show action buttons (Copy, Regenerate)
-       └─→ RefineSection shows suggestion chips below
-              ↓
-[USER INTERACTION] - User clicks suggestion chip
-       ├─→ Suggestion chips include: "Add emoji", "Add urgency", "Make casual", etc.
-       ├─→ User clicks chip (e.g., "Add emoji")
-       ├─→ Send to server: refineContent(currentContent, suggestion)
-              ↓
-[SERVER ACTION] - refineContent(content, suggestion)
-       ├─→ Build OpenAI prompt: "Refine this text by: {suggestion}"
-       ├─→ Call OpenAI API with refined prompt
-       ├─→ Return updated caption
-       └─→ Update state automatically
-              ↓
-[USER EDITS] - User manually edits caption
-       ├─→ User clicks GeneratedCaption TextArea
-       ├─→ Cursor places in text
-       ├─→ User types/deletes text
-       ├─→ Update state on onChange
-       ├─→ Update char counter real-time
-       └─→ Show warning if over limit
-              ↓
-[SCHEDULE POST] - User clicks "Schedule Post"
-       ├─→ SchedulePostModal component mounts
-       ├─→ Modal displays:
-       │   ├─→ Selected platforms (Facebook, Instagram, LinkedIn)
-       │   ├─→ Generated caption (read-only or editable)
-       │   ├─→ DatePicker (select date)
-       │   ├─→ TimePicker (select time)
-       │   └─→ Confirm button
-       ├─→ User selects date and time
-       ├─→ User clicks "Confirm"
-              ↓
-[SERVER ACTION] - schedulePost(caption, platforms, datetime)
-       ├─→ Validate inputs (date is future, caption not empty)
-       ├─→ Insert into Supabase posts table:
-       │   ├─→ content: caption
-       │   ├─→ platforms: [facebook, instagram, linkedin]
-       │   ├─→ status: 'scheduled'
-       │   ├─→ scheduled_at: datetime
-       │   ├─→ ai_generated: true
-       │   └─→ user_id: current user
-       ├─→ Generate AI content variants for each platform (if needed)
-       ├─→ Return success response
-       └─→ Trigger background job to publish at scheduled time
-              ↓
-[CONFIRMATION] - Show success toast
-       ├─→ Toast message: "Post scheduled for Oct 20, 2:00 PM"
-       ├─→ Show link to view in calendar
-       ├─→ Close modal
-       ├─→ Clear form (optional)
-       └─→ Update calendar page in background
-```
-
-### 10.4 A Page - Analytics (Real-Time Update Flow)
-
-```
-USER NAVIGATES TO /a
-       ↓
-[INITIAL LOAD] - Page mounts
-       ├─→ Set default date range (last 7 days)
-       ├─→ Set default platform filter (all platforms)
-       ├─→ Show skeleton loaders for KPI cards
-       ├─→ useEffect triggers: fetchAnalyticsData()
-              ↓
-[PARALLEL API CALLS] - Fetch all data simultaneously
-       ├─→ Promise.all() executes parallel:
-       │   ├─→ fetchKPIMetrics(dateRange, platforms)
-       │   ├─→ fetchTimeSeriesData(dateRange, platforms)
-       │   ├─→ fetchTopPosts(dateRange, platforms)
-       │   ├─→ fetchTopicPerformance(dateRange)
-       │   └─→ fetchEngagementBreakdown(dateRange, platforms)
-       │
-       ├─→ For each API call (backend):
-       │   ├─→ Query Supabase engagement_metrics table
-       │   ├─→ Apply date range filters
-       │   ├─→ Apply platform filters
-       │   ├─→ Aggregate/group data as needed
-       │   ├─→ Cache in Redis for 5 minutes
-       │   └─→ Return formatted response
-       │
-       └─→ All responses received together
-              ↓
-[RENDER KPI CARDS] - Display high-level metrics
-       ├─→ MetricCard for Impressions
-       │   ├─→ Large metric value (e.g., 125,432)
-       │   ├─→ Percent change from previous period (e.g., +12.5%)
-       │   ├─→ Mini sparkline chart (trend over time)
-       │   └─→ OnClick: Navigate to detailed impressions view
-       ├─→ MetricCard for Engagement
-       ├─→ MetricCard for Followers
-       └─→ MetricCard for Engagement Rate
-              ↓
-[RENDER CHARTS] - Display visualizations (2x2 grid)
-       ├─→ ChartContainer 1: Time Series Line Chart
-       │   ├─→ X-axis: Dates (formatted: "Oct 15", "Oct 16", etc.)
-       │   ├─→ Y-axis: Impressions count
-       │   ├─→ Lines: One per platform (different colors)
-       │   ├─→ Tooltip: Shows date, value, platform
-       │   ├─→ Legend: Clickable to toggle platforms
-       │   └─→ Responsive: Scales to container width
-       ├─→ ChartContainer 2: Pie Chart - Engagement Breakdown
-       │   ├─→ Segments: Likes | Comments | Shares | Saves
-       │   ├─→ Center label: Total engagement count
-       │   ├─→ Legend: Clickable to toggle segments
-       │   └─→ Tooltip: Shows count and percentage
-       ├─→ ChartContainer 3: Bar Chart - Top Posts
-       │   ├─→ Horizontal bars (post descriptions on Y-axis)
-       │   ├─→ Bar length: Engagement count (X-axis)
-       │   ├─→ OnClick: Navigate to post details
-       │   └─→ Tooltip: Shows full post info
-       └─→ ChartContainer 4: Grouped Bar Chart - Platform Comparison
-           ├─→ Grouped bars by platform
-           ├─→ Segments: Impressions | Engagement | Followers
-           ├─→ Legend: Toggleable
-           └─→ Responsive colors per platform
-              ↓
-[RENDER DATA TABLE] - Topics Performance Table
-       ├─→ Table headers (sortable):
-       │   ├─→ Topic | Posts | Total Impressions | Avg Engagement | Rate
-       ├─→ For each topic row:
-       │   ├─→ Topic name (clickable → detailed analysis modal)
-       │   ├─→ Post count
-       │   ├─→ Sum of impressions
-       │   ├─→ Average engagement per post
-       │   ├─→ Engagement rate with bar indicator
-       │   └─→ Trend arrow (up/down/flat)
-       ├─→ Virtualized table (if >50 rows):
-       │   └─→ Only render visible rows, rest loaded on scroll
-       └─→ OnColumnHeaderClick: Sort by that column (asc/desc)
-              ↓
-[USER INTERACTION] - Change date range
-       ├─→ User clicks DateRangePicker
-       ├─→ User selects "Last 30 days" (or custom range)
-       ├─→ Trigger refetch: fetchAnalyticsData(newDateRange, currentPlatforms)
-       ├─→ Show loading overlay on charts (semi-transparent)
-       ├─→ Animate chart updates (smooth transitions)
-       └─→ Update all KPI cards with new data
-              ↓
-[USER INTERACTION] - Filter by platform
-       ├─→ User clicks PlatformFilter dropdown
-       ├─→ User checks/unchecks platforms
-       ├─→ Trigger refetch with filtered platforms
-       ├─→ Charts re-render with only selected platforms
-       ├─→ Legend updates to show only selected
-       └─→ Avoid unnecessary re-renders using React.memo
-              ↓
-[DRILL DOWN] - User clicks on chart element
-       ├─→ User clicks on a bar in bar chart (e.g., top post)
-       ├─→ DetailedAnalysisModal component mounts
-       ├─→ Modal fetches detailed data for that post
-       ├─→ Display larger chart (full window size)
-       ├─→ Display statistics panel
-       │   ├─→ Peak value (date & time)
-       │   ├─→ Lowest value (date & time)
-       │   ├─→ Average over period
-       │   ├─→ 7-day trend
-       │   └─→ 30-day trend
-       ├─→ Display day-by-day breakdown table
-       ├─→ Allow export to CSV
-       └─→ Show AI-generated insights ("This post performed 23% better than average")
-              ↓
-[GENERATE REPORT] - User clicks "Generate Report"
-       ├─→ CustomReportGenerator section
-       ├─→ User selects report type (Executive Summary, Detailed, etc.)
-       ├─→ User selects format (PDF or Excel)
-       ├─→ User selects delivery (Download or Email)
-       ├─→ User clicks "Generate"
-              ↓
-[SERVER ACTION] - generateAnalyticsReport()
-       ├─→ Validate report parameters
-       ├─→ Queue as background job (Bun worker thread)
-       ├─→ Worker fetches all data for report
-       ├─→ Generate charts/visualizations (using Chart.js or similar)
-       ├─→ Compile PDF or Excel file
-       ├─→ Upload to CDN (AWS S3)
-       ├─→ Store report URL in database
-       ├─→ If email delivery: send with download link
-       ├─→ If download: return direct link
-       └─→ Show success toast with download button
-              ↓
-[REAL-TIME UPDATES] - WebSocket subscription (optional)
-       ├─→ useEffect: Subscribe to real-time changes
-       ├─→ supabase.realtime.on('engagement_metrics', ...)
-       ├─→ When new metrics arrive:
-       │   ├─→ Update state with new data
-       │   ├─→ Animate chart updates
-       │   └─→ Update KPI cards with new values
-       └─→ Cleanup: Unsubscribe on component unmount
-```
-
----
-
-## 11. IMPLEMENTATION ROADMAP FOR CURSOR
-
-### Phase 1: Foundation (Weeks 1-2)
-**Using Cursor Composer for scaffolding:**
-- [ ] Initialize Bun project with Next.js
-- [ ] Create Cursor `.rules.md` with coding standards
-- [ ] Set up Supabase database schema (migrations)
-- [ ] Configure authentication with Supabase Auth
-- [ ] Create UI component library (primitives)
-- [ ] Deploy frontend skeleton to Vercel
-- [ ] Set up error tracking (Sentry)
-
-**Cursor Command:** "Using Composer, generate Next.js app structure with Bun, following these design tokens..."
-
-### Phase 2: Core Features (Weeks 3-6)
-**Build X, O, C pages in parallel:**
-- [ ] X Page: Account management, post grid, comments modal
-- [ ] O Page: Calendar, drag-reschedule, day posts panel
-- [ ] C Page: AI integration with OpenAI API
-- [ ] Authentication flows (login, register, OAuth)
-- [ ] Supabase RLS policies enforcement
-- [ ] Real-time sync background jobs
-
-**Cursor Command:** "Generate all server actions for X page: fetchAccounts, fetchPosts, syncMetrics..."
-
-### Phase 3: Analytics & Intelligence (Weeks 7-8)
-**Complete A and L pages:**
-- [ ] A Page: Charts (recharts), KPI metrics, reports
-- [ ] L Page: Strategy recommendations, content pipeline
-- [ ] Analytics data pipeline (Supabase → charts)
-- [ ] Report generation (PDF/Excel export)
-- [ ] AI-generated insights
-
-### Phase 4: Optimization & Hardening (Weeks 9-10)
-**Performance and security:**
-- [ ] Performance testing (Lighthouse, Web Vitals)
-- [ ] Security audit (OWASP top 10)
-- [ ] Database indexing optimization
-- [ ] API rate limiting
-- [ ] Error handling edge cases
-- [ ] Load testing (concurrent users)
-
-### Phase 5: Deployment & Monitoring (Week 11)
-**Go live with confidence:**
-- [ ] Vercel production deployment
-- [ ] DNS/CDN configuration
-- [ ] Monitoring dashboards (Datadog/New Relic)
-- [ ] Incident response procedures
-- [ ] User documentation
-
-### Phase 6: Post-Launch (Week 12+)
-**Iterations and enhancements:**
-- [ ] User feedback incorporation
-- [ ] Performance tuning
-- [ ] Additional platform integrations
-- [ ] I Page: Influencer marketplace (coming soon)
-
----
-
-## 12. CODING STANDARDS FOR CURSOR CONSISTENCY
-
-### 12.1 TypeScript Best Practices
+### 7.2 Error Handling Implementation
 
 ```typescript
-// ✅ GOOD: Explicit types, no implicit any
-interface UserProfile {
-  id: string;
-  email: string;
-  createdAt: Date;
-  role: 'admin' | 'user';
-}
+// src/lib/errors.ts
 
-const getUserProfile = async (userId: string): Promise<UserProfile> => {
-  // implementation
-};
+// ═══════════════════════════════════════════════════════════════
+// CUSTOM ERROR CLASSES
+// ═══════════════════════════════════════════════════════════════
 
-// ❌ BAD: Implicit any, loose typing
-const getUserProfile = async (userId) => {
-  // implementation
-};
-```
-
-### 12.2 Component Organization
-
-```typescript
-// pages/x/components/PostCard.tsx - Organized structure
-
-'use client'; // Client component marker at top
-
-// 1. Imports (grouped: React, external, internal)
-import { useState } from 'react';
-import Image from 'next/image';
-import { Card } from '@/components/ui/Card';
-import type { Post } from '@/types/posts';
-import { formatDate } from '@/lib/format';
-
-// 2. Types (local to component)
-interface PostCardProps {
-  post: Post;
-  onReply?: (postId: string) => void;
-}
-
-// 3. Component
-export function PostCard({ post, onReply }: PostCardProps) {
-  const [isHovered, setIsHovered] = useState(false);
-  
-  return (
-    <Card
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      {/* Content */}
-    </Card>
-  );
-}
-
-// 4. Export as named export (not default)
-export default PostCard; // ← AVOID, use named exports
-```
-
-### 12.3 Server Actions Pattern
-
-```typescript
-// app/x/actions.ts - Server-only file
-'use server';
-
-import { createClient } from '@supabase/supabase-js';
-import { auth } from '@/lib/auth';
-import { logger } from '@/lib/logger';
-import type { Post } from '@/types/posts';
-
-// 1. Input validation schema
-interface FetchPostsInput {
-  accountId: string;
-  limit?: number;
-  offset?: number;
-}
-
-// 2. Server action with error handling
-export async function fetchUserPosts(
-  input: FetchPostsInput
-): Promise<{ data: Post[]; total: number }> {
-  const { accountId, limit = 20, offset = 0 } = input;
-  
-  try {
-    // Verify authentication
-    const user = await auth.getCurrentUser();
-    if (!user) {
-      throw new Error('Unauthorized');
-    }
-    
-    // Initialize Supabase with service key (server-only)
-    const supabase = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_KEY!
-    );
-    
-    // Query with RLS (automatic user_id filter)
-    const { data, count, error } = await supabase
-      .from('posts')
-      .select('*', { count: 'exact' })
-      .eq('account_id', accountId)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-    
-    if (error) throw error;
-    
-    logger.info('Fetched user posts', {
-      userId: user.id,
-      accountId,
-      count: data?.length,
-    });
-    
-    return {
-      data: data || [],
-      total: count || 0,
-    };
-  } catch (error) {
-    logger.error('Failed to fetch posts', error as Error, {
-      accountId,
-    });
-    throw error;
-  }
-}
-```
-
-### 12.4 Error Handling Pattern
-
-```typescript
-// lib/errors.ts - Custom error classes
 export class AppError extends Error {
   constructor(
+    message: string,
     public code: string,
-    public message: string,
     public statusCode: number = 500,
-    public details?: Record<string, any>
+    public details?: any
   ) {
     super(message);
     this.name = 'AppError';
+    Error.captureStackTrace(this, this.constructor);
   }
 }
 
 export class ValidationError extends AppError {
-  constructor(message: string, details?: Record<string, any>) {
-    super('VALIDATION_ERROR', message, 400, details);
+  constructor(message: string, details?: any) {
+    super(message, 'VALIDATION_ERROR', 400, details);
     this.name = 'ValidationError';
   }
 }
 
 export class AuthenticationError extends AppError {
   constructor(message: string = 'Authentication required') {
-    super('AUTH_ERROR', message, 401);
+    super(message, 'AUTH_ERROR', 401);
     this.name = 'AuthenticationError';
   }
 }
 
-// Usage in components:
+export class AuthorizationError extends AppError {
+  constructor(message: string = 'Access denied') {
+    super(message, 'AUTHORIZATION_ERROR', 403);
+    this.name = 'AuthorizationError';
+  }
+}
+
+export class NotFoundError extends AppError {
+  constructor(resource: string) {
+    super(`${resource} not found`, 'NOT_FOUND', 404);
+    this.name = 'NotFoundError';
+  }
+}
+
+export class RateLimitError extends AppError {
+  constructor(retryAfter: number) {
+    super('Too many requests', 'RATE_LIMIT', 429, { retryAfter });
+    this.name = 'RateLimitError';
+  }
+}
+
+export class ExternalAPIError extends AppError {
+  constructor(service: string, message: string, details?: any) {
+    super(`${service} API error: ${message}`, 'EXTERNAL_API_ERROR', 502, details);
+    this.name = 'ExternalAPIError';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ERROR HANDLER MIDDLEWARE
+// ═══════════════════════════════════════════════════════════════
+
+export function handleError(error: unknown): {
+  message: string;
+  code: string;
+  statusCode: number;
+  details?: any;
+} {
+  // Known application errors
+  if (error instanceof AppError) {
+    return {
+      message: error.message,
+      code: error.code,
+      statusCode: error.statusCode,
+      details: error.details,
+    };
+  }
+  
+  // Supabase errors
+  if (error && typeof error === 'object' && 'code' in error) {
+    const pgError = error as any;
+    
+    // Map PostgreSQL error codes
+    const errorMap: Record<string, { message: string; status: number }> = {
+      '23505': { message: 'Duplicate entry', status: 409 },
+      '23503': { message: 'Referenced record not found', status: 400 },
+      '23502': { message: 'Required field missing', status: 400 },
+      '42P01': { message: 'Database table not found', status: 500 },
+      'PGRST301': { message: 'Row level security policy violation', status: 403 },
+    };
+    
+    const mapped = errorMap[pgError.code];
+    if (mapped) {
+      return {
+        message: mapped.message,
+        code: pgError.code,
+        statusCode: mapped.status,
+        details: pgError.details || pgError.hint,
+      };
+    }
+  }
+  
+  // Zod validation errors
+  if (error && typeof error === 'object' && 'issues' in error) {
+    return {
+      message: 'Validation failed',
+      code: 'VALIDATION_ERROR',
+      statusCode: 400,
+      details: (error as any).issues,
+    };
+  }
+  
+  // Unknown errors
+  console.error('[Error Handler] Unknown error:', error);
+  return {
+    message: 'An unexpected error occurred',
+    code: 'INTERNAL_ERROR',
+    statusCode: 500,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RETRY LOGIC WITH EXPONENTIAL BACKOFF
+// ═══════════════════════════════════════════════════════════════
+
+export async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  options: {
+    maxRetries?: number;
+    initialDelay?: number;
+    maxDelay?: number;
+    backoffMultiplier?: number;
+  } = {}
+): Promise<T> {
+  const {
+    maxRetries = 3,
+    initialDelay = 1000,
+    maxDelay = 10000,
+    backoffMultiplier = 2,
+  } = options;
+  
+  let lastError: Error;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+      
+      // Don't retry on client errors (4xx)
+      if (error instanceof AppError && error.statusCode < 500) {
+        throw error;
+      }
+      
+      // Don't retry on last attempt
+      if (attempt === maxRetries) {
+        break;
+      }
+      
+      // Calculate delay with exponential backoff
+      const delay = Math.min(
+        initialDelay * Math.pow(backoffMultiplier, attempt),
+        maxDelay
+      );
+      
+      console.log(`[Retry] Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError!;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CIRCUIT BREAKER PATTERN
+// ═══════════════════════════════════════════════════════════════
+
+class CircuitBreaker {
+  private failureCount = 0;
+  private lastFailureTime?: number;
+  private state: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED';
+  
+  constructor(
+    private threshold: number = 5,
+    private timeout: number = 60000 // 1 minute
+  ) {}
+  
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    // Check if circuit is open
+    if (this.state === 'OPEN') {
+      const now = Date.now();
+      if (this.lastFailureTime && now - this.lastFailureTime > this.timeout) {
+        // Try half-open state
+        this.state = 'HALF_OPEN';
+        console.log('[Circuit Breaker] Attempting recovery (HALF_OPEN)');
+      } else {
+        throw new Error('Circuit breaker is OPEN - service unavailable');
+      }
+    }
+    
+    try {
+      const result = await fn();
+      
+      // Success - reset on half-open or keep closed
+      if (this.state === 'HALF_OPEN') {
+        console.log('[Circuit Breaker] Recovery successful (CLOSED)');
+        this.state = 'CLOSED';
+        this.failureCount = 0;
+      }
+      
+      return result;
+    } catch (error) {
+      this.failureCount++;
+      this.lastFailureTime = Date.now();
+      
+      if (this.failureCount >= this.threshold) {
+        this.state = 'OPEN';
+        console.error(`[Circuit Breaker] OPEN - ${this.failureCount} failures`);
+      }
+      
+      throw error;
+    }
+  }
+  
+  getState() {
+    return {
+      state: this.state,
+      failureCount: this.failureCount,
+      lastFailureTime: this.lastFailureTime,
+    };
+  }
+}
+
+export const apiCircuitBreaker = new CircuitBreaker();
+```
+
+### 7.3 React Error Boundary
+
+```typescript
+// src/components/error-boundary.tsx
+
+'use client';
+
+import React from 'react';
+import { Button } from '@/components/ui/button';
+import { AlertTriangle } from 'lucide-react';
+
+// ═══════════════════════════════════════════════════════════════
+// ERROR BOUNDARY COMPONENT
+// ═══════════════════════════════════════════════════════════════
+
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+  fallback?: React.ComponentType<{ error: Error; reset: () => void }>;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class ErrorBoundary extends React.Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+  
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // Log to error tracking service (e.g., Sentry)
+    console.error('Error Boundary caught error:', error, errorInfo);
+    
+    // TODO: Send to monitoring service
+    // logErrorToService(error, errorInfo);
+  }
+  
+  reset = () => {
+    this.setState({ hasError: false, error: null });
+  };
+  
+  render() {
+    if (this.state.hasError) {
+      const FallbackComponent = this.props.fallback || DefaultErrorFallback;
+      return <FallbackComponent error={this.state.error!} reset={this.reset} />;
+    }
+    
+    return this.props.children;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DEFAULT ERROR FALLBACK UI
+// ═══════════════════════════════════════════════════════════════
+
+function DefaultErrorFallback({ error, reset }: { error: Error; reset: () => void }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
+        <div className="mb-4 inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full">
+          <AlertTriangle className="w-8 h-8 text-red-600" />
+        </div>
+        
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">
+          Something went wrong
+        </h1>
+        
+        <p className="text-gray-600 mb-6">
+          We encountered an unexpected error. Don't worry, your data is safe.
+        </p>
+        
+        {process.env.NODE_ENV === 'development' && (
+          <details className="mb-6 text-left">
+            <summary className="cursor-pointer text-sm font-medium text-gray-700 mb-2">
+              Error Details (Development Only)
+            </summary>
+            <pre className="text-xs bg-gray-100 p-4 rounded overflow-auto max-h-40">
+              {error.message}
+              {'\n\n'}
+              {error.stack}
+            </pre>
+          </details>
+        )}
+        
+        <div className="flex gap-3 justify-center">
+          <Button onClick={reset} variant="primary">
+            Try Again
+          </Button>
+          <Button
+            onClick={() => window.location.href = '/'}
+            variant="secondary"
+          >
+            Go Home
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// USAGE IN LAYOUT
+// ═══════════════════════════════════════════════════════════════
+
+/*
+// src/app/layout.tsx
+
+import { ErrorBoundary } from '@/components/error-boundary';
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <body>
+        <ErrorBoundary>
+          {children}
+        </ErrorBoundary>
+      </body>
+    </html>
+  );
+}
+*/
+```
+
+### 7.4 Logging & Monitoring Strategy
+
+```typescript
+// src/lib/logger.ts
+
+// ═══════════════════════════════════════════════════════════════
+// CENTRALIZED LOGGING UTILITY
+// ═══════════════════════════════════════════════════════════════
+
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+interface LogContext {
+  userId?: string;
+  workspaceId?: string;
+  action?: string;
+  metadata?: Record<string, any>;
+}
+
+class Logger {
+  private isDevelopment = process.env.NODE_ENV === 'development';
+  
+  private formatMessage(level: LogLevel, message: string, context?: LogContext) {
+    const timestamp = new Date().toISOString();
+    const contextStr = context ? JSON.stringify(context) : '';
+    
+    return `[${timestamp}] [${level.toUpperCase()}] ${message} ${contextStr}`;
+  }
+  
+  private sendToMonitoring(level: LogLevel, message: string, context?: LogContext) {
+    // TODO: Send to monitoring service (Sentry, DataDog, etc.)
+    // For now, just console output
+    
+    if (this.isDevelopment) {
+      return; // Don't send in development
+    }
+    
+    // Example: Send to external service
+    // fetch('/api/logs', {
+    //   method: 'POST',
+    //   body: JSON.stringify({ level, message, context, timestamp: Date.now() }),
+    // });
+  }
+  
+  debug(message: string, context?: LogContext) {
+    if (this.isDevelopment) {
+      console.debug(this.formatMessage('debug', message, context));
+    }
+  }
+  
+  info(message: string, context?: LogContext) {
+    console.info(this.formatMessage('info', message, context));
+    this.sendToMonitoring('info', message, context);
+  }
+  
+  warn(message: string, context?: LogContext) {
+    console.warn(this.formatMessage('warn', message, context));
+    this.sendToMonitoring('warn', message, context);
+  }
+  
+  error(message: string, error?: Error, context?: LogContext) {
+    const fullContext = {
+      ...context,
+      error: error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      } : undefined,
+    };
+    
+    console.error(this.formatMessage('error', message, fullContext));
+    this.sendToMonitoring('error', message, fullContext);
+  }
+  
+  // Track user actions for analytics
+  trackAction(action: string, context?: LogContext) {
+    this.info(`User action: ${action}`, { ...context, action });
+  }
+}
+
+export const logger = new Logger();
+
+// ═══════════════════════════════════════════════════════════════
+// USAGE EXAMPLES
+// ═══════════════════════════════════════════════════════════════
+
+/*
+// In API route
+logger.info('User logged in', { userId: user.id });
+
+// On error
 try {
-  await publishPost(postId);
+  await publishPost(post);
 } catch (error) {
-  if (error instanceof ValidationError) {
-    showToast({ message: error.message, type: 'error' });
-  } else if (error instanceof AuthenticationError) {
-    redirectToLogin();
+  logger.error('Failed to publish post', error, {
+    userId: session.user.id,
+    postId: post.id,
+  });
+}
+
+// Track user actions
+logger.trackAction('post_created', {
+  userId: user.id,
+  workspaceId: workspace.id,
+  metadata: { platform: 'facebook' },
+});
+*/
+```
+
+### 7.5 Debugging Tools Configuration
+
+```typescript
+// next.config.js
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // ═══════════════════════════════════════════════════════════════
+  // DEVELOPMENT OPTIMIZATIONS
+  // ═══════════════════════════════════════════════════════════════
+  
+  // Enable React strict mode for detecting issues
+  reactStrictMode: true,
+  
+  // Detailed error overlay
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production' 
+      ? { exclude: ['error', 'warn'] }
+      : false,
+  },
+  
+  // ═══════════════════════════════════════════════════════════════
+  // SOURCE MAPS FOR DEBUGGING
+  // ═══════════════════════════════════════════════════════════════
+  
+  productionBrowserSourceMaps: true, // Enable for production debugging
+  
+  // ═══════════════════════════════════════════════════════════════
+  // LOGGING CONFIGURATION
+  // ═══════════════════════════════════════════════════════════════
+  
+  logging: {
+    fetches: {
+      fullUrl: true,
+    },
+  },
+  
+  // ═══════════════════════════════════════════════════════════════
+  // EXPERIMENTAL FEATURES
+  // ═══════════════════════════════════════════════════════════════
+  
+  experimental: {
+    // Instrumentation for observability
+    instrumentationHook: true,
+    
+    // Server actions logging
+    serverActions: true,
+  },
+  
+  // ═══════════════════════════════════════════════════════════════
+  // ENVIRONMENT VARIABLES VALIDATION
+  // ═══════════════════════════════════════════════════════════════
+  
+  env: {
+    NEXT_PUBLIC_APP_ENV: process.env.NODE_ENV,
+  },
+  
+  // ═══════════════════════════════════════════════════════════════
+  // HEADERS FOR DEBUGGING
+  // ═══════════════════════════════════════════════════════════════
+  
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [
+          { key: 'X-API-Version', value: '1.0' },
+          { key: 'X-Response-Time', value: new Date().toISOString() },
+        ],
+      },
+    ];
+  },
+};
+
+module.exports = nextConfig;
+```
+
+---
+
+## 8. PERFORMANCE OPTIMIZATION BLUEPRINT
+
+### 8.1 Next.js 15.5+ Optimization Strategies
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│           NEXT.JS PERFORMANCE OPTIMIZATION LAYERS               │
+└─────────────────────────────────────────────────────────────────┘
+
+LAYER 1: RENDERING OPTIMIZATION
+┌─────────────────────────────────────────────────────────────────┐
+│ ✓ React Server Components (RSC) by default                     │
+│   - Reduce client-side JavaScript bundle                       │
+│   - Faster initial page load                                   │
+│   - Server-side data fetching                                  │
+│                                                                 │
+│ ✓ Streaming & Suspense                                         │
+│   - Progressive page rendering                                 │
+│   - Show content as it loads                                   │
+│   - Improved perceived performance                             │
+│                                                                 │
+│ ✓ Partial Prerendering (PPR)                                   │
+│   - Static shell + dynamic content                             │
+│   - Best of both worlds                                        │
+└─────────────────────────────────────────────────────────────────┘
+
+LAYER 2: DATA FETCHING OPTIMIZATION
+┌─────────────────────────────────────────────────────────────────┐
+│ ✓ Server-side data fetching with fetch() caching               │
+│   - Automatic request deduplication                            │
+│   - Configurable cache strategies                              │
+│   - Revalidation on demand                                     │
+│                                                                 │
+│ ✓ Parallel data fetching                                       │
+│   - Multiple async requests simultaneously                     │
+│   - Reduced waterfall effect                                   │
+│                                                                 │
+│ ✓ Database query optimization                                  │
+│   - Indexed columns for fast lookups                           │
+│   - Limited result sets (pagination)                           │
+│   - Connection pooling (Supabase)                              │
+└─────────────────────────────────────────────────────────────────┘
+
+LAYER 3: ASSET OPTIMIZATION
+┌─────────────────────────────────────────────────────────────────┐
+│ ✓ Next.js Image Component                                      │
+│   - Automatic image optimization                               │
+│   - Lazy loading by default                                    │
+│   - Modern formats (WebP, AVIF)                                │
+│   - Responsive images with srcset                              │
+│                                                                 │
+│ ✓ Font Optimization                                            │
+│   - next/font for self-hosted fonts                            │
+│   - Automatic font subsetting                                  │
+│   - Zero layout shift                                          │
+│                                                                 │
+│ ✓ Code Splitting                                               │
+│   - Automatic route-based splitting                            │
+│   - Dynamic imports for heavy components                       │
+│   - Tree shaking unused code                                   │
+└─────────────────────────────────────────────────────────────────┘
+
+LAYER 4: CACHING STRATEGY
+┌─────────────────────────────────────────────────────────────────┐
+│ ✓ Multi-level caching                                          │
+│   - Browser cache (static assets)                              │
+│   - Vercel Edge Cache (API responses)                          │
+│   - React Query cache (client state)                           │
+│   - Database query cache (PostgreSQL)                          │
+│                                                                 │
+│ Cache durations:                                               │
+│   - Static assets: 1 year (immutable)                          │
+│   - API responses: 1-5 minutes                                 │
+│   - User data: 30 seconds                                      │
+│   - Analytics: 15 minutes                                      │
+└─────────────────────────────────────────────────────────────────┘
+
+LAYER 5: BUNDLE OPTIMIZATION
+┌─────────────────────────────────────────────────────────────────┐
+│ ✓ Tree shaking & dead code elimination                         │
+│ ✓ Minification (JS, CSS)                                       │
+│ ✓ Compression (Brotli, Gzip)                                   │
+│ ✓ Bundle analysis (webpack-bundle-analyzer)                    │
+│ ✓ Lazy loading non-critical features                           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 8.2 Performance Configuration
+
+```typescript
+// src/app/layout.tsx
+
+import { Inter } from 'next/font/google';
+import type { Metadata } from 'next';
+
+// ═══════════════════════════════════════════════════════════════
+// FONT OPTIMIZATION
+// ═══════════════════════════════════════════════════════════════
+
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap', // Prevent FOIT (Flash of Invisible Text)
+  preload: true,
+  variable: '--font-inter',
+  adjustFontFallback: true, // Reduce layout shift
+});
+
+// ═══════════════════════════════════════════════════════════════
+// METADATA FOR SEO & PERFORMANCE
+// ═══════════════════════════════════════════════════════════════
+
+export const metadata: Metadata = {
+  title: {
+    template: '%s | XOCIAL',
+    default: 'XOCIAL - AI-Powered Social Media Management',
+  },
+  description: 'Manage all your social media accounts in one place with AI-powered tools',
+  
+  // Open Graph
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    url: 'https://xocial.app',
+    siteName: 'XOCIAL',
+  },
+  
+  // Performance hints
+  robots: {
+    index: true,
+    follow: true,
+  },
+  
+  // Preconnect to external domains
+  other: {
+    'preconnect': 'https://fonts.googleapis.com',
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════
+// ROOT LAYOUT WITH OPTIMIZATIONS
+// ═══════════════════════════════════════════════════════════════
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en" className={inter.variable}>
+      <head>
+        {/* Preconnect to critical domains */}
+        <link rel="preconnect" href="https://api.supabase.co" />
+        <link rel="dns-prefetch" href="https://api.openai.com" />
+        
+        {/* Resource hints for faster loading */}
+        <link rel="prefetch" href="/api/accounts" />
+      </head>
+      <body className="font-sans antialiased">
+        {children}
+      </body>
+    </html>
+  );
+}
+```
+
+```typescript
+// src/components/optimized-image.tsx
+
+import Image from 'next/image';
+
+// ═══════════════════════════════════════════════════════════════
+// OPTIMIZED IMAGE COMPONENT
+// ═══════════════════════════════════════════════════════════════
+
+interface OptimizedImageProps {
+  src: string;
+  alt: string;
+  width?: number;
+  height?: number;
+  priority?: boolean;
+  className?: string;
+}
+
+export function OptimizedImage({
+  src,
+  alt,
+  width,
+  height,
+  priority = false,
+  className,
+}: OptimizedImageProps) {
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={width}
+      height={height}
+      className={className}
+      priority={priority} // Load immediately for above-the-fold images
+      quality={85} // Balance between quality and file size
+      placeholder="blur" // Show blur while loading
+      blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRg..." // Tiny base64 placeholder
+      loading={priority ? 'eager' : 'lazy'} // Lazy load by default
+      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" // Responsive sizes
+    />
+  );
+}
+```
+
+### 8.3 Database Query Optimization
+
+```typescript
+// src/lib/db-optimization.ts
+
+import { createClient } from '@/lib/supabase/server';
+
+// ═══════════════════════════════════════════════════════════════
+// OPTIMIZED QUERY PATTERNS
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * ❌ BAD: Fetching all columns and all rows
+ */
+async function fetchPostsBad(workspaceId: string) {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from('posts')
+    .select('*') // Fetches everything
+    .eq('workspace_id', workspaceId);
+  
+  return data;
+}
+
+/**
+ * ✅ GOOD: Selective columns, limited rows, indexed filtering
+ */
+async function fetchPostsGood(workspaceId: string, page = 1, limit = 20) {
+  const supabase = createClient();
+  
+  const { data, error, count } = await supabase
+    .from('posts')
+    // Only fetch needed columns
+    .select('id, content, status, scheduled_at, platforms, created_at', { count: 'exact' })
+    .eq('workspace_id', workspaceId) // Indexed column
+    .order('created_at', { ascending: false }) // Indexed ordering
+    .range((page - 1) * limit, page * limit - 1); // Pagination
+  
+  return { posts: data, total: count };
+}
+
+/**
+ * ✅ OPTIMAL: With foreign key joins and caching
+ */
+async function fetchPostsOptimal(workspaceId: string, options: {
+  page?: number;
+  limit?: number;
+  status?: string;
+}) {
+  const { page = 1, limit = 20, status } = options;
+  const supabase = createClient();
+  
+  let query = supabase
+    .from('posts')
+    .select(`
+      id,
+      content,
+      status,
+      scheduled_at,
+      platforms,
+      created_at,
+      created_by:profiles!posts_created_by_fkey(
+        id,
+        full_name,
+        avatar_url
+      )
+    `, { count: 'exact' })
+    .eq('workspace_id', workspaceId)
+    .order('created_at', { ascending: false })
+    .range((page - 1) * limit, page * limit - 1);
+  
+  if (status) {
+    query = query.eq('status', status);
+  }
+  
+  const { data, error, count } = await query;
+  
+  if (error) throw error;
+  
+  return {
+    posts: data,
+    pagination: {
+      page,
+      limit,
+      total: count || 0,
+      totalPages: Math.ceil((count || 0) / limit),
+    },
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// QUERY PERFORMANCE MONITORING
+// ═══════════════════════════════════════════════════════════════
+
+export async function withQueryTiming<T>(
+  queryName: string,
+  queryFn: () => Promise<T>
+): Promise<T> {
+  const start = performance.now();
+  
+  try {
+    const result = await queryFn();
+    const duration = performance.now() - start;
+    
+    if (duration > 1000) {
+      console.warn(`[Query Performance] ${queryName} took ${duration.toFixed(2)}ms`);
+    } else {
+      console.log(`[Query Performance] ${queryName} took ${duration.toFixed(2)}ms`);
+    }
+    
+    return result;
+  } catch (error) {
+    const duration = performance.now() - start;
+    console.error(`[Query Error] ${queryName} failed after ${duration.toFixed(2)}ms`, error);
+    throw error;
+  }
+}
+
+// Usage:
+// const posts = await withQueryTiming('fetchPosts', () => fetchPostsOptimal(workspaceId, options));
+```
+
+### 8.4 Performance Monitoring
+
+```typescript
+// src/lib/performance-monitoring.ts
+
+// ═══════════════════════════════════════════════════════════════
+// WEB VITALS TRACKING
+// ═══════════════════════════════════════════════════════════════
+
+export function reportWebVitals(metric: any) {
+  // Log to console in development
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[Web Vitals]', metric);
+  }
+  
+  // Send to analytics service
+  const body = JSON.stringify(metric);
+  const url = '/api/analytics/vitals';
+  
+  // Use `navigator.sendBeacon()` if available, falling back to `fetch()`
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon(url, body);
   } else {
-    showToast({ message: 'Something went wrong', type: 'error' });
-    Sentry.captureException(error);
+    fetch(url, { body, method: 'POST', keepalive: true });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PERFORMANCE BUDGET CHECKER
+// ═══════════════════════════════════════════════════════════════
+
+const PERFORMANCE_BUDGETS = {
+  // Core Web Vitals targets
+  LCP: 2500, // Largest Contentful Paint (ms)
+  FID: 100,  // First Input Delay (ms)
+  CLS: 0.1,  // Cumulative Layout Shift (score)
+  
+  // Custom metrics
+  TTFB: 600, // Time to First Byte (ms)
+  FCP: 1800, // First Contentful Paint (ms)
+  
+  // Bundle size (KB)
+  JS_BUNDLE: 200,
+  CSS_BUNDLE: 50,
+};
+
+export function checkPerformanceBudget(metric: string, value: number): boolean {
+  const budget = PERFORMANCE_BUDGETS[metric as keyof typeof PERFORMANCE_BUDGETS];
+  
+  if (!budget) return true;
+  
+  const isWithinBudget = value <= budget;
+  
+  if (!isWithinBudget) {
+    console.warn(
+      `[Performance Budget] ${metric} exceeded: ${value} > ${budget}`
+    );
+  }
+  
+  return isWithinBudget;
+}
+```
+
+---
+
+## 9. SECURITY & AUTHENTICATION FRAMEWORK
+
+### 9.1 Multi-Layer Security Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                 SECURITY LAYERS & CONTROLS                      │
+└─────────────────────────────────────────────────────────────────┘
+
+LAYER 1: NETWORK SECURITY
+┌─────────────────────────────────────────────────────────────────┐
+│ ✓ HTTPS only (TLS 1.3)                                          │
+│ ✓ HSTS (HTTP Strict Transport Security)                        │
+│ ✓ CSP (Content Security Policy)                                │
+│ ✓ CORS configuration                                            │
+│ ✓ Rate limiting per IP/user                                    │
+│ ✓ DDoS protection (Vercel)                                     │
+└─────────────────────────────────────────────────────────────────┘
+
+LAYER 2: AUTHENTICATION
+┌─────────────────────────────────────────────────────────────────┐
+│ ✓ Supabase Auth (JWT-based)                                    │
+│ ✓ Email + Password with bcrypt                                 │
+│ ✓ OAuth 2.0 for social platforms                               │
+│ ✓ Multi-factor authentication (MFA) ready                      │
+│ ✓ Session management                                            │
+│ ✓ Token refresh mechanism                                      │
+└─────────────────────────────────────────────────────────────────┘
+
+LAYER 3: AUTHORIZATION
+┌─────────────────────────────────────────────────────────────────┐
+│ ✓ Role-Based Access Control (RBAC)                             │
+│   - Owner: Full control                                        │
+│   - Admin: Manage users, posts, accounts                       │
+│   - Editor: Create/edit posts                                  │
+│   - Viewer: Read-only access                                   │
+│                                                                 │
+│ ✓ Row Level Security (RLS) at database                         │
+│ ✓ Workspace isolation                                           │
+│ ✓ API route protection                                          │
+└─────────────────────────────────────────────────────────────────┘
+
+LAYER 4: DATA SECURITY
+┌─────────────────────────────────────────────────────────────────┐
+│ ✓ Encryption at rest (AES-256)                                 │
+│ ✓ Encryption in transit (TLS)                                  │
+│ ✓ Sensitive data encryption (tokens, passwords)                │
+│ ✓ Input validation (Zod schemas)                               │
+│ ✓ SQL injection prevention (parameterized queries)             │
+│ ✓ XSS prevention (React auto-escaping)                         │
+└─────────────────────────────────────────────────────────────────┘
+
+LAYER 5: API SECURITY
+┌─────────────────────────────────────────────────────────────────┐
+│ ✓ API key authentication for cron jobs                         │
+│ ✓ Webhook signature verification                               │
+│ ✓ Request signing for external APIs                            │
+│ ✓ Rate limiting per endpoint                                   │
+│ ✓ Input sanitization                                            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 9.2 Security Implementation
+
+```typescript
+// src/lib/security.ts
+
+import crypto from 'crypto';
+
+// ═══════════════════════════════════════════════════════════════
+// TOKEN ENCRYPTION/DECRYPTION
+// ═══════════════════════════════════════════════════════════════
+
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY!; // 32-byte key
+const ALGORITHM = 'aes-256-gcm';
+
+export function encryptToken(token: string): string {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(ALGORITHM, Buffer.from(ENCRYPTION_KEY, 'hex'), iv);
+  
+  let encrypted = cipher.update(token, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  
+  const authTag = cipher.getAuthTag();
+  
+  // Return: iv:authTag:encryptedData
+  return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+}
+
+export function decryptToken(encryptedToken: string): string {
+  const [ivHex, authTagHex, encrypted] = encryptedToken.split(':');
+  
+  const iv = Buffer.from(ivHex, 'hex');
+  const authTag = Buffer.from(authTagHex, 'hex');
+  const decipher = crypto.createDecipheriv(ALGORITHM, Buffer.from(ENCRYPTION_KEY, 'hex'), iv);
+  
+  decipher.setAuthTag(authTag);
+  
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  
+  return decrypted;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WEBHOOK SIGNATURE VERIFICATION
+// ═══════════════════════════════════════════════════════════════
+
+export function verifyWebhookSignature(
+  payload: string,
+  signature: string,
+  secret: string
+): boolean {
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(payload)
+    .digest('hex');
+  
+  // Constant-time comparison to prevent timing attacks
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INPUT SANITIZATION
+// ═══════════════════════════════════════════════════════════════
+
+export function sanitizeInput(input: string): string {
+  return input
+    .replace(/[<>]/g, '') // Remove < and >
+    .trim()
+    .slice(0, 10000); // Limit length
+}
+
+export function sanitizeHTML(html: string): string {
+  // Use a library like DOMPurify on client side
+  // On server, strip all HTML tags
+  return html.replace(/<[^>]*>/g, '');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CSRF TOKEN GENERATION
+// ═══════════════════════════════════════════════════════════════
+
+export function generateCSRFToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+export function verifyCSRFToken(token: string, expected: string): boolean {
+  return crypto.timingSafeEqual(
+    Buffer.from(token),
+    Buffer.from(expected)
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SECURE RANDOM STRING GENERATION
+// ═══════════════════════════════════════════════════════════════
+
+export function generateSecureToken(length: number = 32): string {
+  return crypto.randomBytes(length).toString('base64url');
+}
+```
+
+### 9.3 Security Headers (middleware.ts)
+
+```typescript
+// src/middleware.ts
+
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+export function middleware(request: NextRequest) {
+  const response = NextResponse.next();
+  
+  // ═══════════════════════════════════════════════════════════════
+  // SECURITY HEADERS
+  // ═══════════════════════════════════════════════════════════════
+  
+  // Content Security Policy
+  response.headers.set(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-eval' 'unsafe-inline'", // Next.js requires unsafe-eval
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: https:",
+      "font-src 'self' data:",
+      "connect-src 'self' https://api.supabase.co https://api.openai.com",
+      "frame-ancestors 'none'",
+    ].join('; ')
+  );
+  
+  // Prevent clickjacking
+  response.headers.set('X-Frame-Options', 'DENY');
+  
+  // Prevent MIME sniffing
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  
+  // Enable XSS protection
+  response.headers.set('X-XSS-Protection', '1; mode=block');
+  
+  // Referrer policy
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  
+  // Strict Transport Security (HTTPS only)
+  response.headers.set(
+    'Strict-Transport-Security',
+    'max-age=31536000; includeSubDomains; preload'
+  );
+  
+  // Permissions Policy
+  response.headers.set(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=()'
+  );
+  
+  return response;
+}
+
+export const config = {
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     */
+    '/((?!_next/static|_next/image|favicon.ico|public).*)',
+  ],
+};
+```
+
+---
+
+## 10. DEPLOYMENT & DEVOPS STRATEGY
+
+### 10.1 Vercel Deployment Configuration
+
+```json
+// vercel.json
+
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  
+  "env": {
+    "NEXT_PUBLIC_APP_ENV": "production"
+  },
+  
+  "build": {
+    "env": {
+      "NEXT_PUBLIC_SUPABASE_URL": "@supabase-url",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY": "@supabase-anon-key",
+      "OPENAI_API_KEY": "@openai-api-key",
+      "ENCRYPTION_KEY": "@encryption-key",
+      "CRON_SECRET": "@cron-secret"
+    }
+  },
+  
+  "crons": [
+    {
+      "path": "/api/cron/publish",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/sync-metrics",
+      "schedule": "*/15 * * * *"
+    }
+  ],
+  
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "s-maxage=60, stale-while-revalidate"
+        }
+      ]
+    }
+  ],
+  
+  "redirects": [
+    {
+      "source": "/dashboard",
+      "destination": "/x",
+      "permanent": true
+    }
+  ],
+  
+  "rewrites": [
+    {
+      "source": "/api/v1/:path*",
+      "destination": "/api/:path*"
+    }
+  ]
+}
+```
+
+### 10.2 CI/CD Pipeline
+
+```yaml
+# .github/workflows/ci.yml
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-type-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run ESLint
+        run: npm run lint
+      
+      - name: Run TypeScript type check
+        run: npm run type-check
+  
+  test:
+    runs-on: ubuntu-latest
+    needs: lint-and-type-check
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run tests
+        run: npm test
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+  
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build application
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build
+          path: .next
+  
+  deploy-preview:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to Vercel Preview
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+  
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to Vercel Production
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+```
+
+### 10.3 Environment Management
+
+```bash
+# .env.local (Development)
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+OPENAI_API_KEY=sk-your-api-key
+
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# Encryption
+ENCRYPTION_KEY=generate-with-openssl-rand-hex-32
+
+# Cron job security
+CRON_SECRET=generate-secure-random-string
+
+# OAuth credentials
+FACEBOOK_APP_ID=your-app-id
+FACEBOOK_APP_SECRET=your-app-secret
+INSTAGRAM_CLIENT_ID=your-client-id
+INSTAGRAM_CLIENT_SECRET=your-client-secret
+TWITTER_CLIENT_ID=your-client-id
+TWITTER_CLIENT_SECRET=your-client-secret
+LINKEDIN_CLIENT_ID=your-client-id
+LINKEDIN_CLIENT_SECRET=your-client-secret
+YOUTUBE_CLIENT_ID=your-client-id
+YOUTUBE_CLIENT_SECRET=your-client-secret
+TIKTOK_CLIENT_KEY=your-client-key
+TIKTOK_CLIENT_SECRET=your-client-secret
+
+# Webhook tokens
+FACEBOOK_WEBHOOK_VERIFY_TOKEN=xocial_webhook_token_2025
+```
+
+---
+
+## 11. DEVELOPMENT WORKFLOW & BEST PRACTICES
+
+### 11.1 Git Workflow Strategy
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  GIT BRANCHING STRATEGY                         │
+└─────────────────────────────────────────────────────────────────┘
+
+main (production)
+  │
+  ├── develop (staging)
+  │     │
+  │     ├── feature/x-page-improvements
+  │     ├── feature/ai-content-generation
+  │     ├── fix/authentication-bug
+  │     └── refactor/api-routes
+  │
+  └── hotfix/critical-security-patch
+
+BRANCH NAMING CONVENTION:
+├── feature/description  (new features)
+├── fix/description      (bug fixes)
+├── refactor/description (code improvements)
+├── docs/description     (documentation)
+└── hotfix/description   (critical production fixes)
+
+COMMIT MESSAGE FORMAT:
+<type>(<scope>): <subject>
+
+Types:
+- feat: New feature
+- fix: Bug fix
+- docs: Documentation only
+- style: Code style changes (formatting)
+- refactor: Code refactoring
+- perf: Performance improvements
+- test: Adding tests
+- chore: Build process or auxiliary tool changes
+
+Examples:
+- feat(posts): add bulk delete functionality
+- fix(auth): resolve token expiration issue
+- refactor(api): simplify error handling
+- perf(db): optimize posts query with indexes
+```
+
+### 11.2 Code Review Checklist
+
+```markdown
+## Code Review Checklist
+
+### Functionality
+- [ ] Code fulfills acceptance criteria
+- [ ] Edge cases are handled
+- [ ] Error handling is comprehensive
+- [ ] Input validation is present
+
+### Code Quality
+- [ ] Follows established patterns and conventions
+- [ ] No code duplication (DRY principle)
+- [ ] Functions/components have single responsibility
+- [ ] Clear and descriptive naming
+
+### Performance
+- [ ] No unnecessary re-renders
+- [ ] Queries are optimized (indexed, limited)
+- [ ] Images are optimized
+- [ ] Lazy loading where appropriate
+
+### Security
+- [ ] Input is validated and sanitized
+- [ ] Authentication/authorization checked
+- [ ] Sensitive data is encrypted
+- [ ] No secrets in code
+
+### Testing
+- [ ] Unit tests added/updated
+- [ ] Integration tests pass
+- [ ] Manual testing performed
+
+### Documentation
+- [ ] Code comments for complex logic
+- [ ] README updated if needed
+- [ ] API documentation current
+
+### Accessibility
+- [ ] Keyboard navigation works
+- [ ] Screen reader friendly
+- [ ] Color contrast meets WCAG standards
+- [ ] ARIA labels where needed
+```
+
+### 11.3 Development Commands
+
+```json
+// package.json scripts
+
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "lint:fix": "next lint --fix",
+    "type-check": "tsc --noEmit",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\"",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "analyze": "ANALYZE=true next build",
+    "db:push": "supabase db push",
+    "db:reset": "supabase db reset",
+    "db:seed": "node scripts/seed-database.js",
+    "prepare": "husky install"
   }
 }
 ```
 
-### 12.5 Accessibility & Semantic HTML
-
-```typescript
-// ✅ GOOD: Semantic HTML, ARIA labels
-export function CommentsMiniModal({ postId }: { postId: string }) {
-  return (
-    <dialog
-      aria-labelledby="comments-title"
-      aria-describedby="comments-desc"
-      role="dialog"
-    >
-      <h2 id="comments-title">Comments on Post</h2>
-      <p id="comments-desc">View and reply to comments</p>
-      
-      <ul role="list" aria-live="polite" aria-label="Comments list">
-        {comments.map(comment => (
-          <li key={comment.id}>
-            <article>
-              <header>
-                <img
-                  src={comment.author.avatar}
-                  alt={comment.author.name}
-                  width={40}
-                  height={40}
-                />
-                <strong>{comment.author.name}</strong>
-              </header>
-              <p>{comment.text}</p>
-            </article>
-          </li>
-        ))}
-      </ul>
-      
-      <textarea
-        aria-label="Reply to comment"
-        placeholder="Write a reply..."
-      />
-      <button>
-        Send Reply
-        <span className="sr-only">Send reply to comment</span>
-      </button>
-    </dialog>
-  );
-}
-
-// ❌ BAD: Non-semantic, poor accessibility
-<div className="modal">
-  <div>Comments</div>
-  <div>
-    {comments.map(comment => (
-      <div key={comment.id}>
-        <img src={comment.author.avatar} />
-        {comment.author.name}
-        {comment.text}
-      </div>
-    ))}
-  </div>
-  <input type="text" placeholder="Reply..." />
-  <div onClick={handleReply}>Send</div>
-</div>
-```
-
 ---
 
-## 13. TESTING STRATEGY & QA FRAMEWORK
+## 12. TESTING & QUALITY ASSURANCE
 
-### 13.1 Testing Pyramid
+### 12.1 Testing Strategy
 
 ```
-           /\
-          /  \        E2E Tests (5-10%)
-         /____\       Cypress, Playwright
-        /      \
-       /        \     Integration Tests (20-30%)
-      /          \    API + DB interactions
-     /____________\
-    /              \   Unit Tests (60-70%)
-   /                \ Component & function tests
-  /__________________\
-   Jest, React Testing Library
+┌─────────────────────────────────────────────────────────────────┐
+│                    TESTING PYRAMID                              │
+└─────────────────────────────────────────────────────────────────┘
+
+                    ╱╲
+                   ╱  ╲
+                  ╱ E2E ╲          5% - End-to-End Tests
+                 ╱──────╲         (Playwright, Cypress)
+                ╱        ╲
+               ╱Integration╲       15% - Integration Tests
+              ╱────────────╲      (API routes, DB queries)
+             ╱              ╲
+            ╱  Unit Tests    ╲    80% - Unit Tests
+           ╱──────────────────╲   (Components, functions, hooks)
+          ╱____________________╲
+
+TESTING OBJECTIVES:
+✓ Catch bugs early in development
+✓ Ensure features work as expected
+✓ Prevent regressions
+✓ Document code behavior
+✓ Enable confident refactoring
 ```
 
-### 13.2 Testing Examples
+### 12.2 Unit Testing Example
 
-**Unit Test (Component):**
 ```typescript
-// components/__tests__/MetricCard.test.tsx
-import { render, screen } from '@testing-library/react';
-import { MetricCard } from '../MetricCard';
+// src/lib/__tests__/validation.test.ts
 
-describe('MetricCard', () => {
-  it('renders metric value and change percentage', () => {
-    render(
-      <MetricCard
-        title="Impressions"
-        value={125432}
-        change={12.5}
-        trend="up"
-      />
-    );
+import { describe, it, expect } from '@jest/globals';
+import { validateEmail, validatePassword } from '../validation';
+
+describe('validation utilities', () => {
+  describe('validateEmail', () => {
+    it('should accept valid email addresses', () => {
+      expect(validateEmail('user@example.com')).toBe(true);
+      expect(validateEmail('test.user+tag@domain.co.uk')).toBe(true);
+    });
     
-    expect(screen.getByText('125,432')).toBeInTheDocument();
-    expect(screen.getByText('+12.5%')).toBeInTheDocument();
-    expect(screen.getByTestId('trend-up')).toBeInTheDocument();
-  });
-  
-  it('shows error state when loading fails', () => {
-    render(<MetricCard title="Test" value={0} isError={true} />);
-    expect(screen.getByText('Failed to load metrics')).toBeInTheDocument();
-  });
-});
-```
-
-**Integration Test (API + Component):**
-```typescript
-// app/x/__tests__/page.integration.test.tsx
-import { render, screen, waitFor } from '@testing-library/react';
-import XPage from '../page';
-import { mockFetch } from '@/__tests__/mocks/fetch';
-
-describe('X Page Integration', () => {
-  beforeEach(() => {
-    mockFetch.setResponse('/api/accounts', {
-      success: true,
-      data: [
-        { id: '1', platform: 'facebook', username: 'testuser' },
-      ],
+    it('should reject invalid email addresses', () => {
+      expect(validateEmail('invalid')).toBe(false);
+      expect(validateEmail('@example.com')).toBe(false);
+      expect(validateEmail('user@')).toBe(false);
+    });
+    
+    it('should handle edge cases', () => {
+      expect(validateEmail('')).toBe(false);
+      expect(validateEmail(null as any)).toBe(false);
+      expect(validateEmail(undefined as any)).toBe(false);
     });
   });
   
-  it('fetches and displays user accounts on load', async () => {
-    render(<XPage />);
-    
-    await waitFor(() => {
-      expect(screen.getByText('testuser')).toBeInTheDocument();
+  describe('validatePassword', () => {
+    it('should accept strong passwords', () => {
+      expect(validatePassword('StrongP@ss123')).toBe(true);
     });
-  });
-  
-  it('displays error message when API fails', async () => {
-    mockFetch.setError('/api/accounts', new Error('API Error'));
     
-    render(<XPage />);
-    
-    await waitFor(() => {
-      expect(screen.getByText('Failed to load accounts')).toBeInTheDocument();
+    it('should reject weak passwords', () => {
+      expect(validatePassword('weak')).toBe(false);
+      expect(validatePassword('12345678')).toBe(false);
+      expect(validatePassword('NoNumbers!')).toBe(false);
     });
   });
 });
 ```
 
-**E2E Test (Full User Flow):**
-```typescript
-// e2e/create-post.spec.ts - Playwright
-import { test, expect } from '@playwright/test';
+---
 
-test('user can create and schedule a post', async ({ page, browser }) => {
-  // Login
-  await page.goto('/auth/login');
-  await page.fill('input[name="email"]', 'test@example.com');
-  await page.fill('input[name="password"]', 'Password123!');
-  await page.click('button[type="submit"]');
-  await page.waitForURL('/x');
-  
-  // Navigate to AI Content page
-  await page.click('a[href="/c"]');
-  await expect(page).toHaveURL('/c');
-  
-  // Generate content
-  await page.fill('textarea[name="brief"]', 'Launch summer collection');
-  await page.check('input[value="instagram"]');
-  await page.click('button:has-text("Generate Content")');
-  
-  // Wait for AI response
-  await page.waitForSelector('text=Generated caption');
-  const caption = await page.textContent('.generated-caption');
-  expect(caption).toContain('summer');
-  
-  // Schedule post
-  await page.click('button:has-text("Schedule Post")');
-  await page.click('input[name="date"]');
-  await page.click('[data-date="2025-10-25"]');
-  await page.fill('input[name="time"]', '14:00');
-  await page.click('button:has-text("Confirm")');
-  
-  // Verify success
-  await expect(page).toHaveText('Post scheduled');
-  
-  // Verify in calendar
-  await page.click('a[href="/o"]');
-  await page.waitForURL('/o');
-  await expect(page.locator('[data-date="2025-10-25"]')).toContainText('1');
-});
+## 📊 COMPREHENSIVE FEATURE FLOWCHARTS
+
+### Feature Flow: User Authentication
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│           USER AUTHENTICATION FLOW (EMAIL/PASSWORD)             │
+└─────────────────────────────────────────────────────────────────┘
+
+START: User visits /auth/login
+       │
+       ▼
+   ┌─────────────┐
+   │ Login Form  │
+   │ Displayed   │
+   └──────┬──────┘
+          │
+          ▼
+   User enters credentials
+          │
+          ▼
+   ┌──────────────────┐
+   │ Frontend         │
+   │ Validation       │
+   │ (Zod schema)     │
+   └──────┬───────────┘
+          │
+      Is Valid?
+       ╱    ╲
+     NO      YES
+     ╱        ╲
+    ▼          ▼
+Show Error   POST /api/auth/login
+             │
+             ▼
+       ┌──────────────────┐
+       │ Supabase Auth    │
+       │ signInWithPass() │
+       └──────┬───────────┘
+              │
+         Success?
+          ╱    ╲
+        NO      YES
+        ╱        ╲
+       ▼          ▼
+   Show Error   Create Session
+                │
+                ▼
+           Set Cookie
+                │
+                ▼
+         Store user in
+         authStore (Zustand)
+                │
+                ▼
+         Redirect to /x
+                │
+                ▼
+            END
+```
+
+### Feature Flow: AI Content Generation
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              AI CONTENT GENERATION FLOW                         │
+└─────────────────────────────────────────────────────────────────┘
+
+START: User on /c page
+       │
+       ▼
+   ┌─────────────────┐
+   │ 1. User enters  │
+   │    prompt       │
+   └────────┬────────┘
+            │
+            ▼
+   ┌─────────────────┐
+   │ 2. Selects      │
+   │    options:     │
+   │    - Tone       │
+   │    - Length     │
+   │    - Platforms  │
+   └────────┬────────┘
+            │
+            ▼
+   ┌─────────────────┐
+   │ 3. Click        │
+   │   "Generate"    │
+   └────────┬────────┘
+            │
+            ▼
+   Show loading state
+            │
+            ▼
+   POST /api/ai/generate
+   Body: {
+     prompt,
+     tone,
+     length,
+     platforms
+   }
+            │
+            ▼
+   ┌─────────────────────┐
+   │ API Route Handler   │
+   │                     │
+   │ 4. Validate input   │
+   │ 5. Check user quota │
+   │ 6. Build OpenAI     │
+   │    prompt           │
+   └──────────┬──────────┘
+              │
+              ▼
+   ┌───────────────────────┐
+   │ OpenAI API Call       │
+   │                       │
+   │ Model: GPT-4          │
+   │ System prompt:        │
+   │ "You are a social     │
+   │  media expert..."     │
+   │                       │
+   │ User prompt:          │
+   │ {formatted_prompt}    │
+   └──────────┬────────────┘
+              │
+              ▼
+         Success?
+          ╱    ╲
+        NO      YES
+        ╱        ╲
+       ▼          ▼
+   Return      Parse response
+   error       │
+               ▼
+          ┌─────────────────────┐
+          │ Generate platform-  │
+          │ specific content:   │
+          │                     │
+          │ Facebook: long-form │
+          │ Twitter: 280 chars  │
+          │ Instagram: hashtags │
+          └──────────┬──────────┘
+                     │
+                     ▼
+          ┌─────────────────────┐
+          │ Generate hashtags   │
+          │ POST /api/ai/       │
+          │      hashtags       │
+          └──────────┬──────────┘
+                     │
+                     ▼
+          ┌─────────────────────┐
+          │ Store in DB:        │
+          │ ai_generations      │
+          │ table               │
+          └──────────┬──────────┘
+                     │
+                     ▼
+          Return {
+            content: {...},
+            hashtags: [...],
+            metadata: {...}
+          }
+                     │
+                     ▼
+          ┌─────────────────────┐
+          │ Frontend receives   │
+          │ generated content   │
+          └──────────┬──────────┘
+                     │
+                     ▼
+          ┌─────────────────────┐
+          │ 7. Display in       │
+          │    editor with      │
+          │    platform         │
+          │    previews         │
+          └──────────┬──────────┘
+                     │
+                     ▼
+          User can:
+          - Edit content
+          - Regenerate
+          - Save as template
+          - Schedule post
+                     │
+                     ▼
+                   END
+```
+
+### Feature Flow: Post Publishing
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              AUTOMATED POST PUBLISHING FLOW                     │
+└─────────────────────────────────────────────────────────────────┘
+
+TRIGGER: Vercel Cron Job (every minute)
+         │
+         ▼
+   GET /api/cron/publish
+   Header: Authorization: Bearer {CRON_SECRET}
+         │
+         ▼
+   ┌──────────────────┐
+   │ 1. Verify cron   │
+   │    secret        │
+   └────────┬─────────┘
+            │
+       Valid?
+        ╱   ╲
+      NO     YES
+      ╱       ╲
+     ▼         ▼
+  401      Query DB for
+  Error    scheduled posts
+           WHERE status = 'scheduled'
+           AND scheduled_at <= NOW()
+           LIMIT 50
+            │
+            ▼
+       Any posts?
+        ╱     ╲
+      NO       YES
+      ╱         ╲
+     ▼           ▼
+  Return      For each post:
+  success     │
+              ▼
+         ┌────────────────────┐
+         │ 2. Update status   │
+         │    to 'publishing' │
+         └──────────┬─────────┘
+                    │
+                    ▼
+         ┌────────────────────┐
+         │ 3. Get social      │
+         │    accounts for    │
+         │    selected        │
+         │    platforms       │
+         └──────────┬─────────┘
+                    │
+                    ▼
+         For each platform:
+                    │
+      ┌─────────────┼─────────────┐
+      │             │             │
+      ▼             ▼             ▼
+  Facebook     Instagram      Twitter
+  Publisher    Publisher      Publisher
+      │             │             │
+      ▼             ▼             ▼
+  ┌─────────────────────────────────┐
+  │ Platform Publishing Steps:      │
+  │                                 │
+  │ A. Get access token (decrypt)   │
+  │ B. Prepare content              │
+  │ C. Upload media (if any)        │
+  │ D. Create post via API          │
+  │ E. Get external post ID         │
+  └──────────┬──────────────────────┘
+             │
+        Success?
+         ╱   ╲
+       NO     YES
+       ╱       ╲
+      ▼         ▼
+  Store      Store external_id
+  error      in post record
+  message    │
+             ▼
+         All platforms
+         completed?
+             │
+             ▼
+         ┌────────────────────┐
+         │ 4. Update post     │
+         │    status:         │
+         │    'published'     │
+         │                    │
+         │ 5. Set             │
+         │    published_at    │
+         └──────────┬─────────┘
+                    │
+                    ▼
+         ┌────────────────────┐
+         │ 6. Create initial  │
+         │    analytics       │
+         │    records         │
+         └──────────┬─────────┘
+                    │
+                    ▼
+         ┌────────────────────┐
+         │ 7. Notify user     │
+         │    (optional)      │
+         └──────────┬─────────┘
+                    │
+                    ▼
+                  END
+
+ROLLBACK ON ERROR:
+- Revert status to 'scheduled'
+- Store error message
+- Retry on next cron run
 ```
 
 ---
 
-## 14. MONITORING & OBSERVABILITY CHECKLIST
+## 🎯 FINAL RECOMMENDATIONS
 
-### 14.1 Metrics to Track
+### Development Priority Levels
 
-**Frontend Metrics:**
-- [ ] Page load time (first contentful paint, largest contentful paint)
-- [ ] Time to interactive (TTI)
-- [ ] Cumulative layout shift (CLS)
-- [ ] JavaScript bundle size
-- [ ] Component render times
-- [ ] API request latency
-- [ ] Error rate by page
-- [ ] User session duration
-- [ ] Conversion rate (post scheduled, account connected, etc.)
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              FEATURE IMPLEMENTATION PRIORITY                     │
+└─────────────────────────────────────────────────────────────────┘
 
-**Backend Metrics:**
-- [ ] API endpoint response time (p50, p95, p99)
-- [ ] Database query latency
-- [ ] Cache hit rate
-- [ ] Error rate by endpoint
-- [ ] Throughput (requests/sec)
-- [ ] Queue depth (background jobs)
-- [ ] Platform API call success rate
-- [ ] Token refresh rate (auth)
-- [ ] Memory usage per process
+🔴 CRITICAL (P0) - Week 1-2
+├── Authentication & Authorization
+├── Database schema with RLS
+├── Basic UI component library
+└── Core API endpoints
 
-**Database Metrics:**
-- [ ] Connection pool usage
-- [ ] Query count by table
-- [ ] Slow query log (>500ms)
-- [ ] Index effectiveness
-- [ ] Replication lag
-- [ ] Storage growth rate
+🟠 HIGH (P1) - Week 3-5
+├── Multi-platform OAuth
+├── Content calendar
+├── AI content generation
+├── Post scheduling
+└── Real-time publishing
 
-### 14.2 Alerting Thresholds
+🟡 MEDIUM (P2) - Week 6-8
+├── Analytics dashboard
+├── Team collaboration
+├── Content templates
+├── Media management
+└── Strategy recommendations
 
-```yaml
-Alerts:
-  - name: "High API Error Rate"
-    condition: "error_rate > 5% for 5 minutes"
-    action: "Notify on-call engineer"
-    
-  - name: "Database Connection Pool Exhausted"
-    condition: "available_connections < 2"
-    action: "Auto-scale connections, alert team"
-    
-  - name: "Slow Page Load"
-    condition: "LCP > 3 seconds for 10 minutes"
-    action: "Create incident ticket"
-    
-  - name: "High Memory Usage"
-    condition: "memory_usage > 90% for 2 minutes"
-    action: "Restart service, alert team"
-    
-  - name: "Background Job Queue Backlog"
-    condition: "queue_size > 1000"
-    action: "Trigger auto-scaling, notify team"
+🟢 LOW (P3) - Week 9-12
+├── Advanced analytics
+├── A/B testing
+├── Automation rules
+├── Custom reports
+└── Influencer marketplace
+
+⚪ NICE-TO-HAVE (Future)
+├── Mobile app
+├── Browser extension
+├── CRM integration
+└── White-label solution
+```
+
+### Success Metrics
+
+```
+KEY PERFORMANCE INDICATORS (KPIs):
+
+Technical Performance:
+✓ Page load time: < 2 seconds
+✓ API response time: < 500ms
+✓ Database query time: < 100ms
+✓ Error rate: < 0.1%
+✓ Uptime: > 99.9%
+
+User Experience:
+✓ Time to first post: < 5 minutes
+✓ Post creation time: < 2 minutes
+✓ Platform connection time: < 1 minute
+✓ User satisfaction: > 4.5/5
+
+Business Metrics:
+✓ User retention (30-day): > 60%
+✓ Daily active users
+✓ Posts published per user
+✓ Revenue per user (if applicable)
 ```
 
 ---
 
-## 15. SECURITY HARDENING CHECKLIST
+## 📝 CONCLUSION & NEXT STEPS
 
-### 15.1 Pre-Launch Security Audit
+This comprehensive SRS document provides:
 
-- [ ] **Authentication**
-  - [ ] JWT token validation on all protected endpoints
-  - [ ] Refresh token rotation implemented
-  - [ ] Password hashing (bcrypt) with adequate salt rounds
-  - [ ] Email verification before account activation
-  - [ ] MFA option available (Phase 2)
+1. **Complete architectural blueprint** for XOCIAL platform
+2. **Step-by-step implementation guides** for each component
+3. **Production-ready patterns** for Next.js 15.5+, Vercel, and Supabase
+4. **Enterprise-grade security** and error handling
+5. **Performance optimization** strategies
+6. **Scalable database design** with RLS
+7. **Comprehensive testing** approach
+8. **DevOps and deployment** workflows
 
-- [ ] **Authorization**
-  - [ ] RBAC policies enforced
-  - [ ] Supabase RLS policies tested
-  - [ ] No privilege escalation possible
-  - [ ] Data isolation between teams/users verified
+### To Start Development:
 
-- [ ] **Data Protection**
-  - [ ] HTTPS only (no HTTP)
-  - [ ] Sensitive data encrypted at rest (AES-256)
-  - [ ] OAuth tokens encrypted in database
-  - [ ] No sensitive data in logs
-  - [ ] API keys rotated regularly
+1. **Review this SRS** with your team
+2. **Set up development environment** following ENV_SETUP.md
+3. **Initialize database** with provided schema
+4. **Implement features** following the priority levels
+5. **Use provided code patterns** as templates
+6. **Follow testing strategy** for quality assurance
+7. **Deploy to Vercel** using CI/CD pipeline
+8. **Monitor and iterate** based on metrics
 
-- [ ] **API Security**
-  - [ ] Rate limiting implemented
-  - [ ] CORS properly configured
-  - [ ] CSRF protection on state-changing endpoints
-  - [ ] Input validation on all endpoints
-  - [ ] SQL injection prevented (using parameterized queries)
-  - [ ] XSS prevention (sanitize outputs)
-
-- [ ] **Infrastructure**
-  - [ ] Vercel security settings configured
-  - [ ] Supabase firewall rules set
-  - [ ] Environment variables secure
-  - [ ] No hardcoded secrets
-  - [ ] API keys in Vercel environment variables
-
-- [ ] **Third-Party Integrations**
-  - [ ] OAuth redirects validated (no open redirects)
-  - [ ] API responses from platforms verified
-  - [ ] Webhook signatures validated
-  - [ ] Rate limits respected (don't exceed platform quotas)
+**This document serves as your single source of truth for building XOCIAL systematically, ensuring consistency, security, and performance at every step.**
 
 ---
-
-## 16. FINAL IMPLEMENTATION NOTES
-
-### For Cursor AI Integration:
-1. **Create `.cursor/rules.md`** with project-specific rules
-2. **Use Composer for multi-file generation** - it can create entire feature sets at once
-3. **Reference this SRS document** in prompts to maintain consistency
-4. **Leverage Cursor's context window** to pass entire component structures
-5. **Use cursor commands**: `/explain`, `/refactor`, `/test` for code quality
-
-### Performance Targets:
-- **Lighthouse Score**: 90+ (all metrics)
-- **Page Load Time**: <2s (LCP)
-- **API Response**: <200ms (p95)
-- **Time to Interactive**: <3s
-- **Core Web Vitals**: All green
-
-### Success Criteria:
-- ✅ All 6 pages (X.O.C.I.A.L) functional
-- ✅ Zero unhandled errors in production
-- ✅ Sub-200ms API latency (p95)
-- ✅ 99.9% uptime (Vercel SLA)
-- ✅ All authentication flows working
-- ✅ Real-time sync within 15 minutes
-- ✅ AI content generation <5 seconds
-- ✅ Responsive on mobile/tablet/desktop
-- ✅ Full accessibility (WCAG AA)
-- ✅ Comprehensive test coverage (>80%)
-
----
-
-**Document Version**: 2.0  
-**Last Updated**: October 16, 2025  
-**Framework**: Next.js 14+ with Bun Runtime  
-**Status**: Ready for Development with Cursor IDE
-    

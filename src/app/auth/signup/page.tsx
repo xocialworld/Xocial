@@ -24,7 +24,7 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      // Sign up the user
+      // Create auth user
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
@@ -32,28 +32,38 @@ export default function SignupPage() {
           data: {
             name,
           },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 
-      if (signUpError) throw signUpError;
-
-      if (authData.user) {
-        // Create profile
-        const { error: profileError } = await supabase
-          .from("profiles")
-          .insert({
-            id: authData.user.id,
-            email,
-            name,
-          });
-
-        if (profileError) throw profileError;
-
-        toast.success("Account created successfully! Please check your email to verify.");
-        router.push("/auth/login");
+      if (signUpError) {
+        toast.error(signUpError.message || "Failed to create account");
+        return;
       }
+
+      if (!authData.user) {
+        toast.error("Failed to create user");
+        return;
+      }
+
+      // Create profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: authData.user.id,
+          email,
+          name,
+        });
+
+      if (profileError) {
+        toast.error(profileError.message || "Failed to create profile");
+        return;
+      }
+
+      toast.success("Account created successfully! Please check your email to verify.");
+      router.push("/auth/login");
     } catch (error: any) {
-      toast.error(error.message || "Failed to create account");
+      toast.error(error.message || "An unexpected error occurred");
     } finally {
       setLoading(false);
     }

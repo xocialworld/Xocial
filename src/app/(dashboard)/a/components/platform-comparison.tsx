@@ -1,42 +1,91 @@
-"use client";
+'use client';
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { Card } from '@/components/ui/card';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer 
+} from 'recharts';
+import type { PlatformStat } from '../hooks/useAnalytics';
 
-const data = [
-  { platform: "Facebook", impressions: 12000, engagement: 850, followers: 5200 },
-  { platform: "Instagram", impressions: 15000, engagement: 1200, followers: 6800 },
-  { platform: "Twitter", impressions: 8000, engagement: 650, followers: 3400 },
-  { platform: "LinkedIn", impressions: 5000, engagement: 420, followers: 2200 },
-  { platform: "YouTube", impressions: 20000, engagement: 1800, followers: 8500 },
-];
+interface PlatformComparisonProps {
+  data: PlatformStat[];
+}
 
-export function PlatformComparison() {
+export function PlatformComparison({ data }: PlatformComparisonProps) {
+  const platformColors: Record<string, string> = {
+    facebook: '#1877f2',
+    instagram: '#e4405f',
+    twitter: '#1da1f2',
+    linkedin: '#0a66c2',
+    youtube: '#ff0000',
+    tiktok: '#000000',
+  };
+
+  const chartData = data.map(stat => ({
+    ...stat,
+    fill: platformColors[stat.platform.toLowerCase()] || '#6b7280',
+  }));
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Platform Performance</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="platform" stroke="#64748b" style={{ fontSize: "12px" }} />
-            <YAxis stroke="#64748b" style={{ fontSize: "12px" }} />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#fff",
-                border: "1px solid #e2e8f0",
-                borderRadius: "8px",
-              }}
-            />
-            <Legend />
-            <Bar dataKey="impressions" fill="#0ea5e9" radius={[8, 8, 0, 0]} />
-            <Bar dataKey="engagement" fill="#22c55e" radius={[8, 8, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </CardContent>
+    <Card className="p-6">
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-gray-900">Platform Comparison</h3>
+        <p className="text-sm text-gray-500 mt-1">
+          Compare performance across different social media platforms
+        </p>
+      </div>
+
+      <ResponsiveContainer width="100%" height={400}>
+        <BarChart data={chartData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis 
+            dataKey="platform" 
+            stroke="#6b7280"
+            style={{ fontSize: '12px', textTransform: 'capitalize' }}
+          />
+          <YAxis 
+            stroke="#6b7280"
+            style={{ fontSize: '12px' }}
+          />
+          <Tooltip 
+            contentStyle={{
+              backgroundColor: '#fff',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '12px',
+            }}
+            formatter={(value: number) => value.toLocaleString()}
+          />
+          <Legend 
+            wrapperStyle={{
+              paddingTop: '20px',
+            }}
+          />
+          <Bar 
+            dataKey="followers" 
+            name="Followers"
+            radius={[8, 8, 0, 0]}
+          />
+          <Bar 
+            dataKey="engagement" 
+            fill="#10b981" 
+            name="Engagement"
+            radius={[8, 8, 0, 0]}
+          />
+          <Bar 
+            dataKey="posts" 
+            fill="#f59e0b" 
+            name="Posts"
+            radius={[8, 8, 0, 0]}
+          />
+        </BarChart>
+      </ResponsiveContainer>
     </Card>
   );
 }
-

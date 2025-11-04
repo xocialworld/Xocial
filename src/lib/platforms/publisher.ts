@@ -19,7 +19,7 @@ export interface PublishRequest {
     mediaUrls?: string[];
     link?: string;
   };
-  accountIds: Record<Platform, string>; // Map of platform to account ID
+  accountIds: Partial<Record<Platform, string>>; // Map of platform to account ID
   scheduledFor?: Date;
 }
 

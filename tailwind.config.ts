@@ -1,6 +1,11 @@
 import type { Config } from "tailwindcss";
 import { tailwindTheme } from "./src/lib/design-tokens";
 
+const { zIndex: tokenZIndex, ...tailwindThemeWithoutZIndex } = tailwindTheme as Record<string, any>;
+const normalizedZIndex = tokenZIndex
+  ? Object.fromEntries(Object.entries(tokenZIndex).map(([key, value]) => [key, String(value)]))
+  : undefined;
+
 const config: Config = {
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
@@ -9,8 +14,9 @@ const config: Config = {
   ],
   theme: {
     extend: {
-      // Import all design tokens
-      ...tailwindTheme,
+      // Import all design tokens (with normalized z-index)
+      ...tailwindThemeWithoutZIndex,
+      ...(normalizedZIndex ? { zIndex: normalizedZIndex } : {}),
       
       // Additional custom values
       colors: {

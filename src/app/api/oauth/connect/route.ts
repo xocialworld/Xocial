@@ -13,7 +13,7 @@ import { cookies } from 'next/headers';
  * Initiate OAuth flow for a specific platform
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  await requireAuth(request);
+  const { user } = await requireAuth(request);
 
   const searchParams = request.nextUrl.searchParams;
   const platform = searchParams.get('platform');
@@ -22,7 +22,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(400, 'Platform parameter is required', 'MISSING_PLATFORM');
   }
 
-  // Generate random state for CSRF protection
+  // Generate random state for CSRF protection and include user ID
   const state = generateRandomState();
   
   let authUrl: string;
@@ -126,9 +126,18 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
       throw new APIError(400, `Unsupported platform: ${platform}`, 'INVALID_PLATFORM');
   }
 
-  // Store state and code verifier in session/cookies for verification
+  // Store state, user ID, and code verifier in session/cookies for verification
   const cookieStore = await cookies();
   cookieStore.set(`oauth_state_${platform}`, state, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 600, // 10 minutes
+    path: '/',
+  });
+
+  // Store user ID to retrieve in callback
+  cookieStore.set(`oauth_user_${platform}`, user.id, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',

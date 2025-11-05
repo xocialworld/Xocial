@@ -12,24 +12,32 @@ import {
   getFacebookPages,
 } from '@/lib/oauth/facebook';
 import { createClient } from '@/lib/supabase/server';
+import { cookies } from 'next/headers';
 
 /**
  * GET /api/oauth/facebook/callback
  * Handle Facebook OAuth callback
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
+  // Get user ID from OAuth cookie
+  const cookieStore = await cookies();
+  const userId = cookieStore.get('oauth_user_facebook')?.value;
+  
+  if (!userId) {
+    // Redirect to login with error message
+    const loginUrl = new URL('/auth/login', process.env.NEXT_PUBLIC_APP_URL);
+    loginUrl.searchParams.set('error', 'Session expired. Please try connecting again.');
+    return NextResponse.redirect(loginUrl);
+  }
+  
   // Create Supabase client
   const supabase = await createClient();
   
-  // Get user session - try to get it but don't fail if missing yet
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  // Create a user object from the stored ID
+  const user = { id: userId };
   
-  if (authError || !user) {
-    // Redirect to login with error message
-    const loginUrl = new URL('/auth/login', process.env.NEXT_PUBLIC_APP_URL);
-    loginUrl.searchParams.set('error', 'Please login first before connecting social accounts');
-    return NextResponse.redirect(loginUrl);
-  }
+  // Clear the OAuth cookie
+  cookieStore.delete('oauth_user_facebook');
 
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');

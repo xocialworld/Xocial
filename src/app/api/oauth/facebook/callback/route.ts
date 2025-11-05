@@ -43,11 +43,15 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error');
 
   if (error) {
-    throw new APIError(400, `Facebook OAuth error: ${error}`, 'OAUTH_ERROR');
+    const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
+    accountsUrl.searchParams.set('error', `Facebook OAuth error: ${error}`);
+    return NextResponse.redirect(accountsUrl);
   }
 
   if (!code) {
-    throw new APIError(400, 'Authorization code is missing', 'MISSING_CODE');
+    const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
+    accountsUrl.searchParams.set('error', 'Authorization code is missing');
+    return NextResponse.redirect(accountsUrl);
   }
 
   // TODO: Verify state parameter matches what was stored in session

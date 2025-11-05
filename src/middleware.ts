@@ -7,7 +7,20 @@ import { getSecurityHeaders } from '@/lib/security';
  * Runs on every request except static assets
  */
 export async function middleware(request: NextRequest) {
-  // Update Supabase session
+  // Skip authentication for webhook endpoints - they need to be publicly accessible
+  if (request.nextUrl.pathname.startsWith('/api/webhooks/')) {
+    const response = NextResponse.next();
+    
+    // Still add security headers for webhooks
+    const securityHeaders = getSecurityHeaders();
+    Object.entries(securityHeaders).forEach(([key, value]) => {
+      response.headers.set(key, value);
+    });
+    
+    return response;
+  }
+
+  // Update Supabase session for authenticated routes
   const response = await updateSession(request);
 
   // Add comprehensive security headers

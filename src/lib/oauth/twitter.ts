@@ -57,14 +57,14 @@ function sha256(plain: string): string {
   if (typeof window !== 'undefined') {
     const encoder = new TextEncoder();
     const data = encoder.encode(plain);
-    return crypto.subtle.digest('SHA-256', data).then(hash => 
+    return (globalThis.crypto as Crypto).subtle.digest('SHA-256', data).then(hash => 
       base64URLEncode(String.fromCharCode(...new Uint8Array(hash)))
     ) as any;
   }
   
   // In Node.js environment
-  const crypto = require('crypto');
-  return crypto.createHash('sha256').update(plain).digest();
+  const { createHash } = require('crypto') as typeof import('crypto');
+  return createHash('sha256').update(plain).digest();
 }
 
 function base64URLEncode(str: string): string {

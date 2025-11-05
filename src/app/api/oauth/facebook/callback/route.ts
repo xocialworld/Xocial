@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  withErrorHandler,
-  successResponse,
   getUserWorkspace,
-  APIError,
 } from '@/lib/api-middleware';
 import {
   exchangeFacebookCode,
@@ -18,7 +15,8 @@ import { cookies } from 'next/headers';
  * GET /api/oauth/facebook/callback
  * Handle Facebook OAuth callback
  */
-export const GET = withErrorHandler(async (request: NextRequest) => {
+export async function GET(request: NextRequest) {
+  try {
   // Get user ID from OAuth cookie
   const cookieStore = await cookies();
   const userId = cookieStore.get('oauth_user_facebook')?.value;
@@ -111,5 +109,13 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
   accountsUrl.searchParams.set('success', 'Facebook pages connected successfully');
   return NextResponse.redirect(accountsUrl);
-});
+  } catch (error) {
+    console.error('Facebook OAuth callback error:', error);
+    
+    // Redirect to accounts page with error message
+    const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
+    accountsUrl.searchParams.set('error', error instanceof Error ? error.message : 'Failed to connect Facebook account');
+    return NextResponse.redirect(accountsUrl);
+  }
+}
 

@@ -95,7 +95,11 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
     if (state.postAnalytics.length === 0) return 0;
 
     const totalRate = state.postAnalytics.reduce(
-      (total, analytics) => total + analytics.engagement_rate,
+      (total, analytics) => {
+        if (!analytics.impressions || analytics.impressions === 0) return total;
+        const rate = (analytics.engagement / analytics.impressions) * 100;
+        return total + rate;
+      },
       0
     );
 

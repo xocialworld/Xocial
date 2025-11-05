@@ -1,3 +1,5 @@
+import { createHash, randomBytes } from 'node:crypto';
+
 /**
  * Twitter/X OAuth 2.0 Integration
  * Using OAuth 2.0 with PKCE for user authentication
@@ -43,35 +45,26 @@ export function generatePKCE(): { verifier: string; challenge: string } {
 
 function generateRandomString(length: number): string {
   const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+  const bytes = randomBytes(length);
   let text = '';
-  
+
   for (let i = 0; i < length; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
+    text += possible.charAt(bytes[i] % possible.length);
   }
-  
+
   return text;
 }
 
 function sha256(plain: string): string {
-  // In browser environment
-  if (typeof window !== 'undefined') {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(plain);
-    return (globalThis.crypto as Crypto).subtle.digest('SHA-256', data).then(hash => 
-      base64URLEncode(String.fromCharCode(...new Uint8Array(hash)))
-    ) as any;
-  }
-  
-  // In Node.js environment
-  const { createHash } = require('crypto') as typeof import('crypto');
-  return createHash('sha256').update(plain).digest();
+  return createHash('sha256').update(plain).digest('base64');
 }
 
-function base64URLEncode(str: string): string {
-  return btoa(str)
+function base64URLEncode(data: Buffer | string): string {
+  const base64 = typeof data === 'string' ? Buffer.from(data, 'utf-8').toString('base64') : data.toString('base64');
+  return base64
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
-    .replace(/=/g, '');
+    .replace(/=+$/, '');
 }
 
 /**

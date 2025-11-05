@@ -513,9 +513,9 @@ export function redactSensitiveData<T extends Record<string, any>>(
   obj: T,
   keysToRedact: string[] = ['password', 'token', 'secret', 'key', 'authorization']
 ): T {
-  const redacted = { ...obj };
+  const redacted: Record<string, any> = { ...obj };
 
-  for (const key in redacted) {
+  for (const key of Object.keys(redacted)) {
     if (keysToRedact.some((sensitive) => key.toLowerCase().includes(sensitive))) {
       redacted[key] = '***REDACTED***';
     } else if (typeof redacted[key] === 'object' && redacted[key] !== null) {
@@ -523,7 +523,7 @@ export function redactSensitiveData<T extends Record<string, any>>(
     }
   }
 
-  return redacted;
+  return redacted as T;
 }
 
 /**

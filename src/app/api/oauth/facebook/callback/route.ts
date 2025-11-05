@@ -1,7 +1,6 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
   getUserWorkspace,
   APIError,
@@ -12,13 +11,25 @@ import {
   getFacebookProfile,
   getFacebookPages,
 } from '@/lib/oauth/facebook';
+import { createClient } from '@/lib/supabase/server';
 
 /**
  * GET /api/oauth/facebook/callback
  * Handle Facebook OAuth callback
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+  // Create Supabase client
+  const supabase = await createClient();
+  
+  // Get user session - try to get it but don't fail if missing yet
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  
+  if (authError || !user) {
+    // Redirect to login with error message
+    const loginUrl = new URL('/auth/login', process.env.NEXT_PUBLIC_APP_URL);
+    loginUrl.searchParams.set('error', 'Please login first before connecting social accounts');
+    return NextResponse.redirect(loginUrl);
+  }
 
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
@@ -88,9 +99,9 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     })
   );
 
-  return successResponse({
-    message: 'Facebook pages connected successfully',
-    accounts,
-  });
+  // Redirect to accounts page with success message
+  const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
+  accountsUrl.searchParams.set('success', 'Facebook pages connected successfully');
+  return NextResponse.redirect(accountsUrl);
 });
 

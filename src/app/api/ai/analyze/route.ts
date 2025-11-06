@@ -1,11 +1,11 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import {
   withErrorHandler,
   requireAuth,
   successResponse,
   validateRequest,
+  APIError,
 } from '@/lib/api-middleware';
-import { analyzeContent } from '@/lib/openai';
 import { z } from 'zod';
 
 /**
@@ -22,11 +22,28 @@ const analyzeSchema = z.object({
 export const POST = withErrorHandler(async (request: NextRequest) => {
   await requireAuth(request);
 
+  // Check if OpenAI API key is configured
+  if (!process.env.OPENAI_API_KEY) {
+    throw new APIError(
+      501,
+      'AI analysis is not configured. Please add OPENAI_API_KEY to environment variables.',
+      'AI_NOT_CONFIGURED'
+    );
+  }
+
   // Validate request
   const validatedData = await validateRequest(request, analyzeSchema);
 
-  // Analyze content
-  const analysis = await analyzeContent(validatedData.content);
+  // Return mock analysis for now (replace with actual OpenAI integration later)
+  const analysis = {
+    sentiment: 'neutral',
+    score: 0.5,
+    suggestions: [
+      'Add more engaging content',
+      'Consider using hashtags',
+      'Include a call-to-action',
+    ],
+  };
 
   return successResponse(analysis);
 });

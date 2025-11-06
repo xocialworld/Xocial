@@ -81,6 +81,21 @@ export async function GET(request: NextRequest) {
 
   // Get user's pages
   const pages = await getFacebookPages(longLivedToken.access_token);
+  console.log(
+    '[Facebook Callback] Pages fetched:',
+    pages.length,
+    pages.map((page) => ({ id: page.id, name: page.name }))
+  );
+
+  if (pages.length === 0) {
+    console.warn('[Facebook Callback] No pages returned for user:', userId);
+    const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
+    accountsUrl.searchParams.set(
+      'error',
+      'No Facebook pages were returned for this account. Make sure you selected a page and granted all permissions.'
+    );
+    return NextResponse.redirect(accountsUrl);
+  }
 
   // Get user's workspace
   const workspace = await getUserWorkspace(user.id);

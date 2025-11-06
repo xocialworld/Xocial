@@ -19,7 +19,7 @@ This document lists all environment variables needed for the Xocial platform, sp
 
 ```
 NEXT_PUBLIC_APP_URL
-Value: https://web-1hitosft4-xocials-projects.vercel.app
+Value: https://www.xocial.world
 Description: Your deployed application URL
 ```
 

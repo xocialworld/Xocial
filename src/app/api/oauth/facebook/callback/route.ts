@@ -19,9 +19,14 @@ export async function GET(request: NextRequest) {
   try {
   // Get user ID from OAuth cookie
   const cookieStore = await cookies();
+  const allCookies = cookieStore.getAll();
+  console.log('[Facebook Callback] All cookies:', allCookies.map(c => c.name));
+  
   const userId = cookieStore.get('oauth_user_facebook')?.value;
+  console.log('[Facebook Callback] User ID from cookie:', userId);
   
   if (!userId) {
+    console.error('[Facebook Callback] No user ID found in cookie');
     // Redirect to login with error message
     const loginUrl = new URL('/auth/login', process.env.NEXT_PUBLIC_APP_URL);
     loginUrl.searchParams.set('error', 'Session expired. Please try connecting again.');

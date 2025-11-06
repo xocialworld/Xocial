@@ -137,6 +137,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   });
 
   // Store user ID to retrieve in callback
+  console.log(`[OAuth Connect] Setting cookie oauth_user_${platform} for user:`, user.id);
   cookieStore.set(`oauth_user_${platform}`, user.id, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -144,6 +145,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     maxAge: 600, // 10 minutes
     path: '/',
   });
+  console.log(`[OAuth Connect] Cookie set, redirecting to:`, authUrl);
 
   if (codeVerifier) {
     cookieStore.set(`oauth_verifier_${platform}`, codeVerifier, {

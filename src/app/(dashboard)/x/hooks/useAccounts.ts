@@ -11,41 +11,36 @@ import { toast } from 'sonner';
  * Fetch social accounts for a workspace
  */
 async function fetchAccounts(workspaceId?: string): Promise<SocialAccount[]> {
-  const supabase = createClient();
-  
-  // Get current user
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    throw new Error('Not authenticated');
+  const params = new URLSearchParams();
+  if (workspaceId) {
+    params.set('workspaceId', workspaceId);
   }
 
-  // Get workspace ID if not provided
-  let wsId = workspaceId;
-  if (!wsId) {
-    const { data: workspace } = await supabase
-      .from('workspaces')
-      .select('id')
-      .eq('owner_id', user.id)
-      .single();
-    
-    wsId = workspace?.id;
+  const response = await fetch(`/api/accounts${params.size ? `?${params.toString()}` : ''}`, {
+    method: 'GET',
+    credentials: 'include',
+    headers: {
+      'Accept': 'application/json',
+    },
+  });
+
+  let payload: any = null;
+
+  try {
+    payload = await response.json();
+  } catch (error) {
+    // Ignore JSON parse errors and fall through to generic message
   }
 
-  if (!wsId) {
-    throw new Error('No workspace found');
+  if (!response.ok || !payload?.success) {
+    const message =
+      payload?.error?.message ||
+      payload?.message ||
+      `Failed to load accounts (status ${response.status})`;
+    throw new Error(message);
   }
 
-  // Fetch accounts
-  const { data, error } = await supabase
-    .from('social_accounts')
-    .select('*')
-    .eq('workspace_id', wsId)
-    .eq('is_active', true)
-    .order('connected_at', { ascending: false });
-
-  if (error) throw error;
-
-  return data || [];
+  return payload?.data?.accounts ?? [];
 }
 
 /**

@@ -4,10 +4,12 @@ import { useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { OverviewMetrics } from "./components/overview-metrics";
 import { EngagementChart } from "./components/engagement-chart";
+import { FacebookConnectionCard } from "./components/facebook-connection-card";
 import { PlatformComparison } from "./components/platform-comparison";
 import { TopPostsTable } from "./components/top-posts-table";
 import { DateRangeSelector } from "./components/date-range-selector";
 import { ExportButton } from "./components/export-button";
+import { InstagramInsights } from "./components/instagram-insights";
 import { useAnalytics } from "./hooks/useAnalytics";
 
 export default function APage() {
@@ -16,7 +18,7 @@ export default function APage() {
     to: new Date(),
   });
 
-  const { overview, engagementData, platformStats, topPosts, loading, error } = useAnalytics(dateRange);
+  const { overview, engagementData, platformStats, topPosts, instagramInsights, loading, error } = useAnalytics(dateRange);
 
   if (loading) {
     return (
@@ -59,6 +61,11 @@ export default function APage() {
         />
       </div>
 
+      {/* Platform Connection Status */}
+      <div className="grid grid-cols-1 gap-6">
+        <FacebookConnectionCard />
+      </div>
+
       {/* Overview KPI Cards */}
       {overview && <OverviewMetrics metrics={overview} />}
 
@@ -71,6 +78,11 @@ export default function APage() {
           <PlatformComparison data={platformStats} />
         )}
       </div>
+
+      {/* Instagram Insights */}
+      {instagramInsights.length > 0 && (
+        <InstagramInsights insights={instagramInsights} />
+      )}
 
       {/* Top Posts Table */}
       {topPosts.length > 0 && (

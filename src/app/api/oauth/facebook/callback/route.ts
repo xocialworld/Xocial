@@ -79,6 +79,12 @@ export async function GET(request: NextRequest) {
   // Get user profile
   const profile = await getFacebookProfile(longLivedToken.access_token);
 
+  const now = new Date();
+  const userTokenExpiresAt = new Date(
+    now.getTime() + longLivedToken.expires_in * 1000
+  ).toISOString();
+  const profileSyncedAt = now.toISOString();
+
   // Get user's pages
   const pages = await getFacebookPages(longLivedToken.access_token);
   console.log(
@@ -112,10 +118,27 @@ export async function GET(request: NextRequest) {
             account_id: page.id,
             account_name: page.name,
             access_token: page.access_token,
-            token_expires_at: new Date(
-              Date.now() + longLivedToken.expires_in * 1000
-            ).toISOString(),
+            token_expires_at: userTokenExpiresAt,
             is_active: true,
+            metadata: {
+              facebook_page: {
+                id: page.id,
+                name: page.name,
+                category: page.category ?? null,
+              },
+              user_profile: {
+                id: profile.id,
+                name: profile.name,
+                email: profile.email ?? null,
+                picture_url: profile.picture?.data?.url ?? null,
+                synced_at: profileSyncedAt,
+              },
+              user_token: {
+                access_token: longLivedToken.access_token,
+                expires_at: userTokenExpiresAt,
+                token_type: longLivedToken.token_type,
+              },
+            },
           },
           {
             onConflict: 'workspace_id,platform,account_id',

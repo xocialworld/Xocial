@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { withCronVerification } from '@/lib/cron-verification';
 import { createClient } from '@/lib/supabase/server';
 import { getYouTubeVideoStats } from '@/lib/oauth/youtube';
@@ -30,7 +30,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
 
     if (!accounts || accounts.length === 0) {
       console.log('[Cron: Sync YouTube Metrics] No YouTube accounts found');
-      return Response.json({
+      return NextResponse.json({
         success: true,
         message: 'No YouTube accounts to sync',
         synced: 0,
@@ -167,7 +167,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
     const duration = Date.now() - startTime;
     console.log(`[Cron: Sync YouTube Metrics] Completed in ${duration}ms. Synced: ${totalSynced}, Errors: ${totalErrors}`);
 
-    return Response.json({
+    return NextResponse.json({
       success: true,
       message: 'YouTube metrics sync completed',
       accounts: accounts.length,
@@ -178,7 +178,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
 
   } catch (error: any) {
     console.error('[Cron: Sync YouTube Metrics] Fatal error:', error);
-    return Response.json({
+    return NextResponse.json({
       success: false,
       error: error.message,
       duration: Date.now() - startTime,

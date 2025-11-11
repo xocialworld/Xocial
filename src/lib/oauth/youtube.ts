@@ -48,6 +48,7 @@ export interface YouTubeVideo {
     title: string;
     description: string;
     publishedAt: string;
+    channelTitle?: string;
     thumbnails: {
       default?: { url: string };
       medium?: { url: string };
@@ -58,6 +59,7 @@ export interface YouTubeVideo {
     viewCount: string;
     likeCount: string;
     commentCount: string;
+    favoriteCount?: string;
   };
 }
 

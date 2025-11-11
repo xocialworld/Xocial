@@ -55,6 +55,8 @@ export function getFacebookAuthUrl(config: FacebookOAuthConfig, state: string): 
       'instagram_manage_insights',
     ].join(','),
     response_type: 'code',
+    // Force the user to re-authorize and select pages every time
+    auth_type: 'rerequest',
   });
 
   return `https://www.facebook.com/v24.0/dialog/oauth?${params.toString()}`;
@@ -133,16 +135,33 @@ export async function getFacebookProfile(
 export async function getFacebookPages(
   accessToken: string
 ): Promise<FacebookPage[]> {
+  // Request specific fields including access_token and tasks
+  const fields = 'id,name,access_token,category,tasks';
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/me/accounts?access_token=${accessToken}`
+    `https://graph.facebook.com/v24.0/me/accounts?fields=${fields}&access_token=${accessToken}`
   );
 
   if (!response.ok) {
-    throw new Error('Failed to fetch Facebook pages');
+    const errorData = await response.json();
+    console.error('[getFacebookPages] API Error:', errorData);
+    throw new Error(
+      `Failed to fetch Facebook pages: ${errorData.error?.message || response.statusText}`
+    );
   }
 
   const data = await response.json();
-  return data.data || [];
+  console.log('[getFacebookPages] Raw API Response:', JSON.stringify(data, null, 2));
+  
+  // Check if there's an error in the response
+  if (data.error) {
+    console.error('[getFacebookPages] Error in response:', data.error);
+    throw new Error(`Facebook API Error: ${data.error.message}`);
+  }
+  
+  const pages = data.data || [];
+  console.log('[getFacebookPages] Parsed pages:', pages.length, pages.map((p: any) => ({ id: p.id, name: p.name })));
+  
+  return pages;
 }
 
 /**

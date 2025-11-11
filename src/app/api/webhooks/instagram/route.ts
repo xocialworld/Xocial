@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient as createSupabaseServiceClient } from '@supabase/supabase-js';
 import { verifyWebhookSignature } from '@/lib/security';
 import { logger } from '@/lib/logger';
 
@@ -40,24 +40,35 @@ export async function POST(request: NextRequest) {
 
     const event = JSON.parse(body);
 
-    // Log webhook event
-    const supabase = await createClient();
-    await supabase.from('webhook_events').insert({
+    const supabase = getServiceSupabaseClient();
+
+    const { data: loggedEvent } = await supabase
+      .from('webhook_events')
+      .insert({
       platform: 'instagram',
       event_type: event.object || 'unknown',
       payload: event,
       processed: false,
-    });
+      })
+      .select('id')
+      .single();
 
     // Process webhook events
     if (event.entry) {
       for (const entry of event.entry) {
         if (entry.changes) {
           for (const change of entry.changes) {
-            await processChange(change);
+            await processChange(entry.id, change);
           }
         }
       }
+    }
+
+    if (loggedEvent?.id) {
+      await supabase
+        .from('webhook_events')
+        .update({ processed: true, processed_at: new Date().toISOString() })
+        .eq('id', loggedEvent.id);
     }
 
     return NextResponse.json({ success: true });
@@ -83,34 +94,28 @@ function verifySignature(body: string, signature: string | null): boolean {
 /**
  * Process Instagram webhook change event
  */
-async function processChange(change: any) {
-  const supabase = await createClient();
+async function processChange(instagramAccountId: string, change: any) {
+  const supabase = getServiceSupabaseClient();
 
   try {
     switch (change.field) {
       case 'comments':
         // New comment on media
         if (change.value?.media_id) {
-          await handleNewComment(change.value);
+          await handleNewComment(supabase, instagramAccountId, change.value);
         }
         break;
 
       case 'mentions':
         // User mentioned in a story or post
         if (change.value?.media_id) {
-          await handleMention(change.value);
+          await handleMention(instagramAccountId, change.value);
         }
         break;
 
       default:
         console.log('Unhandled Instagram webhook field:', change.field);
     }
-
-    // Mark as processed
-    await supabase
-      .from('webhook_events')
-      .update({ processed: true, processed_at: new Date().toISOString() })
-      .eq('payload->entry->0->id', change.value?.media_id);
   } catch (error) {
     console.error('Failed to process Instagram change:', error);
   }
@@ -119,16 +124,100 @@ async function processChange(change: any) {
 /**
  * Handle new comment
  */
-async function handleNewComment(value: any) {
+async function handleNewComment(
+  supabase: ReturnType<typeof getServiceSupabaseClient>,
+  instagramAccountId: string,
+  value: any
+) {
   console.log('New Instagram comment:', value);
-  // Trigger real-time notification
+
+  if (!value.comment_id) {
+    return;
+  }
+
+  const { data: account } = await supabase
+    .from('social_accounts')
+    .select('id, access_token')
+    .eq('platform', 'instagram')
+    .eq('account_id', instagramAccountId)
+    .maybeSingle();
+
+  if (!account || !account.access_token) {
+    logger.warn('Instagram webhook: account not found for comment event', { instagramAccountId });
+    return;
+  }
+
+  const { data: platformPost } = await supabase
+    .from('platform_posts')
+    .select('id, post_id')
+    .eq('platform', 'instagram')
+    .eq('platform_post_id', value.media_id)
+    .maybeSingle();
+
+  if (!platformPost) {
+    logger.warn('Instagram webhook: platform post not found for media', { media_id: value.media_id });
+    return;
+  }
+
+  const authorName =
+    value.from?.username || value.from?.full_name || value.from?.name || 'Instagram User';
+
+  const commentPayload = {
+    post_id: platformPost.post_id,
+    external_comment_id: value.comment_id,
+    platform: 'instagram',
+    author_name: authorName,
+    author_avatar: value.from?.profile_picture_url || null,
+    author_id: value.from?.id || null,
+    content: value.text || '',
+    is_reply: Boolean(value.parent_id),
+    likes: value.like_count ?? 0,
+    reply_count: value.reply_count ?? 0,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data: existing } = await supabase
+    .from('comments')
+    .select('id')
+    .eq('external_comment_id', value.comment_id)
+    .eq('platform', 'instagram')
+    .maybeSingle();
+
+  if (existing?.id) {
+    await supabase
+      .from('comments')
+      .update(commentPayload)
+      .eq('id', existing.id);
+  } else {
+    await supabase.from('comments').insert({
+      ...commentPayload,
+      created_at: new Date().toISOString(),
+    });
+  }
 }
 
 /**
  * Handle mention
  */
-async function handleMention(value: any) {
-  console.log('Instagram mention:', value);
-  // Trigger real-time notification
+async function handleMention(instagramAccountId: string, value: any) {
+  console.log('Instagram mention:', { instagramAccountId, value });
+  // Future enhancement: fetch media details and notify workspace members
+}
+
+function getServiceSupabaseClient() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Supabase configuration is missing for webhook processing');
+  }
+
+  return createSupabaseServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
 }
 

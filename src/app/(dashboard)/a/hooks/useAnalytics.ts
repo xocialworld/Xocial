@@ -42,11 +42,21 @@ export interface TopPost {
   engagementRate: number;
 }
 
+export interface InstagramInsight {
+  accountId: string;
+  name: string;
+  handle?: string;
+  followers: number;
+  period: string;
+  metrics: Record<string, number>;
+}
+
 export function useAnalytics(dateRange: { from: Date; to: Date }) {
   const [overview, setOverview] = useState<OverviewMetrics | null>(null);
   const [engagementData, setEngagementData] = useState<EngagementDataPoint[]>([]);
   const [platformStats, setPlatformStats] = useState<PlatformStat[]>([]);
   const [topPosts, setTopPosts] = useState<TopPost[]>([]);
+  const [instagramInsights, setInstagramInsights] = useState<InstagramInsight[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,6 +124,48 @@ export function useAnalytics(dateRange: { from: Date; to: Date }) {
       const topPostsResult = await topPostsRes.json();
       setTopPosts(topPostsResult.data);
 
+      // Fetch Instagram-specific insights (best-effort)
+      try {
+        const igAccountsRes = await fetch('/api/accounts?platform=instagram');
+        if (igAccountsRes.ok) {
+          const igAccountsPayload = await igAccountsRes.json();
+          const igAccounts = igAccountsPayload?.data?.accounts || [];
+
+          const insightsResults = await Promise.all(
+            igAccounts.map(async (account: any) => {
+              const insightRes = await fetch(
+                `/api/instagram/insights?accountId=${account.id}&period=days_28`
+              );
+
+              if (!insightRes.ok) {
+                return null;
+              }
+
+              const insightJson = await insightRes.json();
+              if (!insightJson?.success) {
+                return null;
+              }
+
+              return {
+                accountId: account.id,
+                name: insightJson.account?.name || account.account_name,
+                handle: insightJson.account?.handle || account.account_handle,
+                followers: insightJson.account?.followers ?? account.follower_count ?? 0,
+                period: insightJson.period || 'day',
+                metrics: insightJson.metrics || {},
+              } as InstagramInsight;
+            })
+          );
+
+          setInstagramInsights(insightsResults.filter(Boolean) as InstagramInsight[]);
+        } else {
+          setInstagramInsights([]);
+        }
+      } catch (igError) {
+        console.warn('Failed to load Instagram insights', igError);
+        setInstagramInsights([]);
+      }
+
     } catch (err) {
       console.error('Analytics fetch error:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch analytics');
@@ -127,6 +179,7 @@ export function useAnalytics(dateRange: { from: Date; to: Date }) {
     engagementData,
     platformStats,
     topPosts,
+    instagramInsights,
     loading,
     error,
     refetch: fetchAnalytics,

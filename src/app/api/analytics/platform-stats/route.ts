@@ -41,8 +41,9 @@ export async function GET(request: NextRequest) {
     // Get all social accounts for the workspace
     const { data: accounts } = await supabase
       .from('social_accounts')
-      .select('id, platform, followers_count')
-      .eq('workspace_id', workspace.id);
+      .select('id, platform, follower_count')
+      .eq('workspace_id', workspace.id)
+      .eq('is_active', true);
 
     if (!accounts || accounts.length === 0) {
       return NextResponse.json({
@@ -73,13 +74,14 @@ export async function GET(request: NextRequest) {
           return sum;
         }, 0) || 0;
 
-        const engagementRate = account.followers_count > 0 && postCount > 0
-          ? (engagement / (account.followers_count * postCount)) * 100
+        const followerCount = account.follower_count || 0;
+        const engagementRate = followerCount > 0 && postCount > 0
+          ? (engagement / (followerCount * postCount)) * 100
           : 0;
 
         return {
           platform: account.platform,
-          followers: account.followers_count || 0,
+          followers: followerCount,
           engagement,
           posts: postCount,
           engagementRate,

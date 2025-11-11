@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { OverviewMetrics } from "./components/overview-metrics";
 import { EngagementChart } from "./components/engagement-chart";
@@ -8,15 +8,43 @@ import { PlatformComparison } from "./components/platform-comparison";
 import { TopPostsTable } from "./components/top-posts-table";
 import { DateRangeSelector } from "./components/date-range-selector";
 import { ExportButton } from "./components/export-button";
+import { InstagramInsights } from "./components/instagram-insights";
+import { YouTubeCard } from "./components/youtube-card";
 import { useAnalytics } from "./hooks/useAnalytics";
+import { createClient } from "@/lib/supabase/client";
+import { useWorkspace } from "@/hooks/use-workspace";
 
 export default function APage() {
   const [dateRange, setDateRange] = useState({
     from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
     to: new Date(),
   });
+  
+  const [youtubeAccounts, setYoutubeAccounts] = useState<any[]>([]);
+  const { workspace } = useWorkspace();
+  const { overview, engagementData, platformStats, topPosts, instagramInsights, loading, error } = useAnalytics(dateRange);
 
-  const { overview, engagementData, platformStats, topPosts, loading, error } = useAnalytics(dateRange);
+  useEffect(() => {
+    if (workspace) {
+      fetchYouTubeAccounts();
+    }
+  }, [workspace]);
+
+  const fetchYouTubeAccounts = async () => {
+    if (!workspace) return;
+    
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('social_accounts')
+      .select('*')
+      .eq('workspace_id', workspace.id)
+      .eq('platform', 'youtube')
+      .eq('is_active', true);
+
+    if (!error && data) {
+      setYoutubeAccounts(data);
+    }
+  };
 
   if (loading) {
     return (
@@ -71,6 +99,27 @@ export default function APage() {
           <PlatformComparison data={platformStats} />
         )}
       </div>
+
+      {/* Instagram Insights */}
+      {instagramInsights.length > 0 && (
+        <InstagramInsights insights={instagramInsights} />
+      )}
+
+      {/* YouTube Analytics Cards */}
+      {youtubeAccounts.length > 0 && workspace && (
+        <div>
+          <h2 className="text-2xl font-bold mb-4">YouTube Analytics</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            {youtubeAccounts.map((account) => (
+              <YouTubeCard
+                key={account.id}
+                accountId={account.id}
+                workspaceId={workspace.id}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Top Posts Table */}
       {topPosts.length > 0 && (

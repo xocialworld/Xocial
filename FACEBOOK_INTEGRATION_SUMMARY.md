@@ -81,6 +81,50 @@ The Xocial platform has been fully implemented with Facebook integration using *
   - Refresh 7 days before expiration
   - Error handling for invalid tokens
 
+### Instagram Business Integration (New)
+
+#### 1. OAuth Authentication ✅
+- **Location**: `src/app/api/oauth/connect/route.ts`, `src/app/api/oauth/instagram/callback/route.ts`
+- **Behaviour**:
+  - Mirrors the Facebook cookie-based flow to survive redirects
+  - Exchanges short-lived codes for long-lived page tokens
+  - Persists Instagram Business account metadata (handle, linked Facebook Page)
+
+#### 2. Publishing & Scheduling ✅
+- **Location**: `src/lib/oauth/instagram.ts`, `src/app/api/instagram/publish/route.ts`, `src/lib/platforms/instagram.ts`
+- **API Version**: v24.0
+- **Supported Post Types**:
+  - Single image posts
+  - Single video posts
+  - Optional scheduled publish time (within Graph API limits)
+- **Features**:
+  - Input validation for media types
+  - Automatic logging of publish requests
+  - Shared token refresh with linked Facebook Page
+
+#### 3. Insights & Analytics ✅
+- **Location**: `src/app/api/instagram/insights/route.ts`, `src/app/(dashboard)/a/components/instagram-insights.tsx`
+- **Metrics Collected**:
+  - Account-level: impressions, reach, profile views, saves
+  - Media-level: engagement, saves, reach
+- **UI Enhancements**:
+  - Dedicated "Instagram Insights" panel on the Analytics dashboard
+  - Platform comparison includes Instagram follower and engagement counts
+
+#### 4. Comment Management ✅
+- **Location**: `src/app/api/instagram/comments/route.ts`, `src/lib/oauth/instagram.ts`
+- **Features**:
+  - Fetch latest comments for selected media
+  - Reply to comments directly from Xocial
+  - Persist comments to Supabase for unified moderation
+
+#### 5. Webhooks ✅
+- **Location**: `src/app/api/webhooks/instagram/route.ts`
+- **Improvements**:
+  - Service-role Supabase client to bypass RLS restrictions
+  - Comment events mapped to `comments` table for downstream analytics
+  - Graceful handling of mentions and unknown payloads
+
 ## 📁 Key Files
 
 ### OAuth & Authentication
@@ -110,16 +154,23 @@ The Xocial platform has been fully implemented with Facebook integration using *
 - `src/lib/oauth/token-refresh.ts` - Token refresh utilities
 - `src/app/api/cron/refresh-tokens/route.ts` - Automated token refresh
 
+### Instagram
+- `src/app/api/instagram/publish/route.ts` - Direct publish endpoint
+- `src/app/api/instagram/insights/route.ts` - Account/media insights API
+- `src/app/api/instagram/comments/route.ts` - Comment moderation API
+- `src/app/(dashboard)/a/components/instagram-insights.tsx` - Analytics UI
+- `src/app/api/oauth/instagram/callback/route.ts` - Cookie-based OAuth callback
+
 ### Database
 - `supabase/migrations/20251104000000_add_views_column.sql` - v24.0 migration
 
 ## 🚀 Deployment Status
 
 ### Current Deployment
-- **URL**: https://web-2g0u5nhh9-xocials-projects.vercel.app
+- **URL**: https://www.xocial.world
 - **Status**: ✅ Live and Ready for Testing
 - **API Version**: v24.0
-- **Last Deployed**: November 5, 2024
+- **Last Deployed**: November 7, 2025
 
 ### Build Status
 - ✅ TypeScript compilation successful
@@ -201,6 +252,8 @@ Follow these steps in order:
    - Phase 8: Comment Management
    - Phase 9: Webhooks
    - Phase 10: Token Refresh
+   - Phase 11: Instagram Publishing & Scheduling
+   - Phase 12: Instagram Insights & Comment Moderation
 
 ### Step 5: Verify Everything Works
 Use the testing checklist in `FACEBOOK_TESTING_GUIDE.md` to ensure all features work correctly.
@@ -250,6 +303,7 @@ Use the testing checklist in `FACEBOOK_TESTING_GUIDE.md` to ensure all features 
 - Comment deletion
 - Webhook events
 - Token refresh
+- Dashboard Facebook connection card (Analytics landing page) confirms Graph profile access
 
 ### 🔄 Requires Manual Trigger (Free Tier)
 - Scheduled post publishing (trigger `/api/cron/publish`)
@@ -283,6 +337,9 @@ Use the testing checklist in `FACEBOOK_TESTING_GUIDE.md` to ensure all features 
 
 ### Token Management
 - `POST /api/cron/refresh-tokens` - Refresh expiring tokens
+
+### Connection Diagnostics
+- `GET /api/facebook/profile` - Fetch Facebook user profile snapshot and connection status for the dashboard card
 
 ## 🐛 Known Limitations
 

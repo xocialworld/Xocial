@@ -14,16 +14,23 @@ import {
 export const GET = withErrorHandler(async (request: NextRequest) => {
   const { user, supabase } = await requireAuth(request);
   const { page, limit, offset } = getPagination(request);
+  const platformFilter = request.nextUrl.searchParams.get('platform');
 
   // Get user's workspace
   const workspace = await getUserWorkspace(user.id);
 
   // Get social accounts
-  const { data: accounts, error, count } = await supabase
+  let query = supabase
     .from('social_accounts')
     .select('*', { count: 'exact' })
     .eq('workspace_id', workspace.id)
-    .eq('is_active', true)
+    .eq('is_active', true);
+
+  if (platformFilter) {
+    query = query.eq('platform', platformFilter);
+  }
+
+  const { data: accounts, error, count } = await query
     .order('connected_at', { ascending: false })
     .range(offset, offset + limit - 1);
 

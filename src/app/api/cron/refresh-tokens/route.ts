@@ -9,7 +9,7 @@
 import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { withCronVerification, cronSuccessResponse, cronErrorResponse } from '@/lib/cron-verification';
-import { refreshFacebookToken } from '@/lib/oauth/token-refresh';
+import { refreshMetaToken } from '@/lib/oauth/token-refresh';
 
 /**
  * GET /api/cron/refresh-tokens
@@ -33,13 +33,13 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       }
     );
 
-    // Get all Facebook accounts expiring within 7 days
+    // Get all Facebook and Instagram accounts expiring within 7 days
     const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     const { data: accounts, error: fetchError } = await supabase
       .from('social_accounts')
-      .select('id, account_name, token_expires_at')
-      .eq('platform', 'facebook')
+      .select('id, account_name, platform, token_expires_at')
+      .in('platform', ['facebook', 'instagram'])
       .eq('is_active', true)
       .lt('token_expires_at', sevenDaysFromNow.toISOString());
 
@@ -65,8 +65,10 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       const accountStartTime = Date.now();
       
       try {
-        console.log(`[Cron: Refresh Tokens] Refreshing token for account ${account.id}`);
-        const result = await refreshFacebookToken(account.id);
+        console.log(
+          `[Cron: Refresh Tokens] Refreshing token for ${account.platform} account ${account.id}`
+        );
+        const result = await refreshMetaToken(account.id);
         
         results.push({
           accountId: account.id,

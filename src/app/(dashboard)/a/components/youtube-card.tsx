@@ -140,7 +140,7 @@ export function YouTubeCard({ accountId, workspaceId }: YouTubeCardProps) {
           </div>
           <div>
             <h3 className="font-semibold text-lg">YouTube Analytics</h3>
-            <Badge variant="destructive">Error</Badge>
+            <Badge variant="error">Error</Badge>
           </div>
         </div>
         <p className="text-sm text-muted-foreground mb-4">{error}</p>

@@ -9,7 +9,7 @@ import {
 export const dynamic = 'force-dynamic';
 
 async function ensureWorkspaceAccess(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   workspaceId: string,
   userId: string
 ) {

@@ -175,8 +175,8 @@ export function YouTubeCard({ accountId, workspaceId }: YouTubeCardProps) {
           onClick={handleRefresh}
           disabled={refreshing}
           variant="ghost"
-          size="icon"
-          className="h-8 w-8"
+          size="sm"
+          className="h-8 w-8 p-0"
         >
           <RefreshCcw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
         </Button>

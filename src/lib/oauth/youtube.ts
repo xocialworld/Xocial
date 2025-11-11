@@ -59,6 +59,7 @@ export interface YouTubeVideo {
     viewCount: string;
     likeCount: string;
     commentCount: string;
+    favoriteCount?: string;
   };
 }
 

@@ -1,12 +1,12 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { createClient } from '@/lib/supabase/server';
+import { getUserWorkspace } from '@/lib/api-middleware';
 import {
-  withErrorHandler,
-  requireAuth,
-  successResponse,
-  getUserWorkspace,
-  APIError,
-} from '@/lib/api-middleware';
-import { exchangeFacebookCode, getFacebookLongLivedToken, getFacebookPages } from '@/lib/oauth/facebook';
+  exchangeFacebookCode,
+  getFacebookLongLivedToken,
+  getFacebookPages,
+} from '@/lib/oauth/facebook';
 import { getInstagramBusinessAccounts } from '@/lib/oauth/instagram';
 
 /**
@@ -14,48 +14,92 @@ import { getInstagramBusinessAccounts } from '@/lib/oauth/instagram';
  * Handle Instagram OAuth callback (via Facebook)
  * Instagram Business accounts are accessed through Facebook Graph API
  */
-export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+export async function GET(request: NextRequest) {
+  try {
+    const cookieStore = await cookies();
+    const allCookies = cookieStore.getAll();
+    console.log('[Instagram Callback] All cookies:', allCookies.map((c) => c.name));
 
-  const searchParams = request.nextUrl.searchParams;
-  const code = searchParams.get('code');
-  const error = searchParams.get('error');
+    const userId = cookieStore.get('oauth_user_instagram')?.value;
+    console.log('[Instagram Callback] User ID from cookie:', userId);
 
-  if (error) {
-    throw new APIError(400, `Instagram OAuth error: ${error}`, 'OAUTH_ERROR');
-  }
+    if (!userId) {
+      console.error('[Instagram Callback] No user ID found in cookie');
+      const loginUrl = new URL('/auth/login', process.env.NEXT_PUBLIC_APP_URL);
+      loginUrl.searchParams.set('error', 'Session expired. Please try connecting again.');
+      return NextResponse.redirect(loginUrl);
+    }
 
-  if (!code) {
-    throw new APIError(400, 'Authorization code is missing', 'MISSING_CODE');
-  }
+    const cookieSupabase = await createClient();
+    const user = { id: userId };
+    cookieStore.delete('oauth_user_instagram');
 
-  // Exchange code for access token (using Facebook OAuth)
-  const config = {
-    clientId: process.env.FACEBOOK_APP_ID!,
-    clientSecret: process.env.FACEBOOK_APP_SECRET!,
-    redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/api/oauth/instagram/callback`,
-  };
+    const searchParams = request.nextUrl.searchParams;
+    const code = searchParams.get('code');
+    const error = searchParams.get('error');
 
-  const tokenResponse = await exchangeFacebookCode(config, code);
-  const longLivedToken = await getFacebookLongLivedToken(config, tokenResponse.access_token);
+    if (error) {
+      const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
+      accountsUrl.searchParams.set('error', `Instagram OAuth error: ${error}`);
+      return NextResponse.redirect(accountsUrl);
+    }
 
-  // Get Facebook pages
-  const pages = await getFacebookPages(longLivedToken.access_token);
+    if (!code) {
+      const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
+      accountsUrl.searchParams.set('error', 'Authorization code is missing');
+      return NextResponse.redirect(accountsUrl);
+    }
 
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
+    const config = {
+      clientId: process.env.FACEBOOK_APP_ID!,
+      clientSecret: process.env.FACEBOOK_APP_SECRET!,
+      redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/api/oauth/instagram/callback`,
+    };
 
-  // For each page, check if it has an Instagram Business account
-  const accounts = [];
-  for (const page of pages) {
-    try {
-      const igAccount = await getInstagramBusinessAccounts(
-        page.access_token,
-        page.id
+    const tokenResponse = await exchangeFacebookCode(config, code);
+    const longLivedToken = await getFacebookLongLivedToken(
+      config,
+      tokenResponse.access_token
+    );
+
+    const pages = await getFacebookPages(longLivedToken.access_token);
+    console.log(
+      '[Instagram Callback] Pages fetched:',
+      pages.length,
+      pages.map((page) => ({ id: page.id, name: page.name }))
+    );
+
+    if (pages.length === 0) {
+      const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
+      accountsUrl.searchParams.set(
+        'error',
+        'No Facebook pages were returned. Ensure you selected at least one page during the permission dialog and that the user is a page admin.'
       );
+      return NextResponse.redirect(accountsUrl);
+    }
 
-      if (igAccount) {
-        const { data, error } = await supabase
+    const workspace = await getUserWorkspace(user.id);
+
+    const accounts = [];
+    for (const page of pages) {
+      try {
+        const igAccount = await getInstagramBusinessAccounts(page.access_token, page.id);
+
+        if (!igAccount) {
+          console.warn(
+            '[Instagram Callback] No Instagram business account linked to page:',
+            page.id
+          );
+          continue;
+        }
+
+        console.log(
+          '[Instagram Callback] Instagram account found:',
+          igAccount.id,
+          igAccount.username
+        );
+
+        const { data, error: upsertError } = await cookieSupabase
           .from('social_accounts')
           .upsert(
             {
@@ -83,26 +127,47 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
           .select()
           .single();
 
-        if (error) throw error;
+        if (upsertError) {
+          console.error(
+            '[Instagram Callback] Failed to upsert Instagram account:',
+            igAccount.id,
+            upsertError
+          );
+          throw upsertError;
+        }
+
         accounts.push(data);
+      } catch (err) {
+        console.error(
+          `[Instagram Callback] Failed to process Instagram account for page ${page.id}:`,
+          err
+        );
       }
-    } catch (err) {
-      console.error(`Failed to get Instagram account for page ${page.id}:`, err);
-      // Continue with other pages
     }
-  }
 
-  if (accounts.length === 0) {
-    throw new APIError(
-      404,
-      'No Instagram Business accounts found. Please ensure you have an Instagram Business account connected to your Facebook page.',
-      'NO_INSTAGRAM_ACCOUNTS'
+    if (accounts.length === 0) {
+      const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
+      accountsUrl.searchParams.set(
+        'error',
+        'No Instagram Business accounts were linked to the selected pages. Convert the Instagram account to Business/Creator and link it to the Facebook page.'
+      );
+      return NextResponse.redirect(accountsUrl);
+    }
+
+    const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
+    accountsUrl.searchParams.set(
+      'success',
+      `${accounts.length} Instagram account(s) connected successfully`
     );
+    return NextResponse.redirect(accountsUrl);
+  } catch (error) {
+    console.error('Instagram OAuth callback error:', error);
+    const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
+    accountsUrl.searchParams.set(
+      'error',
+      error instanceof Error ? error.message : 'Failed to connect Instagram account'
+    );
+    return NextResponse.redirect(accountsUrl);
   }
-
-  return successResponse({
-    message: 'Instagram accounts connected successfully',
-    accounts,
-  });
-});
+}
 

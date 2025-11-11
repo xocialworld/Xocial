@@ -87,6 +87,11 @@ export function AccountCard({ account, onDisconnect, onSync, className }: Accoun
               {account.account_handle && (
                 <p className="text-sm text-secondary-600">@{account.account_handle}</p>
               )}
+              {account.platform === 'instagram' && account.metadata?.facebook_page_name && (
+                <p className="text-xs text-secondary-500 mt-1">
+                  Linked Facebook Page: {account.metadata.facebook_page_name}
+                </p>
+              )}
               <Badge variant="secondary" className="mt-2 capitalize">
                 {account.platform}
               </Badge>
@@ -138,7 +143,9 @@ export function AccountCard({ account, onDisconnect, onSync, className }: Accoun
         <div className="grid grid-cols-3 gap-4 pt-4 border-t border-secondary-200">
           <div className="text-center">
             <p className="text-2xl font-bold text-secondary-900">
-              {account.follower_count?.toLocaleString() || 0}
+              {account.follower_count !== undefined
+                ? account.follower_count.toLocaleString()
+                : '—'}
             </p>
             <p className="text-xs text-secondary-600">Followers</p>
           </div>

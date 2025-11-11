@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { OverviewMetrics } from "./components/overview-metrics";
 import { EngagementChart } from "./components/engagement-chart";
-import { FacebookConnectionCard } from "./components/facebook-connection-card";
 import { PlatformComparison } from "./components/platform-comparison";
 import { TopPostsTable } from "./components/top-posts-table";
 import { DateRangeSelector } from "./components/date-range-selector";
@@ -59,11 +58,6 @@ export default function APage() {
           value={dateRange} 
           onChange={setDateRange} 
         />
-      </div>
-
-      {/* Platform Connection Status */}
-      <div className="grid grid-cols-1 gap-6">
-        <FacebookConnectionCard />
       </div>
 
       {/* Overview KPI Cards */}

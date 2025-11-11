@@ -31,7 +31,7 @@ Before you begin testing, ensure you have:
 ### Step 1.2: Add Required Permissions
 
 1. In left sidebar, go to **App Review > Permissions and Features**
-2. Request the following permissions:
+2. Request the following permissions and switch each to **Advanced Access**:
    - `email` - Basic user email
    - `pages_show_list` - List Pages the user manages
    - `pages_read_engagement` - Read Page engagement data
@@ -43,16 +43,18 @@ Before you begin testing, ensure you have:
    - `instagram_manage_comments` - Manage Instagram comments
    - `instagram_manage_insights` - Access Instagram insights
 
-**Note**: For testing, keep your app in **Development Mode**. This allows testing with admin/developer/tester accounts without App Review.
+> ⚠️ Meta will block page/Instagram data unless these permissions are set to Advanced Access. While waiting for approval, add real users as **App Testers** so they can exercise the integration in Development Mode.
 
 ### Step 1.3: Add OAuth Redirect URIs
 
 1. In **App Settings > Basic**
-2. Scroll to **App Domains** and add: `web-1hitosft4-xocials-projects.vercel.app`
+2. Scroll to **App Domains** and add:
+   - `www.xocial.world`
+   - `xocial.world`
 3. Scroll to **Valid OAuth Redirect URIs** and add:
    ```
-   https://web-1hitosft4-xocials-projects.vercel.app/api/oauth/facebook/callback
-   https://web-1hitosft4-xocials-projects.vercel.app/api/oauth/instagram/callback
+   https://www.xocial.world/api/oauth/facebook/callback
+   https://www.xocial.world/api/oauth/instagram/callback
    ```
 4. Click **Save Changes**
 
@@ -64,7 +66,7 @@ Before you begin testing, ensure you have:
 2. Click **Configure** next to Webhooks
 3. Under **Page**, click **Add Subscription**
 4. Configure:
-   - **Callback URL**: `https://web-1hitosft4-xocials-projects.vercel.app/api/webhooks/facebook`
+   - **Callback URL**: `https://www.xocial.world/api/webhooks/facebook`
    - **Verify Token**: Generate a secure random string (e.g., use `openssl rand -hex 32`)
    - Save this token - you'll need it for environment variables
 5. Click **Verify and Save**
@@ -79,7 +81,7 @@ Before you begin testing, ensure you have:
 1. Under **Instagram** in Webhooks
 2. Click **Add Subscription**
 3. Configure:
-   - **Callback URL**: `https://web-1hitosft4-xocials-projects.vercel.app/api/webhooks/instagram`
+   - **Callback URL**: `https://www.xocial.world/api/webhooks/instagram`
    - **Verify Token**: Generate another secure random string
    - Save this token separately
 4. Subscribe to:
@@ -108,7 +110,7 @@ From **App Settings > Basic**, copy:
 4. Add the following variables for **Production** environment:
 
 ```
-NEXT_PUBLIC_APP_URL=https://web-1hitosft4-xocials-projects.vercel.app
+NEXT_PUBLIC_APP_URL=https://www.xocial.world
 FACEBOOK_APP_ID=<your-app-id-from-meta>
 FACEBOOK_APP_SECRET=<your-app-secret-from-meta>
 FACEBOOK_WEBHOOK_VERIFY_TOKEN=<your-facebook-webhook-verify-token>
@@ -364,6 +366,59 @@ curl -X POST https://web-1hitosft4-xocials-projects.vercel.app/api/cron/refresh-
 - `token_expires_at` should be updated
 - Account should remain active
 
+## Phase 10: Instagram Business QA
+
+### Step 10.1: Connect Instagram Business Account
+1. From the **Accounts** dashboard, click **Add Account**.
+2. Choose **Instagram** and complete the Meta consent flow (ensure the Facebook Page link step is accepted).
+3. After redirect, confirm the Instagram card shows the handle, follower count, and linked Facebook Page badge.
+
+**Verification:**
+- Supabase `social_accounts` table has a new row with `platform = 'instagram'`.
+- `metadata.facebook_page_id` and `account_handle` fields are populated.
+- Dashboard card shows `Linked Facebook Page` caption.
+
+### Step 10.2: Publish/Schedule via API
+1. Grab the Instagram account ID from the Accounts API (`/api/accounts?platform=instagram`).
+2. Issue a POST request to `/api/instagram/publish`:
+   ```bash
+   curl -X POST https://www.xocial.world/api/instagram/publish \
+     -H "Authorization: Bearer YOUR_USER_SESSION" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "accountId": "<social-account-id>",
+       "caption": "Testing Instagram API v24.0",
+       "mediaUrl": "https://picsum.photos/800",
+       "publishAt": null
+     }'
+   ```
+3. Optional: repeat with a future `publishAt` timestamp to validate scheduling.
+
+**Verification:**
+- Response includes `postId` (Instagram media ID).
+- Instagram feed shows the new photo/video.
+- Vercel logs display `[Instagram Callback] Instagram account found` followed by publish success message.
+
+### Step 10.3: Fetch Insights
+1. Call `/api/instagram/insights?accountId=<social-account-id>&period=days_28`.
+2. Confirm the response returns `metrics` with keys such as `impressions`, `reach`, `profile_views`, `saved`.
+3. Visit the Analytics dashboard and verify the **Instagram Insights** panel renders the same metrics.
+
+### Step 10.4: Comment Moderation
+1. On Instagram, comment on the newly published post from a secondary profile.
+2. Call `/api/instagram/comments?accountId=<social-account-id>&mediaId=<postId>`.
+3. Reply using `POST /api/instagram/comments` with `{ "accountId": "...", "commentId": "...", "message": "Thanks!" }`.
+
+**Verification:**
+- Comment and reply appear on Instagram.
+- Supabase `comments` table contains a row with `platform = 'instagram'`.
+- Webhook log shows a processed comment event.
+
+### Step 10.5: Token Refresh Consistency
+1. Trigger the cron endpoint `/api/cron/refresh-tokens` as in Phase 9.
+2. Ensure the Instagram account row's `token_expires_at` is updated alongside the linked Facebook Page.
+3. Re-run `/api/instagram/insights` to confirm the access token remains valid.
+
 ## Troubleshooting
 
 ### Issue: OAuth Redirect Not Working
@@ -424,6 +479,11 @@ Use this checklist to track your testing progress:
 - [ ] Comment replies work
 - [ ] Webhooks receive events
 - [ ] Token refresh works
+- [ ] Instagram account connects and displays metadata
+- [ ] Instagram publish endpoint returns media ID
+- [ ] Instagram insights panel shows metrics
+- [ ] Instagram comment API fetches and replies
+- [ ] Instagram webhook processes comment events
 - [ ] Complete end-to-end flow successful
 
 ## Support and Resources

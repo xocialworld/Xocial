@@ -86,7 +86,8 @@ export async function createInstagramMediaContainer(
 export async function publishInstagramMedia(
   igAccountId: string,
   accessToken: string,
-  creationId: string
+  creationId: string,
+  publishTime?: Date
 ): Promise<{ id: string }> {
   const response = await fetch(
     `https://graph.facebook.com/v24.0/${igAccountId}/media_publish`,
@@ -98,6 +99,11 @@ export async function publishInstagramMedia(
       body: JSON.stringify({
         creation_id: creationId,
         access_token: accessToken,
+        ...(publishTime
+          ? {
+              publish_time: Math.floor(publishTime.getTime() / 1000),
+            }
+          : {}),
       }),
     }
   );

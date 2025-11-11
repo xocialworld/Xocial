@@ -8,6 +8,16 @@
 
 ---
 
+## 🔄 Latest Update: November 7, 2025
+
+- Added full Instagram Business support (Graph API v24.0) alongside existing Facebook integration.
+- Implemented new API routes for Instagram publishing, insights, and comment moderation.
+- Enhanced dashboard analytics with an Instagram Insights panel and linked account metadata.
+- Hardened Instagram webhooks with service-role Supabase access and comment upserts.
+- Extended cron-based token refresh to share refreshed Facebook Page tokens across Instagram accounts.
+
+---
+
 ## ✅ PHASE 1: Critical Foundation - **COMPLETED**
 
 ### 1.1 React Query Integration ✅

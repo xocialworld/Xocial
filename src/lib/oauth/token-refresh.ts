@@ -39,7 +39,7 @@ export async function isFacebookTokenExpiring(
  * Refresh Facebook access token
  * Exchanges current token for a new long-lived token (60 days)
  */
-export async function refreshFacebookToken(
+export async function refreshMetaToken(
   accountId: string
 ): Promise<TokenRefreshResult> {
   const supabase = await createClient();
@@ -47,12 +47,12 @@ export async function refreshFacebookToken(
   // Get current token
   const { data: account } = await supabase
     .from('social_accounts')
-    .select('access_token, platform')
+    .select('access_token, platform, metadata, account_id')
     .eq('id', accountId)
     .single();
   
-  if (!account || account.platform !== 'facebook') {
-    return { success: false, error: 'Account not found' };
+  if (!account || !['facebook', 'instagram'].includes(account.platform)) {
+    return { success: false, error: 'Account not found or unsupported platform' };
   }
   
   try {
@@ -70,15 +70,41 @@ export async function refreshFacebookToken(
     
     const expiresAt = new Date(Date.now() + newTokenData.expires_in * 1000);
     
-    // Update in database
+    const updatedAt = new Date().toISOString();
+
+    // Update the primary account
     await supabase
       .from('social_accounts')
       .update({
         access_token: newTokenData.access_token,
         token_expires_at: expiresAt.toISOString(),
-        updated_at: new Date().toISOString(),
+        updated_at: updatedAt,
       })
       .eq('id', accountId);
+
+    // If this account is linked to a Facebook Page, update the sibling accounts that share the page token
+    const pageId =
+      account.platform === 'facebook'
+        ? account.account_id
+        : account.metadata?.facebook_page_id;
+
+    if (pageId) {
+      await supabase
+        .from('social_accounts')
+        .update({
+          access_token: newTokenData.access_token,
+          token_expires_at: expiresAt.toISOString(),
+          updated_at: updatedAt,
+        })
+        .eq('is_active', true)
+        .neq('id', accountId)
+        .or(
+          [
+            `and(platform.eq.facebook,account_id.eq.${pageId})`,
+            `and(platform.eq.instagram,metadata->>facebook_page_id.eq.${pageId})`,
+          ].join(',')
+        );
+    }
     
     return {
       success: true,

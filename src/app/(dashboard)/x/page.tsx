@@ -6,6 +6,7 @@ import Link from "next/link";
 import { AccountCard } from "./components/account-card";
 import { PostCard } from "./components/post-card";
 import { CommentsMiniModal } from "./components/comments-mini-modal";
+import { FacebookConnectionCard } from "@/app/(dashboard)/a/components/facebook-connection-card";
 import { useAccounts } from "./hooks/useAccounts";
 import { usePosts } from "./hooks/usePosts";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,11 @@ export default function XPage() {
             Add Account
           </Link>
         </div>
+      </div>
+
+      {/* Facebook Connection Status */}
+      <div className="mb-8">
+        <FacebookConnectionCard />
       </div>
 
       {/* Accounts Section */}

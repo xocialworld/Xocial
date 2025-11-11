@@ -26,20 +26,21 @@ Navigate to: **Settings > Basic**
 
 #### App Domains
 ```
-web-1hitosft4-xocials-projects.vercel.app
+www.xocial.world
+xocial.world
 ```
 
 #### Privacy Policy URL
 ```
-https://web-1hitosft4-xocials-projects.vercel.app/privacy
+https://www.xocial.world/privacy
 ```
-(Create this page if it doesn't exist)
+(The privacy policy page lives in the Next.js app at `src/app/privacy/page.tsx`)
 
 #### Terms of Service URL
 ```
-https://web-1hitosft4-xocials-projects.vercel.app/terms
+https://www.xocial.world/terms
 ```
-(Create this page if it doesn't exist)
+(Add this page before submitting the app for review.)
 
 #### App Category
 ```
@@ -60,8 +61,8 @@ Navigate to: **Facebook Login > Settings**
 #### Valid OAuth Redirect URIs
 Add these two URIs (one per line):
 ```
-https://web-1hitosft4-xocials-projects.vercel.app/api/oauth/facebook/callback
-https://web-1hitosft4-xocials-projects.vercel.app/api/oauth/instagram/callback
+https://www.xocial.world/api/oauth/facebook/callback
+https://www.xocial.world/api/oauth/instagram/callback
 ```
 
 #### Client OAuth Settings
@@ -91,7 +92,23 @@ Navigate to: **App Review > Permissions and Features**
 - ✅ `instagram_manage_comments` - Manage Instagram comments
 - ✅ `instagram_manage_insights` - Access Instagram insights
 
-**Note**: For testing, you don't need App Review approval. Keep your app in **Development Mode**.
+> ⚠️ **Critical**: These scopes must be switched to **Advanced Access** in the Meta dashboard. Without advanced access, Meta will return empty page/account lists and block publishing.
+
+#### Converting to Advanced Access
+1. Navigate to **App Review → Permissions and Features**.
+2. Locate each permission listed above and click **Get Advanced Access**.
+3. Confirm eligibility criteria (business verification, privacy policy, data handling).
+4. Provide required screencasts, the Xocial privacy policy URL, and a detailed use-case description.
+5. Submit the request. Meta typically responds in 3–7 business days.
+
+While waiting for review approval, add real users as **App Testers** so they can exercise the integration in Development Mode (steps below).
+
+#### Reviewer Walkthrough Checklist
+When submitting for review, attach the following:
+- A 2–3 minute video showing: logging into https://www.xocial.world, connecting a Facebook page, confirming the page card appears, composing and scheduling a post, and viewing analytics.
+- A second clip covering Instagram: showing the linked Facebook page, connecting the Instagram business account, publishing a test post, and opening the analytics dashboard.
+- Test account credentials (Facebook page admin + Instagram business account) added as **Users → Testers** with instructions to accept the invitation.
+- A note that webhook callbacks are available at `https://www.xocial.world/api/webhooks/facebook` and `/api/webhooks/instagram` with verify tokens set in Vercel (`FACEBOOK_WEBHOOK_VERIFY_TOKEN`, `INSTAGRAM_WEBHOOK_VERIFY_TOKEN`).
 
 ### 6. Configure Webhooks
 
@@ -103,7 +120,7 @@ Navigate to: **Webhooks**
 2. Configure:
    - **Callback URL**: 
      ```
-     https://web-1hitosft4-xocials-projects.vercel.app/api/webhooks/facebook
+     https://www.xocial.world/api/webhooks/facebook
      ```
    - **Verify Token**: Generate a random string
      ```bash
@@ -125,7 +142,7 @@ Navigate to: **Webhooks**
 2. Configure:
    - **Callback URL**: 
      ```
-     https://web-1hitosft4-xocials-projects.vercel.app/api/webhooks/instagram
+     https://www.xocial.world/api/webhooks/instagram
      ```
    - **Verify Token**: Generate another random string
      ```bash
@@ -138,17 +155,16 @@ Navigate to: **Webhooks**
    - ✅ `comments` - New comments on Instagram posts
    - ✅ `mentions` - Mentions of your Instagram account
 
-### 7. Add Test Users
+### 7. Add App Roles (Admins, Developers, Testers)
 
 Navigate to: **Roles > Roles**
 
-#### Add Your Account
-1. Click **Add People**
-2. Enter your Facebook email or user ID
-3. Select role: **Admin** or **Tester**
-4. Click **Add**
+1. Navigate to **Users → App Testers** (or **App Admins** if you need full control).
+2. Click **Add Testers**, enter the Facebook emails of teammates and reviewers.
+3. Ask each person to accept the invitation at https://www.facebook.com/settings?tab=business_tools.
+4. Repeat for Instagram by visiting the linked Business Manager (Business Settings → Users → People) and assigning the Facebook page with **Full Control** plus the Instagram account.
 
-This allows you to test without App Review approval.
+> Testers bypass App Review in Development Mode, but production users require approved advanced access.
 
 ### 8. Get Your Credentials
 

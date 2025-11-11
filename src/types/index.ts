@@ -55,6 +55,7 @@ export interface SocialAccount {
   post_count?: number;
   engagement_rate?: number;
   last_synced_at?: string;
+  metadata?: Record<string, any>;
 }
 
 export type PostStatus = 'draft' | 'pending_approval' | 'approved' | 'scheduled' | 'published' | 'failed';

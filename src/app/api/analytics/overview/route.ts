@@ -56,20 +56,33 @@ export async function GET(request: NextRequest) {
     // Get current period posts and analytics
     const { data: currentPosts } = await supabase
       .from('posts')
-      .select('id, post_analytics(likes, comments, shares)')
+      .select('id, post_analytics(platform, likes, comments, shares, views)')
       .eq('workspace_id', workspace.id)
       .gte('published_at', from)
       .lte('published_at', to)
       .eq('status', 'published');
 
-    const currentEngagement = currentPosts?.reduce((sum, post) => {
+    let currentEngagement = 0;
+    let currentViews = 0;
+    let youtubeViews = 0;
+    let youtubeEngagement = 0;
+
+    currentPosts?.forEach((post) => {
       const analytics = post.post_analytics as any;
       if (analytics && Array.isArray(analytics)) {
-        return sum + analytics.reduce((s: number, a: any) => 
-          s + (a.likes || 0) + (a.comments || 0) + (a.shares || 0), 0);
+        analytics.forEach((a: any) => {
+          const engagement = (a.likes || 0) + (a.comments || 0) + (a.shares || 0);
+          currentEngagement += engagement;
+          currentViews += (a.views || 0);
+          
+          // Track YouTube specific metrics
+          if (a.platform === 'youtube') {
+            youtubeViews += (a.views || 0);
+            youtubeEngagement += engagement;
+          }
+        });
       }
-      return sum;
-    }, 0) || 0;
+    });
 
     const currentPostCount = currentPosts?.length || 0;
     const avgEngagementRate = currentPostCount > 0 && totalFollowers > 0
@@ -79,20 +92,30 @@ export async function GET(request: NextRequest) {
     // Get previous period metrics for comparison
     const { data: prevPosts } = await supabase
       .from('posts')
-      .select('id, post_analytics(likes, comments, shares)')
+      .select('id, post_analytics(platform, likes, comments, shares, views)')
       .eq('workspace_id', workspace.id)
       .gte('published_at', prevFromDate.toISOString())
       .lt('published_at', fromDate.toISOString())
       .eq('status', 'published');
 
-    const prevEngagement = prevPosts?.reduce((sum, post) => {
+    let prevEngagement = 0;
+    let prevViews = 0;
+    let prevYoutubeViews = 0;
+
+    prevPosts?.forEach((post) => {
       const analytics = post.post_analytics as any;
       if (analytics && Array.isArray(analytics)) {
-        return sum + analytics.reduce((s: number, a: any) => 
-          s + (a.likes || 0) + (a.comments || 0) + (a.shares || 0), 0);
+        analytics.forEach((a: any) => {
+          const engagement = (a.likes || 0) + (a.comments || 0) + (a.shares || 0);
+          prevEngagement += engagement;
+          prevViews += (a.views || 0);
+          
+          if (a.platform === 'youtube') {
+            prevYoutubeViews += (a.views || 0);
+          }
+        });
       }
-      return sum;
-    }, 0) || 0;
+    });
 
     const prevPostCount = prevPosts?.length || 0;
     const prevEngagementRate = prevPostCount > 0 && totalFollowers > 0
@@ -110,6 +133,12 @@ export async function GET(request: NextRequest) {
     const postsChange = prevPostCount > 0
       ? ((currentPostCount - prevPostCount) / prevPostCount) * 100
       : 0;
+    const viewsChange = prevViews > 0
+      ? ((currentViews - prevViews) / prevViews) * 100
+      : 0;
+    const youtubeViewsChange = prevYoutubeViews > 0
+      ? ((youtubeViews - prevYoutubeViews) / prevYoutubeViews) * 100
+      : 0;
 
     const metrics = {
       totalFollowers,
@@ -120,6 +149,13 @@ export async function GET(request: NextRequest) {
       engagementRateChange,
       totalPosts: currentPostCount,
       postsChange,
+      totalViews: currentViews,
+      viewsChange,
+      youtube: {
+        views: youtubeViews,
+        viewsChange: youtubeViewsChange,
+        engagement: youtubeEngagement,
+      },
     };
 
     return NextResponse.json({

@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
   const profileSyncedAt = now.toISOString();
 
   // Get user's pages
+  console.log('[Facebook Callback] Fetching pages with token...');
   const pages = await getFacebookPages(longLivedToken.access_token);
   console.log(
     '[Facebook Callback] Pages fetched:',
@@ -95,10 +96,14 @@ export async function GET(request: NextRequest) {
 
   if (pages.length === 0) {
     console.warn('[Facebook Callback] No pages returned for user:', userId);
+    console.warn('[Facebook Callback] User profile:', profile);
+    console.warn('[Facebook Callback] Token info - expires in:', longLivedToken.expires_in, 'seconds');
+    console.warn('[Facebook Callback] IMPORTANT: Check if app has Advanced Access for permissions in Meta Dashboard');
+    
     const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
     accountsUrl.searchParams.set(
       'error',
-      'No Facebook pages were returned for this account. Make sure you selected a page and granted all permissions.'
+      'No Facebook pages were returned. Common causes: (1) App permissions need "Advanced Access" in Meta Dashboard - check "pages_show_list" permission, (2) You must manage at least one Facebook Page as Admin/Editor, (3) You must select the page during authorization dialog. See META_APP_SETUP.md for details.'
     );
     return NextResponse.redirect(accountsUrl);
   }

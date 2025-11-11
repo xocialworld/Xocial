@@ -278,7 +278,7 @@ export function YouTubeCard({ accountId, workspaceId }: YouTubeCardProps) {
                   rel="noopener noreferrer"
                   className="opacity-0 group-hover:opacity-100 transition-opacity"
                 >
-                  <Button variant="ghost" size="icon" className="h-7 w-7">
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
                     <ExternalLink className="w-3 h-3" />
                   </Button>
                 </a>

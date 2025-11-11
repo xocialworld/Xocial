@@ -53,7 +53,8 @@ export async function createInstagramMediaContainer(
   igAccountId: string,
   accessToken: string,
   content: {
-    image_url: string;
+    image_url?: string;
+    video_url?: string;
     caption: string;
   }
 ): Promise<{ id: string }> {

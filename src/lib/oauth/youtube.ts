@@ -48,6 +48,7 @@ export interface YouTubeVideo {
     title: string;
     description: string;
     publishedAt: string;
+    channelTitle?: string;
     thumbnails: {
       default?: { url: string };
       medium?: { url: string };

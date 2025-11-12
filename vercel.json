@@ -9,6 +9,29 @@
     "NEXT_PUBLIC_APP_ENV": "production"
   },
   
+  "crons": [
+    {
+      "path": "/api/cron/publish",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/sync-metrics",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/refresh-youtube-tokens",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-youtube-analytics",
+      "schedule": "0 */4 * * *"
+    },
+    {
+      "path": "/api/cron/refresh-tokens",
+      "schedule": "0 2 * * *"
+    }
+  ],
+  
   
   "headers": [
     {

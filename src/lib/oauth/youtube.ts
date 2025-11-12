@@ -76,6 +76,7 @@ export function getYouTubeAuthUrl(
       'https://www.googleapis.com/auth/youtube',
       'https://www.googleapis.com/auth/youtube.upload',
       'https://www.googleapis.com/auth/youtube.readonly',
+      'https://www.googleapis.com/auth/yt-analytics.readonly',
       'https://www.googleapis.com/auth/userinfo.profile',
       'https://www.googleapis.com/auth/userinfo.email',
     ].join(' '),
@@ -234,7 +235,16 @@ export async function uploadYouTubeVideo(
   });
 
   if (!uploadResponse.ok) {
-    throw new Error('Failed to upload video file to YouTube');
+    let message = 'Failed to upload video file to YouTube';
+
+    try {
+      const error = await uploadResponse.json();
+      message = error.error?.message || message;
+    } catch {
+      // If parsing fails, fall back to default message
+    }
+
+    throw new Error(message);
   }
 
   return uploadResponse.json();
@@ -340,7 +350,13 @@ export async function getYouTubeVideoStats(
   }
 
   const data = await response.json();
-  return data.items?.[0];
+  const items = Array.isArray(data.items) ? data.items : [];
+
+  if (items.length === 0) {
+    throw new Error('YouTube video not found');
+  }
+
+  return items[0];
 }
 
 /**
@@ -430,5 +446,73 @@ export async function getYouTubeVideoComments(
 
   const data = await response.json();
   return data.items || [];
+}
+
+/**
+ * Set custom thumbnail for a YouTube video
+ */
+export async function setYouTubeVideoThumbnail(
+  accessToken: string,
+  videoId: string,
+  thumbnailUrl: string
+): Promise<void> {
+  // Fetch the thumbnail image
+  const imageResponse = await fetch(thumbnailUrl);
+  if (!imageResponse.ok) {
+    throw new Error('Failed to fetch thumbnail image');
+  }
+  
+  const imageBlob = await imageResponse.blob();
+  
+  // Upload thumbnail to YouTube
+  const params = new URLSearchParams({ videoId });
+  
+  const response = await fetch(
+    `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?${params.toString()}`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': imageBlob.type,
+      },
+      body: imageBlob,
+    }
+  );
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || 'Failed to set YouTube video thumbnail');
+  }
+}
+
+/**
+ * Reply to a YouTube comment
+ */
+export async function replyToYouTubeComment(
+  accessToken: string,
+  commentId: string,
+  replyText: string
+): Promise<void> {
+  const response = await fetch(
+    'https://www.googleapis.com/youtube/v3/comments?part=snippet',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        snippet: {
+          parentId: commentId,
+          textOriginal: replyText,
+        },
+      }),
+    }
+  );
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || 'Failed to reply to comment');
+  }
 }
 

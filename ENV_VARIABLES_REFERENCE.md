@@ -129,11 +129,25 @@ LINKEDIN_CLIENT_ID=your-linkedin-client-id
 LINKEDIN_CLIENT_SECRET=your-linkedin-client-secret
 ```
 
-### YouTube
+### YouTube (Google Cloud Platform)
+
+**Setup Instructions:**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing
+3. Enable APIs: **YouTube Data API v3** AND **YouTube Analytics API**
+4. Create OAuth 2.0 credentials (Web application)
+5. Add Authorized Redirect URIs:
+   - Production: `https://www.xocial.world/api/oauth/youtube/callback`
+   - Development: `http://localhost:3000/api/oauth/youtube/callback`
+
 ```
-YOUTUBE_CLIENT_ID=your-youtube-client-id
+YOUTUBE_CLIENT_ID=your-youtube-client-id.apps.googleusercontent.com
 YOUTUBE_CLIENT_SECRET=your-youtube-client-secret
 ```
+
+**Note:** YouTube requires both APIs enabled for full functionality:
+- YouTube Data API v3: Channel info, video upload, statistics
+- YouTube Analytics API: Detailed analytics, watch time, subscriber metrics
 
 ### TikTok
 ```
@@ -144,6 +158,7 @@ TIKTOK_CLIENT_SECRET=your-tiktok-client-secret
 ### Monitoring
 ```
 SENTRY_DSN=your-sentry-dsn (optional)
+NEXT_PUBLIC_SENTRY_DSN=your-sentry-dsn (optional)
 IP_HASH_SALT=your-ip-salt (optional)
 ```
 

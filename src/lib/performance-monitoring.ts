@@ -5,6 +5,7 @@
  */
 
 import type { Metric } from 'web-vitals';
+import type { Platform } from '@/types';
 
 // ═══════════════════════════════════════════════════════════════
 // PERFORMANCE BUDGETS
@@ -25,6 +26,7 @@ export const PERFORMANCE_BUDGETS = {
   JS_BUNDLE: 200,
   CSS_BUNDLE: 50,
   TOTAL_BUNDLE: 250,
+  AI_GENERATE: 4000,
 } as const;
 
 // ═══════════════════════════════════════════════════════════════
@@ -190,6 +192,83 @@ export function trackPerformance(name: string, startMark: string, endMark?: stri
   }
 }
 
+type AIMetricMetadata = {
+  platforms: Platform[];
+  promptLength: number;
+};
+
+export function trackAIGeneration(
+  duration: number,
+  metadata: AIMetricMetadata
+): void {
+  if (process.env.NODE_ENV === 'development') {
+    console.debug(`[AI] Generation took ${Math.round(duration)}ms`, metadata);
+  }
+
+  checkPerformanceBudget('AI_GENERATE', duration);
+  sendAIMetric('ai_generate', duration, metadata);
+}
+
+type EngagementEvent = {
+  event: 'cta_click' | 'nav_click' | 'feature_interaction';
+  label?: string;
+  url?: string;
+};
+
+export function trackEngagement(event: EngagementEvent): void {
+  if (typeof window === 'undefined') return;
+
+  const body = JSON.stringify({
+    ...event,
+    url: event.url || window.location.href,
+    timestamp: Date.now(),
+  });
+
+  const endpoint = '/api/analytics/events';
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon(endpoint, body);
+  } else {
+    fetch(endpoint, {
+      method: 'POST',
+      body,
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+    }).catch((error) => {
+      console.error('[Engagement Metrics] Failed to send event:', error);
+    });
+  }
+}
+
+function sendAIMetric(
+  event: 'ai_generate',
+  duration: number,
+  metadata: AIMetricMetadata
+): void {
+  if (typeof window === 'undefined') return;
+
+  const body = JSON.stringify({
+    event,
+    duration,
+    metadata,
+    url: window.location.href,
+    timestamp: Date.now(),
+  });
+
+  const endpoint = '/api/analytics/ai';
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon(endpoint, body);
+  } else {
+    fetch(endpoint, {
+      method: 'POST',
+      body,
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+    }).catch((error) => {
+      console.error('[AI Metrics] Failed to send metric:', error);
+    });
+  }
+}
+
 /**
  * Mark start of a performance measurement
  */
@@ -262,24 +341,40 @@ export function measure<T>(
 export function getNavigationTiming(): Record<string, number> | null {
   if (typeof window === 'undefined' || !window.performance) return null;
 
-  const timing = window.performance.timing;
-  const navigation = window.performance.navigation;
+  try {
+    const navEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+    const nav = navEntries && navEntries.length > 0 ? navEntries[0] : null;
 
-  return {
-    // Page load metrics
-    dnsLookup: timing.domainLookupEnd - timing.domainLookupStart,
-    tcpConnection: timing.connectEnd - timing.connectStart,
-    serverResponse: timing.responseEnd - timing.requestStart,
-    domProcessing: timing.domContentLoadedEventEnd - timing.domLoading,
-    pageLoad: timing.loadEventEnd - timing.navigationStart,
-    
-    // Time to interactive
-    domInteractive: timing.domInteractive - timing.navigationStart,
-    domComplete: timing.domComplete - timing.navigationStart,
-    
-    // Navigation type (0=navigate, 1=reload, 2=back_forward)
-    navigationType: navigation.type,
-  };
+    if (nav) {
+      return {
+        dnsLookup: (nav.domainLookupEnd ?? 0) - (nav.domainLookupStart ?? 0),
+        tcpConnection: (nav.connectEnd ?? 0) - (nav.connectStart ?? 0),
+        serverResponse: (nav.responseEnd ?? 0) - (nav.requestStart ?? 0),
+        domProcessing: (nav.domComplete ?? 0) - (nav.domInteractive ?? 0),
+        pageLoad: (nav.loadEventEnd ?? 0) - (nav.startTime ?? 0),
+        domInteractive: (nav.domInteractive ?? 0) - (nav.startTime ?? 0),
+        domComplete: (nav.domComplete ?? 0) - (nav.startTime ?? 0),
+        navigationType: (performance as any).navigation?.type ?? 0,
+      };
+    }
+
+    const timing = (window.performance as any).timing;
+    const navigation = (window.performance as any).navigation;
+    if (!timing) return null;
+
+    return {
+      dnsLookup: (timing.domainLookupEnd ?? 0) - (timing.domainLookupStart ?? 0),
+      tcpConnection: (timing.connectEnd ?? 0) - (timing.connectStart ?? 0),
+      serverResponse: (timing.responseEnd ?? 0) - (timing.requestStart ?? 0),
+      domProcessing: (timing.domContentLoadedEventEnd ?? 0) - (timing.domLoading ?? 0),
+      pageLoad: (timing.loadEventEnd ?? 0) - (timing.navigationStart ?? 0),
+      domInteractive: (timing.domInteractive ?? 0) - (timing.navigationStart ?? 0),
+      domComplete: (timing.domComplete ?? 0) - (timing.navigationStart ?? 0),
+      navigationType: navigation?.type ?? 0,
+    };
+  } catch (e) {
+    return null;
+  }
 }
 
 /**

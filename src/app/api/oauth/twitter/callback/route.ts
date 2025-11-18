@@ -1,5 +1,4 @@
-import { NextRequest } from 'next/server';
-import { cookies } from 'next/headers';
+import { NextRequest, NextResponse } from 'next/server';
 import {
   withErrorHandler,
   requireAuth,
@@ -8,6 +7,8 @@ import {
   APIError,
 } from '@/lib/api-middleware';
 import { exchangeTwitterCode, getTwitterUser } from '@/lib/oauth/twitter';
+import { encryptToken } from '@/lib/encryption';
+import { verifyOAuthState } from '@/lib/oauth/state-manager';
 
 /**
  * GET /api/oauth/twitter/callback
@@ -29,34 +30,20 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(400, 'Authorization code is missing', 'MISSING_CODE');
   }
 
-  // Retrieve code_verifier from cookie (stored during auth initiation)
-  const cookieStore = await cookies();
-  const codeVerifier = cookieStore.get('oauth_verifier_twitter')?.value;
-  const storedState = cookieStore.get('oauth_state_twitter')?.value;
-
-  if (!codeVerifier) {
-    // Log for debugging
-    console.error('Twitter OAuth: Code verifier missing from cookies');
-    throw new APIError(
-      400, 
-      'OAuth session expired or cookies were blocked. Please try connecting again and ensure cookies are enabled.',
-      'MISSING_VERIFIER'
-    );
+  if (!state) {
+    throw new APIError(400, 'State parameter is missing', 'MISSING_STATE');
   }
 
-  // Verify state parameter for CSRF protection
-  if (state && storedState && state !== storedState) {
-    console.error('Twitter OAuth: State mismatch', { state, storedState });
+  const stateVerification = await verifyOAuthState(user.id, 'twitter', state);
+
+  if (!stateVerification.valid || !stateVerification.pkceVerifier) {
     throw new APIError(
-      400, 
-      'Security validation failed. Please try connecting again.',
+      400,
+      stateVerification.error ||
+        'OAuth session expired or invalid. Please try connecting again.',
       'INVALID_STATE'
     );
   }
-
-  // Clear the OAuth cookies
-  cookieStore.delete('oauth_verifier_twitter');
-  cookieStore.delete('oauth_state_twitter');
 
   // Exchange code for access token
   const config = {
@@ -65,6 +52,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/api/oauth/twitter/callback`,
   };
 
+  const codeVerifier = stateVerification.pkceVerifier;
   const tokenResponse = await exchangeTwitterCode(config, code, codeVerifier);
 
   // Get user profile
@@ -85,8 +73,8 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         account_handle: twitterUser.username,
         account_avatar: twitterUser.profile_image_url,
         follower_count: twitterUser.public_metrics?.followers_count || 0,
-        access_token: tokenResponse.access_token,
-        refresh_token: tokenResponse.refresh_token,
+        access_token: encryptToken(tokenResponse.access_token),
+        refresh_token: tokenResponse.refresh_token ? encryptToken(tokenResponse.refresh_token) : null,
         token_expires_at: new Date(
           Date.now() + tokenResponse.expires_in * 1000
         ).toISOString(),
@@ -104,10 +92,9 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     .single();
 
   if (dbError) throw dbError;
-
-  return successResponse({
-    message: 'Twitter account connected successfully',
-    account,
-  });
+  const appUrl = request.nextUrl.origin || (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+  const redirectUrl = new URL('/x', appUrl);
+  redirectUrl.searchParams.set('success', 'Twitter account connected successfully');
+  return NextResponse.redirect(redirectUrl);
 });
 

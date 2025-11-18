@@ -17,6 +17,10 @@ process.env.OPENAI_API_KEY = 'sk-test-key';
 process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 process.env.CRON_SECRET = 'test-cron-secret-32-characters-long';
 
+global.TransformStream = require('stream/web').TransformStream;
+global.Request = function () {};
+global.Response = function () {};
+
 // ═══════════════════════════════════════════════════════════════
 // MOCK NEXT.JS ROUTER
 // ═══════════════════════════════════════════════════════════════
@@ -103,7 +107,7 @@ global.fetch = jest.fn(() =>
     text: () => Promise.resolve(''),
     status: 200,
   })
-) as jest.Mock;
+);
 
 // ═══════════════════════════════════════════════════════════════
 // MOCK WINDOW OBJECTS
@@ -131,8 +135,8 @@ global.IntersectionObserver = class IntersectionObserver {
   takeRecords() {
     return [];
   }
-  unobserve() {}
-} as any;
+    unobserve() {}
+};
 
 // Mock ResizeObserver
 global.ResizeObserver = class ResizeObserver {
@@ -140,7 +144,7 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
   observe() {}
   unobserve() {}
-} as any;
+};
 
 // ═══════════════════════════════════════════════════════════════
 // CONSOLE SUPPRESSION (optional)

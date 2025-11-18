@@ -17,6 +17,7 @@ const customJestConfig = {
   
   // Test environment
   testEnvironment: 'jest-environment-jsdom',
+  roots: ['<rootDir>/src'],
   
   // Module name mapper for path aliases
   moduleNameMapper: {
@@ -33,7 +34,7 @@ const customJestConfig = {
   ],
   
   // Coverage thresholds
-  coverageThresholds: {
+  coverageThreshold: {
     global: {
       branches: 70,
       functions: 70,
@@ -47,6 +48,8 @@ const customJestConfig = {
     '**/__tests__/**/*.[jt]s?(x)',
     '**/?(*.)+(spec|test).[jt]s?(x)',
   ],
+  testPathIgnorePatterns: ['<rootDir>/e2e/'],
+  modulePathIgnorePatterns: ['<rootDir>/e2e/'],
   
   // Transform configuration
   transformIgnorePatterns: [

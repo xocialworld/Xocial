@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { useMemo, useCallback } from 'react';
+import { useQueries } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/react-query';
+import { useSelectedWorkspace } from '@/store/workspaceStore';
 
 export interface OverviewMetrics {
   totalFollowers: number;
@@ -42,94 +44,119 @@ export interface TopPost {
   engagementRate: number;
 }
 
-export function useAnalytics(dateRange: { from: Date; to: Date }) {
-  const [overview, setOverview] = useState<OverviewMetrics | null>(null);
-  const [engagementData, setEngagementData] = useState<EngagementDataPoint[]>([]);
-  const [platformStats, setPlatformStats] = useState<PlatformStat[]>([]);
-  const [topPosts, setTopPosts] = useState<TopPost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+async function fetchAnalytics<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
+  const payload = await response.json();
 
-  useEffect(() => {
-    fetchAnalytics();
-  }, [dateRange]);
-
-  async function fetchAnalytics() {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
-
-      // Fetch overview metrics
-      const overviewRes = await fetch(
-        `/api/analytics/overview?from=${dateRange.from.toISOString()}&to=${dateRange.to.toISOString()}`
-      );
-      
-      if (!overviewRes.ok) {
-        throw new Error('Failed to fetch overview');
-      }
-      
-      const overviewData = await overviewRes.json();
-      setOverview(overviewData.data);
-
-      // Fetch engagement time-series data
-      const engagementRes = await fetch(
-        `/api/analytics/engagement?from=${dateRange.from.toISOString()}&to=${dateRange.to.toISOString()}`
-      );
-      
-      if (!engagementRes.ok) {
-        throw new Error('Failed to fetch engagement data');
-      }
-      
-      const engagementResult = await engagementRes.json();
-      setEngagementData(engagementResult.data);
-
-      // Fetch platform stats
-      const platformRes = await fetch(
-        `/api/analytics/platform-stats?from=${dateRange.from.toISOString()}&to=${dateRange.to.toISOString()}`
-      );
-      
-      if (!platformRes.ok) {
-        throw new Error('Failed to fetch platform stats');
-      }
-      
-      const platformResult = await platformRes.json();
-      setPlatformStats(platformResult.data);
-
-      // Fetch top posts
-      const topPostsRes = await fetch(
-        `/api/analytics/top-posts?from=${dateRange.from.toISOString()}&to=${dateRange.to.toISOString()}&limit=10`
-      );
-      
-      if (!topPostsRes.ok) {
-        throw new Error('Failed to fetch top posts');
-      }
-      
-      const topPostsResult = await topPostsRes.json();
-      setTopPosts(topPostsResult.data);
-
-    } catch (err) {
-      console.error('Analytics fetch error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch analytics');
-    } finally {
-      setLoading(false);
-    }
+  if (!response.ok) {
+    throw new Error(payload?.error || 'Failed to fetch analytics');
   }
 
+  return payload.data as T;
+}
+
+export function useAnalytics(dateRange: { from: Date; to: Date }) {
+  const fromTime = dateRange.from.getTime();
+  const toTime = dateRange.to.getTime();
+
+  const params = useMemo(() => {
+    return {
+      from: new Date(fromTime).toISOString(),
+      to: new Date(toTime).toISOString(),
+    };
+  }, [fromTime, toTime]);
+  const selectedWorkspace = useSelectedWorkspace();
+  const workspaceId = selectedWorkspace?.id;
+  const workspaceParams = useMemo(
+    () => ({
+      ...params,
+      ...(workspaceId ? { workspaceId } : {}),
+    }),
+    [params, workspaceId]
+  );
+
+  const buildSearch = useCallback(
+    (extra?: Record<string, string>) => {
+      const search = new URLSearchParams({
+        from: params.from,
+        to: params.to,
+        ...(workspaceId ? { workspaceId } : {}),
+        ...(extra || {}),
+      });
+      return search.toString();
+    },
+    [params.from, params.to, workspaceId]
+  );
+
+  const enabled = Boolean(params.from && params.to);
+
+  const dateKey = `${params.from}-${params.to}-${workspaceId ?? 'all'}`;
+
+  const queryResults = useQueries({
+    queries: [
+      {
+        queryKey: queryKeys.analytics.overview(workspaceParams),
+        enabled,
+        queryFn: ({ signal }) =>
+          fetchAnalytics<OverviewMetrics>(`/api/analytics/overview?${buildSearch()}`, { signal }),
+        staleTime: 60 * 1000,
+        gcTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+        retry: 1,
+      },
+      {
+        queryKey: queryKeys.analytics.engagement(workspaceParams),
+        enabled,
+        queryFn: ({ signal }) =>
+          fetchAnalytics<EngagementDataPoint[]>(`/api/analytics/engagement?${buildSearch()}`, { signal }),
+        staleTime: 60 * 1000,
+        gcTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+        retry: 1,
+      },
+      {
+        queryKey: queryKeys.analytics.platformStats(dateKey),
+        enabled,
+        queryFn: ({ signal }) =>
+          fetchAnalytics<PlatformStat[]>(`/api/analytics/platform-stats?${buildSearch()}`, { signal }),
+        staleTime: 60 * 1000,
+        gcTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+        retry: 1,
+      },
+      {
+        queryKey: queryKeys.analytics.topPosts({ ...workspaceParams, limit: 10 }),
+        enabled,
+        queryFn: ({ signal }) =>
+          fetchAnalytics<TopPost[]>(
+            `/api/analytics/top-posts?${buildSearch({ limit: '10' })}`,
+            { signal }
+          ),
+        staleTime: 60 * 1000,
+        gcTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+        retry: 1,
+      },
+    ],
+  });
+
+  const [overviewQuery, engagementQuery, platformQuery, topPostsQuery] = queryResults;
+
+  const loading = queryResults.some((query) => query.isPending || query.isFetching);
+  const error = (queryResults.find((query) => query.error)?.error as Error | undefined)?.message ?? null;
+
+  const refetch = useCallback(async () => {
+    await Promise.all(queryResults.map((query) => query.refetch()));
+  }, [queryResults]);
+
   return {
-    overview,
-    engagementData,
-    platformStats,
-    topPosts,
+    overview: overviewQuery.data ?? null,
+    engagementData: engagementQuery.data ?? [],
+    platformStats: platformQuery.data ?? [],
+    topPosts: topPostsQuery.data ?? [],
     loading,
     error,
-    refetch: fetchAnalytics,
+    refetch,
   };
 }
 

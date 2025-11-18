@@ -3,16 +3,12 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
+  color-scheme: light;
+  --background: #f8fafc;
   --foreground: #0f172a;
+  --surface: #ffffff;
+  --muted: #e7ecf5;
   --font-inter: 'Inter', system-ui, -apple-system, sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0f172a;
-    --foreground: #f8fafc;
-  }
 }
 
 body {
@@ -24,6 +20,10 @@ body {
 @layer base {
   * {
     @apply border-secondary-200;
+  }
+  :focus-visible {
+    outline: 2px solid #10b981;
+    outline-offset: 2px;
   }
   
   h1 {
@@ -59,6 +59,19 @@ body {
   
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+  .skip-to-content {
+    position: absolute;
+    top: -100px;
+    left: 0;
+    background: #000;
+    color: #fff;
+    padding: 0.5rem 1rem;
+    z-index: 1000;
+  }
+
+  .skip-to-content:focus {
+    top: 0;
   }
 }
 

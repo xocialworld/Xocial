@@ -19,7 +19,7 @@ interface EngagementChartProps {
 
 export function EngagementChart({ data }: EngagementChartProps) {
   return (
-    <Card className="p-6">
+    <Card className="p-6" role="region" aria-label="Engagement over time chart">
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-gray-900">Engagement Over Time</h3>
         <p className="text-sm text-gray-500 mt-1">

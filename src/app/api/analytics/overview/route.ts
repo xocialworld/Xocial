@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { checkRateLimit, getWorkspaceFromRequest } from '@/lib/api-middleware';
+import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,6 +12,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
+      );
+    }
+
+    // Basic rate limiting to protect analytics endpoints
+    const limited = checkRateLimit(`${user.id}:analytics:overview`, 60, 60_000);
+    if (!limited) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please slow down.' },
+        { status: 429 }
       );
     }
 
@@ -24,19 +35,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user's workspace
-    const { data: workspace } = await supabase
-      .from('workspaces')
-      .select('id')
-      .eq('owner_id', user.id)
-      .single();
-
-    if (!workspace) {
-      return NextResponse.json(
-        { error: 'Workspace not found' },
-        { status: 404 }
-      );
-    }
+    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
 
     // Calculate date ranges for comparison
     const fromDate = new Date(from);
@@ -48,10 +47,10 @@ export async function GET(request: NextRequest) {
     // Get current period metrics
     const { data: currentAccounts } = await supabase
       .from('social_accounts')
-      .select('followers_count')
+      .select('follower_count')
       .eq('workspace_id', workspace.id);
 
-    const totalFollowers = currentAccounts?.reduce((sum, acc) => sum + (acc.followers_count || 0), 0) || 0;
+    const totalFollowers = currentAccounts?.reduce((sum, acc) => sum + (acc.follower_count || 0), 0) || 0;
 
     // Get current period posts and analytics
     const { data: currentPosts } = await supabase
@@ -127,7 +126,7 @@ export async function GET(request: NextRequest) {
       data: metrics,
     });
   } catch (error) {
-    console.error('Analytics overview error:', error);
+    logger.error('Analytics overview error', error as Error);
     return NextResponse.json(
       { error: 'Failed to fetch analytics overview' },
       { status: 500 }

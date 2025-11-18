@@ -145,7 +145,9 @@ export const API_ROUTES = {
   INTEGRATIONS: {
     FACEBOOK: "/api/integrations/facebook",
     INSTAGRAM: "/api/integrations/instagram",
-    YOUTUBE: "/api/integrations/youtube",
+    // Route kept for backward compatibility; prefer OAuth connect flow:
+    // `/api/oauth/connect?platform=youtube`
+    YOUTUBE: "/api/oauth/connect?platform=youtube",
     TWITTER: "/api/integrations/twitter",
     LINKEDIN: "/api/integrations/linkedin",
   },

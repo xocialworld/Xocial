@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  getUserWorkspace,
-} from '@/lib/api-middleware';
+import { requireAuth, getUserWorkspace, APIError } from '@/lib/api-middleware';
 import {
   exchangeFacebookCode,
   getFacebookLongLivedToken,
   getFacebookProfile,
   getFacebookPages,
 } from '@/lib/oauth/facebook';
+import { verifyOAuthState } from '@/lib/oauth/state-manager';
+import { encryptToken } from '@/lib/encryption';
 import { createClient } from '@/lib/supabase/server';
-import { cookies } from 'next/headers';
 
 /**
  * GET /api/oauth/facebook/callback
@@ -17,30 +16,7 @@ import { cookies } from 'next/headers';
  */
 export async function GET(request: NextRequest) {
   try {
-  // Get user ID from OAuth cookie
-  const cookieStore = await cookies();
-  const allCookies = cookieStore.getAll();
-  console.log('[Facebook Callback] All cookies:', allCookies.map(c => c.name));
-  
-  const userId = cookieStore.get('oauth_user_facebook')?.value;
-  console.log('[Facebook Callback] User ID from cookie:', userId);
-  
-  if (!userId) {
-    console.error('[Facebook Callback] No user ID found in cookie');
-    // Redirect to login with error message
-    const loginUrl = new URL('/auth/login', process.env.NEXT_PUBLIC_APP_URL);
-    loginUrl.searchParams.set('error', 'Session expired. Please try connecting again.');
-    return NextResponse.redirect(loginUrl);
-  }
-  
-  // Create Supabase client
-  const supabase = await createClient();
-  
-  // Create a user object from the stored ID
-  const user = { id: userId };
-  
-  // Clear the OAuth cookie
-  cookieStore.delete('oauth_user_facebook');
+  const { user, supabase } = await requireAuth(request);
 
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
@@ -59,7 +35,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(accountsUrl);
   }
 
-  // TODO: Verify state parameter matches what was stored in session
+  // Verify state parameter for CSRF protection
+  if (!state) {
+    throw new APIError(400, 'State parameter is missing', 'MISSING_STATE');
+  }
+
+  const stateVerification = await verifyOAuthState(user.id, 'facebook', state);
+  if (!stateVerification.valid) {
+    throw new APIError(
+      403,
+      `OAuth state verification failed: ${stateVerification.error}`,
+      'INVALID_STATE'
+    );
+  }
 
   // Exchange code for access token
   const config = {
@@ -88,7 +76,7 @@ export async function GET(request: NextRequest) {
   );
 
   if (pages.length === 0) {
-    console.warn('[Facebook Callback] No pages returned for user:', userId);
+    console.warn('[Facebook Callback] No pages returned for user:', user.id);
     const accountsUrl = new URL('/x', process.env.NEXT_PUBLIC_APP_URL);
     accountsUrl.searchParams.set(
       'error',
@@ -100,10 +88,13 @@ export async function GET(request: NextRequest) {
   // Get user's workspace
   const workspace = await getUserWorkspace(user.id);
 
-  // Store each page as a separate social account
+  // Store each page as a separate social account with encrypted tokens
   const accounts = await Promise.all(
     pages.map(async (page) => {
-      const { data, error } = await supabase
+      // Encrypt page access token before storing
+      const encryptedAccessToken = encryptToken(page.access_token);
+
+      const { data, error} = await supabase
         .from('social_accounts')
         .upsert(
           {
@@ -111,11 +102,16 @@ export async function GET(request: NextRequest) {
             platform: 'facebook',
             account_id: page.id,
             account_name: page.name,
-            access_token: page.access_token,
+            access_token: encryptedAccessToken,
             token_expires_at: new Date(
               Date.now() + longLivedToken.expires_in * 1000
             ).toISOString(),
             is_active: true,
+            metadata: {
+              category: page.category,
+              category_list: page.category_list,
+              tasks: page.tasks,
+            },
           },
           {
             onConflict: 'workspace_id,platform,account_id',

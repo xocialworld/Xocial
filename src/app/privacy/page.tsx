@@ -21,7 +21,7 @@ export default function PrivacyPolicyPage() {
           </h1>
           <p className="text-sm text-gray-500">Last updated: {lastUpdated}</p>
           <p className="text-base leading-7">
-            Xocial ("we", "our", or "us") helps teams manage their social media
+            Xocial (&ldquo;we&rdquo;, &ldquo;our&rdquo;, or &ldquo;us&rdquo;) helps teams manage their social media
             presence across Facebook, Instagram, and other platforms through
             scheduling, analytics, collaboration, and AI-assisted content
             creation. This Privacy Policy explains how we collect, use, share,
@@ -141,7 +141,8 @@ export default function PrivacyPolicyPage() {
             <li>
               <strong>Service Providers:</strong> Third-party vendors that help us
               operate Xocial, such as Supabase (database and authentication),
-              Vercel (hosting), and OpenAI (AI-assisted copy generation). These
+              Vercel (hosting and AI Gateway), and AI model providers accessed 
+              through Vercel AI Gateway (AI-assisted content generation). These
               providers are contractually obligated to handle data securely and
               only for the purpose of delivering the contracted service.
             </li>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getWorkspaceFromRequest } from '@/lib/api-middleware';
 
 export async function GET(
   request: NextRequest,
@@ -17,10 +18,13 @@ export async function GET(
       );
     }
 
+    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+
     const { data: media, error } = await supabase
       .from('media')
       .select('*')
       .eq('id', id)
+      .eq('workspace_id', workspace.id)
       .single();
 
     if (error || !media) {
@@ -62,6 +66,8 @@ export async function PUT(
     const body = await request.json();
     const { title, alt_text, tags } = body;
 
+    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+
     const { data: media, error } = await supabase
       .from('media')
       .update({
@@ -70,6 +76,7 @@ export async function PUT(
         tags,
       })
       .eq('id', id)
+      .eq('workspace_id', workspace.id)
       .eq('uploaded_by', user.id)
       .select()
       .single();
@@ -110,12 +117,14 @@ export async function DELETE(
       );
     }
 
+    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+
     // Get media record to get storage path
     const { data: media, error: fetchError } = await supabase
       .from('media')
       .select('storage_path')
       .eq('id', id)
-      .eq('uploaded_by', user.id)
+      .eq('workspace_id', workspace.id)
       .single();
 
     if (fetchError || !media) {
@@ -139,6 +148,7 @@ export async function DELETE(
       .from('media')
       .delete()
       .eq('id', id)
+      .eq('workspace_id', workspace.id)
       .eq('uploaded_by', user.id);
 
     if (dbError) {

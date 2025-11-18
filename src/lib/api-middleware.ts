@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
+import { logger } from '@/lib/logger';
+import { slugify } from '@/lib/utils';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * API Error class for consistent error handling
@@ -9,7 +12,8 @@ export class APIError extends Error {
   constructor(
     public statusCode: number,
     public message: string,
-    public code?: string
+    public code?: string,
+    public details?: unknown
   ) {
     super(message);
     this.name = 'APIError';
@@ -64,6 +68,9 @@ export function errorResponse(
       error: {
         message: error.message,
         code,
+        ...(error instanceof APIError && error.details
+          ? { details: error.details }
+          : {}),
       },
     },
     { status }
@@ -109,16 +116,73 @@ export async function requireAuth(request: NextRequest) {
   return { user, supabase };
 }
 
+type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'viewer' | 'client';
+
+async function ensureWorkspaceMembership(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  userId: string,
+  role: WorkspaceRole = 'owner'
+) {
+  const { error } = await supabase
+    .from('workspace_members')
+    .upsert(
+      {
+        workspace_id: workspaceId,
+        user_id: userId,
+        role,
+      },
+      { onConflict: 'workspace_id,user_id' }
+    );
+
+  if (error) {
+    throw new APIError(500, `Failed to link user to workspace: ${error.message}`, 'WORKSPACE_MEMBERSHIP_FAILED');
+  }
+}
+
+async function createWorkspaceForUser(
+  supabase: SupabaseClient,
+  profile: { id: string; name: string; email?: string | null }
+) {
+  const baseName =
+    profile.name?.trim() ||
+    profile.email?.split('@')[0] ||
+    'Workspace';
+  const workspaceName = baseName.endsWith("'s Workspace")
+    ? baseName
+    : `${baseName}'s Workspace`;
+
+  const slugBase = slugify(baseName || 'workspace') || 'workspace';
+  const uniqueSuffix = profile.id.replace(/-/g, '').slice(0, 8);
+  const slug = `${slugBase}-${uniqueSuffix}`;
+
+  const { data: newWorkspace, error } = await supabase
+    .from('workspaces')
+    .insert({
+      name: workspaceName,
+      slug,
+      owner_id: profile.id,
+    })
+    .select()
+    .single();
+
+  if (error || !newWorkspace) {
+    throw new APIError(500, `Failed to create workspace: ${error?.message}`, 'WORKSPACE_CREATE_FAILED');
+  }
+
+  await ensureWorkspaceMembership(supabase, newWorkspace.id, profile.id, 'owner');
+  return newWorkspace;
+}
+
 /**
- * Get user's workspace (creates one if doesn't exist)
+ * Get user's workspace (creates one if it doesn't exist)
  */
-export async function getUserWorkspace(userId: string) {
-  const supabase = await createClient();
+export async function getUserWorkspace(userId: string, existingClient?: SupabaseClient) {
+  const supabase = existingClient ?? await createClient();
   
-  // First, check if user has a profile
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('*')
+    .select('id, name, email')
     .eq('id', userId)
     .single();
 
@@ -126,31 +190,68 @@ export async function getUserWorkspace(userId: string) {
     throw new APIError(404, 'User profile not found. Please complete registration.', 'PROFILE_NOT_FOUND');
   }
 
-  // Try to get workspace
-  let { data: workspace, error } = await supabase
+  const { data: membership } = await supabase
+    .from('workspace_members')
+    .select('role, workspace:workspace_id (*)')
+    .eq('user_id', userId)
+    .order('joined_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (membership?.workspace) {
+    return membership.workspace;
+  }
+
+  const { data: ownedWorkspace } = await supabase
     .from('workspaces')
     .select('*')
     .eq('owner_id', userId)
+    .order('created_at', { ascending: true })
     .limit(1)
+    .maybeSingle();
+
+  if (ownedWorkspace) {
+    await ensureWorkspaceMembership(supabase, ownedWorkspace.id, userId, 'owner');
+    return ownedWorkspace;
+  }
+
+  return createWorkspaceForUser(supabase, profile);
+}
+
+export async function getWorkspaceFromRequest(
+  userId: string,
+  request: NextRequest,
+  existingClient?: SupabaseClient
+) {
+  const workspaceId =
+    request.nextUrl.searchParams.get('workspaceId') ||
+    request.headers.get('x-workspace-id');
+
+  const supabase = existingClient ?? (await createClient());
+
+  if (!workspaceId) {
+    return getUserWorkspace(userId, supabase);
+  }
+
+  const { data: membership, error: membershipError } = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (membershipError || !membership) {
+    throw new APIError(403, 'Access denied to workspace', 'ACCESS_DENIED');
+  }
+
+  const { data: workspace, error: workspaceError } = await supabase
+    .from('workspaces')
+    .select('*')
+    .eq('id', workspaceId)
     .single();
 
-  // If workspace doesn't exist, create one
-  if (error || !workspace) {
-    const { data: newWorkspace, error: createError } = await supabase
-      .from('workspaces')
-      .insert({
-        name: `${profile.name}'s Workspace`,
-        slug: `workspace-${userId}`,
-        owner_id: userId,
-      })
-      .select()
-      .single();
-
-    if (createError) {
-      throw new APIError(500, `Failed to create workspace: ${createError.message}`, 'WORKSPACE_CREATE_FAILED');
-    }
-
-    workspace = newWorkspace;
+  if (workspaceError || !workspace) {
+    throw new APIError(404, 'Workspace not found', 'WORKSPACE_NOT_FOUND');
   }
 
   return workspace;
@@ -220,6 +321,30 @@ export function checkRateLimit(
   return true;
 }
 
+export async function enforceUserRateLimit(
+  supabase: SupabaseClient,
+  userId: string,
+  table: 'ai_generations' | 'api_call_logs',
+  timeColumn: 'created_at' | 'generation_time_ms' | 'created_at',
+  windowMs: number,
+  maxRequests: number
+): Promise<boolean> {
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const query = supabase
+    .from(table)
+    .select('id', { count: 'exact', head: true })
+    .gte(timeColumn, since);
+  const byUser =
+    table === 'ai_generations'
+      ? query.eq('created_by', userId)
+      : query.eq('user_id', userId);
+  const { count, error } = await byUser;
+  if (error) {
+    return true;
+  }
+  return (count ?? 0) < maxRequests;
+}
+
 /**
  * API handler wrapper with error handling
  */
@@ -230,7 +355,7 @@ export function withErrorHandler(
     try {
       return await handler(request, context);
     } catch (error) {
-      console.error('API Error:', error);
+      logger.error('API Error', error as Error);
       
       if (error instanceof APIError) {
         return errorResponse(error);
@@ -273,7 +398,11 @@ export async function logAPICall(
  * Handle API errors
  */
 export function handleAPIError(error: unknown): NextResponse {
-  console.error('API Error:', error);
+  if (error instanceof Error) {
+    logger.error('API Error', error);
+  } else {
+    logger.error('API Error (unknown)', new Error(String(error)));
+  }
   
   if (error instanceof APIError) {
     return errorResponse(error);

@@ -4,6 +4,8 @@
  * Provides structured logging with context and monitoring integration
  */
 
+import { trackError, captureMessage, logEvent } from './monitoring';
+
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface LogContext {
@@ -49,42 +51,15 @@ class Logger {
     if (this.isDevelopment) return;
 
     try {
-      // TODO: Integrate with monitoring service (Sentry, DataDog, LogDNA, etc.)
-      // Example implementation:
-      
-      if (typeof window !== 'undefined' && (window as any).Sentry) {
-        // Client-side Sentry
-        if (level === 'error' && error) {
-          (window as any).Sentry.captureException(error, {
-            level,
-            contexts: { custom: context },
-          });
-        } else {
-          (window as any).Sentry.captureMessage(message, {
-            level,
-            contexts: { custom: context },
-          });
-        }
-      } else if (this.isProduction) {
-        // Server-side logging to API endpoint
-        fetch('/api/logs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            level,
-            message,
-            context,
-            error: error ? {
-              message: error.message,
-              stack: error.stack,
-              name: error.name,
-            } : undefined,
-            timestamp: new Date().toISOString(),
-          }),
-        }).catch((err) => {
-          // Fail silently to avoid infinite loops
-          console.error('[Logger] Failed to send to monitoring:', err);
-        });
+      // Simple logging for production (Next.js will capture these)
+      if (level === 'error' && error) {
+        trackError(error, context);
+      } else {
+        const mappedLevel = level === 'warn' ? 'warning' : (level === 'info' ? 'info' : 'error');
+        captureMessage(message, mappedLevel);
+        
+        // Also log as event for analytics
+        logEvent(`log_${level}`, { message, ...context });
       }
     } catch (err) {
       console.error('[Logger] Monitoring send failed:', err);
@@ -160,6 +135,13 @@ class Logger {
    */
   trackAction(action: string, context?: LogContext): void {
     this.info(`User action: ${action}`, { ...context, action });
+  }
+
+  ai(
+    action: 'ai_generate' | 'ai_refine' | 'ai_schedule',
+    context?: LogContext
+  ): void {
+    this.trackAction(action, context);
   }
 
   /**

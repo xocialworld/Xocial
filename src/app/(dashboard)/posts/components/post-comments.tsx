@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { TextArea } from '@/components/ui/textarea';
 import { Spinner } from '@/components/ui/spinner';
@@ -22,11 +22,7 @@ export function PostComments({ postId }: { postId: string }) {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   
-  useEffect(() => {
-    fetchComments();
-  }, [postId]);
-  
-  async function fetchComments() {
+  const fetchComments = useCallback(async () => {
     try {
       setLoading(true);
       const res = await fetch(`/api/posts/${postId}/comments`);
@@ -37,7 +33,11 @@ export function PostComments({ postId }: { postId: string }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [postId]);
+  
+  useEffect(() => {
+    fetchComments();
+  }, [fetchComments]);
   
   async function handleReply(commentId: string) {
     if (!replyText.trim()) return;

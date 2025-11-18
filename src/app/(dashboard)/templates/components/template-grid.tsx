@@ -35,7 +35,7 @@ export function TemplateGrid({ templates, onDelete, onRefresh }: TemplateGridPro
     // Store template in sessionStorage for the composer
     sessionStorage.setItem('template', JSON.stringify(template));
     toast.success('Opening composer with this template...');
-    router.push('/compose');
+    router.push('/c');
   };
 
   const handleCopyTemplate = (template: Template) => {

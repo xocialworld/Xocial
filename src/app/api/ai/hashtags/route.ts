@@ -4,8 +4,11 @@ import {
   requireAuth,
   successResponse,
   validateRequest,
+  APIError,
+  checkRateLimit,
 } from '@/lib/api-middleware';
 import { generateHashtags } from '@/lib/openai';
+import { logger } from '@/lib/logger';
 import { z } from 'zod';
 
 /**
@@ -22,10 +25,17 @@ const hashtagSchema = z.object({
  * Generate relevant hashtags for content
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  await requireAuth(request);
+  const { user } = await requireAuth(request);
+  const startTime = Date.now();
 
   // Validate request
   const validatedData = await validateRequest(request, hashtagSchema);
+
+  // Rate limit per user for hashtag generation
+  const limited = checkRateLimit(`${user.id}:ai:hashtags`, 60, 60_000);
+  if (!limited) {
+    throw new APIError(429, 'Too many AI requests. Please wait a moment.', 'RATE_LIMIT');
+  }
 
   // Generate hashtags
   const hashtags = await generateHashtags(
@@ -34,9 +44,17 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     validatedData.count
   );
 
-  return successResponse({
+  const response = successResponse({
     hashtags,
     count: hashtags.length,
   });
+
+  const totalDuration = Date.now() - startTime;
+  logger.trackAPIRequest('POST', '/api/ai/hashtags', 200, totalDuration, {
+    userId: user.id,
+    metadata: { platform: validatedData.platform, count: validatedData.count },
+  });
+
+  return response;
 });
 

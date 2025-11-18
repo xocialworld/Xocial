@@ -4,6 +4,8 @@
  */
 
 import { createClient } from '@/lib/supabase/server';
+import { decryptToken, encryptToken } from '@/lib/encryption';
+import { uploadYouTubeVideo, setYouTubeVideoThumbnail, refreshYouTubeToken } from '@/lib/oauth/youtube';
 
 export interface YouTubeConfig {
   accessToken: string;
@@ -248,7 +250,7 @@ export async function createYouTubeClient(accountId: string): Promise<YouTubeCli
   
   const { data: account, error } = await supabase
     .from('social_accounts')
-    .select('platform_user_id')
+    .select('account_id, access_token, refresh_token, is_active, token_expires_at')
     .eq('id', accountId)
     .eq('platform', 'youtube')
     .single();
@@ -257,20 +259,108 @@ export async function createYouTubeClient(accountId: string): Promise<YouTubeCli
     throw new Error('YouTube account not found');
   }
 
-  // Get OAuth token
-  const { data: token, error: tokenError } = await supabase
-    .from('oauth_tokens')
-    .select('access_token')
-    .eq('account_id', accountId)
-    .single();
-
-  if (tokenError || !token) {
-    throw new Error('YouTube access token not found');
+  if (!account.is_active) {
+    throw new Error('YouTube account is not active. Please reconnect.');
   }
 
+  // Check if token is expired and refresh if possible
+  if (account.token_expires_at && new Date(account.token_expires_at) < new Date()) {
+    if (account.refresh_token) {
+      // Attempt to refresh the token
+      const config = {
+        clientId: process.env.YOUTUBE_CLIENT_ID!,
+        clientSecret: process.env.YOUTUBE_CLIENT_SECRET!,
+        redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/api/oauth/youtube/callback`,
+      };
+      
+      const decryptedRefreshToken = decryptToken(account.refresh_token);
+      const newTokens = await refreshYouTubeToken(config, decryptedRefreshToken);
+      
+      // Encrypt and update tokens in database
+      const encryptedAccessToken = encryptToken(newTokens.access_token);
+      const encryptedRefreshToken = newTokens.refresh_token 
+        ? encryptToken(newTokens.refresh_token) 
+        : account.refresh_token;
+      
+      await supabase
+        .from('social_accounts')
+        .update({
+          access_token: encryptedAccessToken,
+          refresh_token: encryptedRefreshToken,
+          token_expires_at: new Date(Date.now() + newTokens.expires_in * 1000).toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', accountId);
+      
+      // Use the new token
+      const accessToken = newTokens.access_token;
+      return new YouTubeClient({
+        accessToken,
+        channelId: account.account_id,
+      });
+    } else {
+      throw new Error('YouTube access token has expired. Please reconnect your account.');
+    }
+  }
+
+  // Decrypt access token
+  const accessToken = decryptToken(account.access_token);
+
   return new YouTubeClient({
-    accessToken: token.access_token,
-    channelId: account.platform_user_id,
+    accessToken,
+    channelId: account.account_id,
   });
+}
+
+/**
+ * Publish video to YouTube (used by unified publisher)
+ */
+export async function publishToYouTube(config: {
+  accountId: string;
+  videoUrl: string;
+  title: string;
+  description: string;
+  tags?: string[];
+  categoryId?: string;
+  privacyStatus?: 'public' | 'unlisted' | 'private';
+  thumbnailUrl?: string;
+}): Promise<{ id: string; url: string }> {
+  const client = await createYouTubeClient(config.accountId);
+  
+  // Fetch video file
+  const videoResponse = await fetch(config.videoUrl);
+  if (!videoResponse.ok) {
+    throw new Error(`Failed to fetch video file from ${config.videoUrl}`);
+  }
+  
+  const videoBlob = await videoResponse.blob();
+  
+  // Upload video
+  const result = await uploadYouTubeVideo(
+    client['accessToken'],
+    videoBlob,
+    {
+      title: config.title,
+      description: config.description,
+      tags: config.tags,
+      categoryId: config.categoryId,
+      privacyStatus: config.privacyStatus || 'public',
+    }
+  );
+  
+  // Upload thumbnail if provided
+  if (config.thumbnailUrl && result.id) {
+    try {
+      await setYouTubeVideoThumbnail(client['accessToken'], result.id, config.thumbnailUrl);
+    } catch (error) {
+      // Log but don't fail the whole operation
+      console.warn('Failed to upload thumbnail:', error);
+    }
+  }
+  
+  return {
+    id: result.id,
+    url: `https://www.youtube.com/watch?v=${result.id}`,
+  };
 }
 

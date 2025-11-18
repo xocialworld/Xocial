@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element -- Post previews render stored media where Next Image is not viable */
 
 import * as React from "react";
 import { Card } from "@/components/ui/card";

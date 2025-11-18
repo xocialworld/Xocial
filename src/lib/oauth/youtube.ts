@@ -48,6 +48,8 @@ export interface YouTubeVideo {
     title: string;
     description: string;
     publishedAt: string;
+    tags?: string[];
+    categoryId?: string;
     thumbnails: {
       default?: { url: string };
       medium?: { url: string };
@@ -76,6 +78,7 @@ export function getYouTubeAuthUrl(
       'https://www.googleapis.com/auth/youtube',
       'https://www.googleapis.com/auth/youtube.upload',
       'https://www.googleapis.com/auth/youtube.readonly',
+      'https://www.googleapis.com/auth/yt-analytics.readonly',
       'https://www.googleapis.com/auth/userinfo.profile',
       'https://www.googleapis.com/auth/userinfo.email',
     ].join(' '),
@@ -111,8 +114,14 @@ export async function exchangeYouTubeCode(
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error_description || 'Failed to exchange YouTube authorization code');
+    let description = 'Failed to exchange YouTube authorization code';
+    try {
+      const error = await response.json();
+      description = error.error_description || error.error || description;
+    } catch {}
+    // Use APIError so our handler preserves the message
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(400, description, 'OAUTH_TOKEN_EXCHANGE_FAILED');
   }
 
   return response.json();
@@ -141,7 +150,8 @@ export async function refreshYouTubeToken(
   });
 
   if (!response.ok) {
-    throw new Error('Failed to refresh YouTube token');
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(401, 'Failed to refresh YouTube token', 'OAUTH_TOKEN_REFRESH_FAILED');
   }
 
   return response.json();
@@ -168,7 +178,9 @@ export async function getYouTubeChannels(
   );
 
   if (!response.ok) {
-    throw new Error('Failed to fetch YouTube channels');
+    const description = 'Failed to fetch YouTube channels';
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(response.status || 400, description, 'YOUTUBE_API_ERROR');
   }
 
   const data = await response.json();
@@ -234,7 +246,17 @@ export async function uploadYouTubeVideo(
   });
 
   if (!uploadResponse.ok) {
-    throw new Error('Failed to upload video file to YouTube');
+    let message = 'Failed to upload video file to YouTube';
+
+    try {
+      const error = await uploadResponse.json();
+      message = error.error?.message || message;
+    } catch {
+      // If parsing fails, fall back to default message
+    }
+
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(uploadResponse.status || 400, message, 'YOUTUBE_UPLOAD_FAILED');
   }
 
   return uploadResponse.json();
@@ -278,8 +300,13 @@ export async function updateYouTubeVideo(
   );
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error?.message || 'Failed to update YouTube video');
+    let message = 'Failed to update YouTube video';
+    try {
+      const error = await response.json();
+      message = error.error?.message || message;
+    } catch {}
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(response.status || 400, message, 'YOUTUBE_API_ERROR');
   }
 
   return response.json();
@@ -307,7 +334,8 @@ export async function getYouTubeChannelStats(
   );
 
   if (!response.ok) {
-    throw new Error('Failed to fetch YouTube channel stats');
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(response.status || 400, 'Failed to fetch YouTube channel stats', 'YOUTUBE_API_ERROR');
   }
 
   const data = await response.json();
@@ -336,11 +364,18 @@ export async function getYouTubeVideoStats(
   );
 
   if (!response.ok) {
-    throw new Error('Failed to fetch YouTube video stats');
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(response.status || 400, 'Failed to fetch YouTube video stats', 'YOUTUBE_API_ERROR');
   }
 
   const data = await response.json();
-  return data.items?.[0];
+  const items = Array.isArray(data.items) ? data.items : [];
+
+  if (items.length === 0) {
+    throw new Error('YouTube video not found');
+  }
+
+  return items[0];
 }
 
 /**
@@ -369,7 +404,8 @@ export async function getYouTubeChannelVideos(
   );
 
   if (!response.ok) {
-    throw new Error('Failed to fetch YouTube channel videos');
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(response.status || 400, 'Failed to fetch YouTube channel videos', 'YOUTUBE_API_ERROR');
   }
 
   const data = await response.json();
@@ -396,7 +432,8 @@ export async function deleteYouTubeVideo(
   );
 
   if (!response.ok) {
-    throw new Error('Failed to delete YouTube video');
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(response.status || 400, 'Failed to delete YouTube video', 'YOUTUBE_API_ERROR');
   }
 }
 
@@ -425,10 +462,90 @@ export async function getYouTubeVideoComments(
   );
 
   if (!response.ok) {
-    throw new Error('Failed to fetch YouTube video comments');
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(response.status || 400, 'Failed to fetch YouTube video comments', 'YOUTUBE_API_ERROR');
   }
 
   const data = await response.json();
   return data.items || [];
+}
+
+/**
+ * Set custom thumbnail for a YouTube video
+ */
+export async function setYouTubeVideoThumbnail(
+  accessToken: string,
+  videoId: string,
+  thumbnailUrl: string
+): Promise<void> {
+  // Fetch the thumbnail image
+  const imageResponse = await fetch(thumbnailUrl);
+  if (!imageResponse.ok) {
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(imageResponse.status || 400, 'Failed to fetch thumbnail image', 'THUMBNAIL_FETCH_FAILED');
+  }
+  
+  const imageBlob = await imageResponse.blob();
+  
+  // Upload thumbnail to YouTube
+  const params = new URLSearchParams({ videoId });
+  
+  const response = await fetch(
+    `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?${params.toString()}`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': imageBlob.type,
+      },
+      body: imageBlob,
+    }
+  );
+  
+  if (!response.ok) {
+    let message = 'Failed to set YouTube video thumbnail';
+    try {
+      const error = await response.json();
+      message = error.error?.message || message;
+    } catch {}
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(response.status || 400, message, 'YOUTUBE_API_ERROR');
+  }
+}
+
+/**
+ * Reply to a YouTube comment
+ */
+export async function replyToYouTubeComment(
+  accessToken: string,
+  commentId: string,
+  replyText: string
+): Promise<void> {
+  const response = await fetch(
+    'https://www.googleapis.com/youtube/v3/comments?part=snippet',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        snippet: {
+          parentId: commentId,
+          textOriginal: replyText,
+        },
+      }),
+    }
+  );
+  
+  if (!response.ok) {
+    let message = 'Failed to reply to comment';
+    try {
+      const error = await response.json();
+      message = error.error?.message || message;
+    } catch {}
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(response.status || 400, message, 'YOUTUBE_API_ERROR');
+  }
 }
 

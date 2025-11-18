@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ export default function SettingsPage() {
   const [workspace, setWorkspace] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   // Form states
   const [name, setName] = useState("");
@@ -24,11 +24,7 @@ export default function SettingsPage() {
   const [timezone, setTimezone] = useState("UTC");
   const [workspaceName, setWorkspaceName] = useState("");
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -65,9 +61,13 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [supabase]);
 
-  const handleProfileUpdate = async () => {
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleProfileUpdate = useCallback(async () => {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -93,9 +93,9 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
-  };
+  }, [supabase, name, bio, timezone, fetchData]);
 
-  const handleWorkspaceUpdate = async () => {
+  const handleWorkspaceUpdate = useCallback(async () => {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -134,7 +134,7 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
-  };
+  }, [supabase, workspace, workspaceName, fetchData]);
 
   if (loading) {
     return (

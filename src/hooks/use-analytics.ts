@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { queryKeys } from "@/lib/react-query";
@@ -139,6 +140,26 @@ export function useAnalytics(dateRange: string = "30") {
     // Provide default data while loading
     placeholderData: (previousData) => previousData,
   });
+
+  // Realtime: subscribe to analytics upserts/updates
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel('realtime-post-analytics')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'post_analytics' },
+        () => {
+          // Lightweight debounce could be added if events are frequent
+          refetch();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refetch]);
 
   return {
     analytics: analytics || null,

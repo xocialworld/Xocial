@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import tailwindcssAnimate from "tailwindcss-animate";
 import { tailwindTheme } from "./src/lib/design-tokens";
 
 const { zIndex: tokenZIndex, ...tailwindThemeWithoutZIndex } = tailwindTheme as Record<string, any>;
@@ -102,7 +103,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [tailwindcssAnimate],
 };
 
 export default config;

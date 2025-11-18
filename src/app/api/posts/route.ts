@@ -4,35 +4,294 @@ import {
   requireAuth,
   successResponse,
   getUserWorkspace,
+  getWorkspaceFromRequest,
   getPagination,
   validateRequest,
   APIError,
+  checkWorkspaceAccess,
 } from '@/lib/api-middleware';
 import { z } from 'zod';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { platformPublisher, type Platform } from '@/lib/platforms/publisher';
+import {
+  recordPlatformPosts,
+  createInitialAnalytics,
+  extractExternalIds,
+} from '@/lib/platforms/publish-utils';
+import { normalizeMetadata } from '@/lib/platforms/post-publish-helpers';
 
 /**
  * Validation schemas
  */
+const PLATFORM_VALUES = ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok', 'youtube'] as const;
+
+const platformEnum = z.enum(PLATFORM_VALUES);
+
 const createPostSchema = z.object({
-  content: z.record(z.object({
-    text: z.string(),
-    hashtags: z.array(z.string()).optional(),
-    mentions: z.array(z.string()).optional(),
-  })),
-  platforms: z.array(z.enum(['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok', 'youtube'])),
-  status: z.enum(['draft', 'pending_approval', 'approved', 'scheduled', 'published', 'failed']).default('draft'),
+  content: z.record(
+    z.object({
+      text: z.string(),
+      hashtags: z.array(z.string()).optional(),
+      mentions: z.array(z.string()).optional(),
+    })
+  ),
+  platforms: z.array(platformEnum),
+  platformAccounts: z.record(z.string(), z.string().uuid()).optional(),
+  status: z
+    .enum(['draft', 'pending_approval', 'approved', 'scheduled', 'published', 'failed'])
+    .default('draft'),
   scheduled_at: z.string().optional(),
   campaign_id: z.string().optional(),
-  media: z.array(z.object({
-    id: z.string(),
-    url: z.string(),
-    type: z.enum(['image', 'video']),
-    thumbnail: z.string().optional(),
-    filename: z.string(),
-    size: z.number(),
-  })).optional(),
+  media: z
+    .array(
+      z.object({
+        id: z.string(),
+        url: z.string(),
+        type: z.enum(['image', 'video']),
+        thumbnail: z.string().optional(),
+        filename: z.string(),
+        size: z.number(),
+      })
+    )
+    .optional(),
+  mediaIds: z.array(z.string().uuid()).optional(),
   tags: z.array(z.string()).optional(),
+  // AI metadata fields (from SRS 2025 enhancements)
+  ai_generated: z.boolean().optional(),
+  ai_generation_id: z.string().uuid().optional(),
+  ai_prompt: z.string().optional(),
+  ai_metadata: z
+    .object({
+      model: z.string().optional(),
+      tone: z.string().optional(),
+      style: z.string().optional(),
+      length: z.string().optional(),
+      platforms: z.array(platformEnum).optional(),
+    })
+    .optional(),
 });
+
+type ValidatedPostInput = z.infer<typeof createPostSchema>;
+type NormalizedPostInput = ValidatedPostInput & {
+  status: NonNullable<ValidatedPostInput['status']>;
+};
+
+async function ensurePlatformAccounts(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  platformAccounts: Record<string, string> | undefined,
+  status: ValidatedPostInput['status']
+) {
+  if (status === 'draft') {
+    return (platformAccounts as Partial<Record<Platform, string>>) || {};
+  }
+
+  if (!platformAccounts || Object.keys(platformAccounts).length === 0) {
+    throw new APIError(
+      400,
+      'At least one platform account selection is required',
+      'MISSING_PLATFORM_ACCOUNTS'
+    );
+  }
+
+  const normalizedEntries = Object.entries(platformAccounts).map(([platform, accountId]) => {
+    if (!PLATFORM_VALUES.includes(platform as Platform)) {
+      throw new APIError(400, `Unsupported platform "${platform}"`, 'INVALID_PLATFORM');
+    }
+    return [platform as Platform, accountId] as const;
+  });
+
+  const uniqueAccountIds = Array.from(new Set(normalizedEntries.map(([, id]) => id)));
+
+  const { data: accounts, error } = await supabase
+    .from('social_accounts')
+    .select('id, platform')
+    .in('id', uniqueAccountIds)
+    .eq('workspace_id', workspaceId);
+
+  if (error) {
+    throw new APIError(500, error.message, 'DATABASE_ERROR');
+  }
+
+  if (!accounts || accounts.length !== uniqueAccountIds.length) {
+    throw new APIError(
+      400,
+      'One or more social accounts are invalid or unavailable',
+      'INVALID_PLATFORM_ACCOUNT'
+    );
+  }
+
+  normalizedEntries.forEach(([platform, accountId]) => {
+    const match = accounts.find((account) => account.id === accountId);
+    if (!match) {
+      throw new APIError(
+        400,
+        `Account ${accountId} is not connected to this workspace`,
+        'INVALID_PLATFORM_ACCOUNT'
+      );
+    }
+    if (match.platform !== platform) {
+      throw new APIError(
+        400,
+        `Account ${accountId} does not belong to ${platform}`,
+        'INVALID_PLATFORM_ACCOUNT'
+      );
+    }
+  });
+
+  return normalizedEntries.reduce((acc, [platform, accountId]) => {
+    acc[platform] = accountId;
+    return acc;
+  }, {} as Partial<Record<Platform, string>>);
+}
+
+async function ensureMediaOwnership(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  mediaIds?: string[]
+) {
+  if (!mediaIds || mediaIds.length === 0) {
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('media')
+    .select('id')
+    .eq('workspace_id', workspaceId)
+    .in('id', mediaIds);
+
+  if (error) {
+    throw new APIError(500, error.message, 'DATABASE_ERROR');
+  }
+
+  if (!data || data.length !== mediaIds.length) {
+    throw new APIError(400, 'One or more media items are invalid', 'INVALID_MEDIA');
+  }
+}
+
+function buildPlatformContentMap(
+  content: ValidatedPostInput['content'],
+  platforms: Platform[]
+) {
+  const fallbackText =
+    content.default?.text ||
+    platforms
+      .map((platform) => content[platform]?.text)
+      .find((text): text is string => Boolean(text)) ||
+    '';
+
+  return platforms.reduce((acc, platform) => {
+    acc[platform] = {
+      text: content[platform]?.text || fallbackText,
+    };
+    return acc;
+  }, {} as Partial<Record<Platform, { text: string }>>);
+}
+
+function shouldPublishImmediately(input: ValidatedPostInput) {
+  return input.status === 'published' && !input.scheduled_at;
+}
+
+async function publishImmediately({
+  supabase,
+  post,
+  input,
+  platformAccounts,
+}: {
+  supabase: SupabaseClient;
+  post: any;
+  input: ValidatedPostInput;
+  platformAccounts: Partial<Record<Platform, string>>;
+}) {
+  const platforms = (post.platforms || []) as Platform[];
+  const contentMap = buildPlatformContentMap(input.content, platforms);
+  const mediaUrls =
+    input.media?.map((item) => item.url).filter((url) => Boolean(url)) ?? undefined;
+
+  const primaryPlatform = platforms[0];
+  const fallbackText = primaryPlatform ? contentMap[primaryPlatform]?.text || '' : '';
+
+  const publishResults = await platformPublisher.publishToAll({
+    platforms,
+    content: {
+      text: fallbackText,
+      mediaUrls,
+    },
+    platformContent: platforms.reduce((acc, platform) => {
+      acc[platform] = {
+        text: contentMap[platform]?.text || fallbackText,
+        mediaUrls,
+      };
+      return acc;
+    }, {} as Partial<Record<Platform, { text: string; mediaUrls?: string[] }>>),
+    accountIds: platformAccounts,
+  });
+
+  const metadata = normalizeMetadata(post.metadata);
+  const allSucceeded = publishResults.every((result) => result.success);
+  const publishedAt = new Date().toISOString();
+
+  if (allSucceeded) {
+    const externalIds = extractExternalIds(publishResults);
+
+    await supabase
+      .from('posts')
+      .update({
+        status: 'published',
+        published_at: publishedAt,
+        external_post_id: JSON.stringify(externalIds),
+        metadata: {
+          ...metadata,
+          accountIds: platformAccounts,
+          publishResults,
+        },
+      })
+      .eq('id', post.id);
+
+    await recordPlatformPosts({
+      supabase,
+      postId: post.id,
+      publishResults,
+      publishedAt,
+    });
+
+    await createInitialAnalytics({
+      supabase,
+      postId: post.id,
+      publishResults,
+    });
+
+    const { data: refreshed } = await supabase
+      .from('posts')
+      .select('*')
+      .eq('id', post.id)
+      .single();
+
+    return refreshed || post;
+  }
+
+  const errors = publishResults
+    .filter((result) => !result.success && result.error)
+    .map((result) => `${result.platform}: ${result.error}`)
+    .join('; ');
+
+  await supabase
+    .from('posts')
+    .update({
+      status: 'failed',
+      error_message: errors || 'Failed to publish to selected platforms',
+      metadata: {
+        ...metadata,
+        accountIds: platformAccounts,
+        publishResults,
+      },
+    })
+    .eq('id', post.id);
+
+  throw new APIError(502, 'Failed to publish to one or more platforms', 'PUBLISH_FAILED', {
+    errors: publishResults,
+  });
+}
 
 /**
  * GET /api/posts - List posts
@@ -42,7 +301,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   const { page, limit, offset } = getPagination(request);
 
   // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
+  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
 
   // Get query parameters for filtering
   const searchParams = request.nextUrl.searchParams;
@@ -100,29 +359,81 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 
   // Validate request body
   const validatedData = await validateRequest(request, createPostSchema);
+  const normalizedStatus = validatedData.status ?? 'draft';
+  const normalizedData: NormalizedPostInput = {
+    ...validatedData,
+    status: normalizedStatus,
+  };
 
   // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
+  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+  const role = await checkWorkspaceAccess(user.id, workspace.id);
 
-  // Create post
+  if (!['owner', 'admin', 'editor'].includes(role)) {
+    throw new APIError(403, 'You do not have permission to create posts', 'FORBIDDEN');
+  }
+
+  const normalizedAccounts = await ensurePlatformAccounts(
+    supabase,
+    workspace.id,
+    normalizedData.platformAccounts,
+    normalizedStatus
+  );
+
+  if (normalizedData.status !== 'draft') {
+    const missing = normalizedData.platforms.filter(
+      (platform) => !normalizedAccounts[platform as Platform]
+    );
+
+    if (missing.length > 0) {
+      throw new APIError(
+        400,
+        `Select accounts for: ${missing.join(', ')}`,
+        'MISSING_PLATFORM_ACCOUNTS'
+      );
+    }
+  }
+
+  await ensureMediaOwnership(supabase, workspace.id, validatedData.mediaIds);
+
   const { data: post, error } = await supabase
     .from('posts')
     .insert({
       workspace_id: workspace.id,
-      content: validatedData.content,
-      platforms: validatedData.platforms,
-      status: validatedData.status,
-      scheduled_at: validatedData.scheduled_at,
-      campaign_id: validatedData.campaign_id,
-      media: validatedData.media || [],
-      tags: validatedData.tags || [],
+      content: normalizedData.content,
+      platforms: normalizedData.platforms,
+      status: normalizedData.status,
+      scheduled_at: normalizedData.scheduled_at,
+      campaign_id: normalizedData.campaign_id,
+      media: normalizedData.media || [],
+      tags: normalizedData.tags || [],
       created_by: user.id,
+      // AI metadata fields
+      ai_generated: normalizedData.ai_generated ?? false,
+      ai_generation_id: normalizedData.ai_generation_id,
+      ai_prompt: normalizedData.ai_prompt,
+      ai_metadata: normalizedData.ai_metadata,
+      metadata: {
+        accountIds: normalizedAccounts,
+        mediaIds: normalizedData.mediaIds || [],
+      },
     })
     .select()
     .single();
 
   if (error) {
     throw new APIError(500, error.message, 'DATABASE_ERROR');
+  }
+
+  if (shouldPublishImmediately(normalizedData)) {
+    const updatedPost = await publishImmediately({
+      supabase,
+      post,
+      input: normalizedData,
+      platformAccounts: normalizedAccounts,
+    });
+
+    return successResponse({ post: updatedPost });
   }
 
   return successResponse({ post });
@@ -144,7 +455,12 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
   const body = await request.json();
 
   // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
+  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+  const role = await checkWorkspaceAccess(user.id, workspace.id);
+
+  if (!['owner', 'admin', 'editor'].includes(role)) {
+    throw new APIError(403, 'You do not have permission to update posts', 'FORBIDDEN');
+  }
 
   // Update post
   const { data: post, error } = await supabase
@@ -180,7 +496,12 @@ export const DELETE = withErrorHandler(async (request: NextRequest) => {
   }
 
   // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
+  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+  const role = await checkWorkspaceAccess(user.id, workspace.id);
+
+  if (!['owner', 'admin', 'editor'].includes(role)) {
+    throw new APIError(403, 'You do not have permission to delete posts', 'FORBIDDEN');
+  }
 
   // Delete post
   const { error } = await supabase

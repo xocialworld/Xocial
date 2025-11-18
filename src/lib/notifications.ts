@@ -165,10 +165,12 @@ export async function sendNotification(
   });
 }
 
-export default {
+const NotificationsService = {
   createNotification,
   notifyUsers,
   NotificationTemplates,
   sendNotification,
 };
+
+export default NotificationsService;
 

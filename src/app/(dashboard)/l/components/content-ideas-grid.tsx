@@ -19,7 +19,7 @@ export function ContentIdeasGrid({ ideas }: ContentIdeasGridProps) {
     // Store the idea in sessionStorage to prefill the composer
     sessionStorage.setItem('contentIdea', JSON.stringify(idea));
     toast.success('Opening composer with this idea...');
-    router.push('/compose');
+    router.push('/c');
   };
 
   const handleCopyIdea = (idea: ContentIdea) => {

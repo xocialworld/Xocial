@@ -6,13 +6,13 @@
 
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import OpenAI from 'openai';
+import { env } from '@/lib/env';
 import {
   withErrorHandler,
   requireAuth,
   successResponse,
   validateRequest,
-  getUserWorkspace,
+  getWorkspaceFromRequest,
   APIError,
 } from '@/lib/api-middleware';
 import { logger } from '@/lib/logger';
@@ -32,7 +32,7 @@ const analyzeSchema = z.object({
 export const POST = withErrorHandler(async (request: NextRequest) => {
   const { user, supabase } = await requireAuth(request);
   
-  const workspace = await getUserWorkspace(user.id);
+  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
   const { mediaId, url } = await validateRequest(request, analyzeSchema);
 
   logger.info('Media analysis requested', {
@@ -59,13 +59,8 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   }
 
   try {
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-
-    // Use OpenAI Vision to analyze the image
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4-vision-preview',
+    const payload = {
+      model: 'openai/gpt-4o-mini',
       messages: [
         {
           role: 'user',
@@ -84,24 +79,42 @@ Return as JSON:
   "labels": ["label1", "label2", ...],
   "altText": "...",
   "category": "..."
-}`,
+}
+
+Respond with ONLY this JSON object, no extra commentary or text.`,
             },
             {
               type: 'image_url',
-              image_url: {
-                url,
-                detail: 'low', // Use 'low' to save tokens
-              },
+              image_url: { url, detail: 'low' },
             },
           ],
         },
       ],
       max_tokens: 500,
       temperature: 0.5,
-      response_format: { type: 'json_object' },
+    } as any;
+
+    const response = await fetch(`${env.VERCEL_AI_GATEWAY_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.VERCEL_AI_GATEWAY_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
     });
 
-    const analysis = JSON.parse(response.choices[0].message.content || '{}');
+    if (!response.ok) {
+      let err: any = {};
+      try { err = await response.json(); } catch {}
+      if (response.status === 429) {
+        throw new APIError(429, 'AI service rate limit exceeded. Please try again later.', 'RATE_LIMIT');
+      }
+      throw new APIError(500, err?.error?.message || 'Failed to analyze image', 'ANALYSIS_FAILED');
+    }
+
+    const json = await response.json();
+    const raw = json?.choices?.[0]?.message?.content || '{}';
+    const analysis = JSON.parse(raw);
 
     // Update media record with AI metadata
     const { error: updateError } = await supabase

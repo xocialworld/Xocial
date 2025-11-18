@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
   const { user, supabase } = await requireAuth(request);
-  const workspace = await getUserWorkspace(user.id);
+  const workspace = await getUserWorkspace(user.id, supabase);
   
   // Get Facebook account
   const { data: account } = await supabase

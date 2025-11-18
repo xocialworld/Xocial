@@ -13,6 +13,10 @@ interface DayCellProps {
   isToday: boolean;
   onSelect: () => void;
   onPostClick?: (post: Post) => void;
+  onDropPost?: (postId: string) => void;
+  onPostDragStart?: (postId: string) => void;
+  onPostDragEnd?: () => void;
+  draggedPostId?: string | null;
 }
 
 const platformColors = {
@@ -32,19 +36,71 @@ export function DayCell({
   isToday,
   onSelect,
   onPostClick,
+  onDropPost,
+  onPostDragStart,
+  onPostDragEnd,
+  draggedPostId,
 }: DayCellProps) {
   const scheduledPosts = posts.filter((p) => p.status === 'scheduled');
   const publishedPosts = posts.filter((p) => p.status === 'published');
   const draftPosts = posts.filter((p) => p.status === 'draft');
+  const [isDragOver, setIsDragOver] = React.useState(false);
+  const isDroppable = Boolean(onDropPost && draggedPostId);
+
+  const handleDragOver = (event: React.DragEvent<HTMLButtonElement>) => {
+    if (!isDroppable) return;
+    event.preventDefault();
+  };
+
+  const handleDragEnter = (event: React.DragEvent<HTMLButtonElement>) => {
+    if (!isDroppable) return;
+    event.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLButtonElement>) => {
+    if (!isDroppable) return;
+    if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLButtonElement>) => {
+    if (!isDroppable) return;
+    event.preventDefault();
+    const postId = event.dataTransfer.getData('application/x-post-id');
+    if (postId && onDropPost) {
+      onDropPost(postId);
+    }
+    setIsDragOver(false);
+    onPostDragEnd?.();
+  };
+
+  const startDrag = (event: React.DragEvent<HTMLDivElement>, postId: string) => {
+    event.stopPropagation();
+    event.dataTransfer.setData('application/x-post-id', postId);
+    event.dataTransfer.effectAllowed = 'move';
+    onPostDragStart?.(postId);
+  };
+
+  const endDrag = () => {
+    onPostDragEnd?.();
+  };
 
   return (
     <button
+      type="button"
       onClick={onSelect}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       className={cn(
         "relative min-h-[120px] border-b border-r border-secondary-200 p-2 text-left transition-colors hover:bg-secondary-50",
         !isCurrentMonth && "bg-secondary-50/50 text-secondary-400",
         isSelected && "bg-primary-50 ring-2 ring-inset ring-primary-500",
-        isToday && "bg-primary-50/30"
+        isToday && "bg-primary-50/30",
+        isDragOver && "ring-2 ring-primary-500 bg-primary-50/40"
       )}
     >
       {/* Date Number */}
@@ -65,16 +121,19 @@ export function DayCell({
       {/* Post Indicators */}
       <div className="space-y-1">
         {/* Scheduled posts */}
-        {scheduledPosts.slice(0, 2).map((post, index) => (
+        {scheduledPosts.slice(0, 2).map((post) => (
           <div
             key={post.id}
+            draggable
+            onDragStart={(event) => startDrag(event, post.id)}
+            onDragEnd={endDrag}
             onClick={(e) => {
               e.stopPropagation();
               onPostClick?.(post);
             }}
             className="group relative"
           >
-            <div className="flex items-center gap-1 rounded px-2 py-1 text-xs bg-success-100 text-success-800 hover:bg-success-200 cursor-pointer">
+            <div className="flex items-center gap-1 rounded px-2 py-1 text-xs bg-success-100 text-success-800 hover:bg-success-200 cursor-grab active:cursor-grabbing">
               <div className="flex gap-0.5">
                 {post.platforms.slice(0, 2).map((platform) => (
                   <div
@@ -100,11 +159,14 @@ export function DayCell({
         {publishedPosts.slice(0, 1).map((post) => (
           <div
             key={post.id}
+            draggable
+            onDragStart={(event) => startDrag(event, post.id)}
+            onDragEnd={endDrag}
             onClick={(e) => {
               e.stopPropagation();
               onPostClick?.(post);
             }}
-            className="rounded px-2 py-1 text-xs bg-secondary-100 text-secondary-700 hover:bg-secondary-200 cursor-pointer truncate"
+            className="rounded px-2 py-1 text-xs bg-secondary-100 text-secondary-700 hover:bg-secondary-200 cursor-grab active:cursor-grabbing truncate"
           >
             Published
           </div>
@@ -114,11 +176,14 @@ export function DayCell({
         {draftPosts.slice(0, 1).map((post) => (
           <div
             key={post.id}
+            draggable
+            onDragStart={(event) => startDrag(event, post.id)}
+            onDragEnd={endDrag}
             onClick={(e) => {
               e.stopPropagation();
               onPostClick?.(post);
             }}
-            className="rounded px-2 py-1 text-xs bg-warning-100 text-warning-800 hover:bg-warning-200 cursor-pointer truncate"
+            className="rounded px-2 py-1 text-xs bg-warning-100 text-warning-800 hover:bg-warning-200 cursor-grab active:cursor-grabbing truncate"
           >
             Draft
           </div>

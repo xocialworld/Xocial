@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element -- Comment threads render user-provided avatars that rely on <img> for flexibility */
 
 import * as React from "react";
 import {

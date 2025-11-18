@@ -4,8 +4,11 @@ import {
   requireAuth,
   successResponse,
   validateRequest,
+  APIError,
+  checkRateLimit,
 } from '@/lib/api-middleware';
 import { refineContent } from '@/lib/openai';
+import { logger } from '@/lib/logger';
 import { z } from 'zod';
 
 /**
@@ -29,10 +32,17 @@ const refineSchema = z.object({
  * Refine existing content with specific improvements
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  await requireAuth(request);
+  const { user } = await requireAuth(request);
+  const startTime = Date.now();
 
   // Validate request
   const validatedData = await validateRequest(request, refineSchema);
+
+  // Rate limit per user for AI refine
+  const limited = checkRateLimit(`${user.id}:ai:refine`, 60, 60_000);
+  if (!limited) {
+    throw new APIError(429, 'Too many AI requests. Please wait a moment.', 'RATE_LIMIT');
+  }
 
   // Refine content
   const refinedText = await refineContent(
@@ -41,10 +51,26 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     validatedData.refinementType
   );
 
-  return successResponse({
+  logger.ai('ai_refine', {
+    userId: user.id,
+    metadata: {
+      platform: validatedData.platform,
+      refinementType: validatedData.refinementType,
+    },
+  });
+
+  const response = successResponse({
     text: refinedText,
     original: validatedData.content,
     refinementType: validatedData.refinementType,
   });
+
+  const totalDuration = Date.now() - startTime;
+  logger.trackAPIRequest('POST', '/api/ai/refine', 200, totalDuration, {
+    userId: user.id,
+    metadata: { platform: validatedData.platform, type: validatedData.refinementType },
+  });
+
+  return response;
 });
 

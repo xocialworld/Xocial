@@ -2,7 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { handleAPIError, APIError } from '@/lib/api-middleware';
 import { platformPublisher } from '@/lib/platforms/publisher';
-import type { Platform } from '@/lib/platforms/publisher';
+import type { Platform, PublishResult } from '@/lib/platforms/publisher';
+import {
+  recordPlatformPosts,
+  createInitialAnalytics,
+  extractExternalIds,
+  buildPlatformContentPayload,
+} from '@/lib/platforms/publish-utils';
+import {
+  normalizeMetadata,
+  normalizePlatforms,
+  resolveAccountIds,
+} from '@/lib/platforms/post-publish-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,83 +58,101 @@ export async function POST(
       throw new APIError(403, 'Access denied');
     }
 
-    // Get social accounts
-    const { data: accounts } = await supabase
-      .from('social_accounts')
-      .select('id, platform')
-      .eq('workspace_id', post.workspace_id)
+    const platforms = normalizePlatforms(post.platforms);
+    if (platforms.length === 0) {
+      throw new APIError(400, 'Post does not target any supported platforms');
+    }
+
+    const metadata = normalizeMetadata(post.metadata);
+    const accountIds = await resolveAccountIds(supabase, post.workspace_id, platforms, metadata);
+
+    const mediaUrls = Array.isArray(post.media)
+      ? post.media
+          .map((item: any) => item?.url)
+          .filter((url: unknown): url is string => typeof url === 'string' && url.length > 0)
+      : [];
+
+    const { fallback, perPlatform } = buildPlatformContentPayload(post.content, platforms, mediaUrls);
+
+    // Idempotency: find already published platform posts
+    const { data: existingPosts } = await supabase
+      .from('platform_posts')
+      .select('platform, platform_post_id, permalink, status')
+      .eq('post_id', postId)
       .in('platform', post.platforms || []);
 
-    if (!accounts || accounts.length === 0) {
-      throw new APIError(400, 'No connected accounts found');
+    const alreadyPublished = new Set<string>(
+      (existingPosts || [])
+        .filter((p: any) => p.status === 'published' && p.platform_post_id)
+        .map((p: any) => p.platform)
+    );
+
+    const pendingPlatforms = platforms.filter((platform) => !alreadyPublished.has(platform));
+
+    const results =
+      pendingPlatforms.length > 0
+        ? await platformPublisher.publishToAll({
+            platforms: pendingPlatforms,
+            content: fallback,
+            platformContent: perPlatform,
+            accountIds,
+            scheduledFor: post.scheduled_at ? new Date(post.scheduled_at) : undefined,
+          })
+        : [];
+
+    // Add successes for already published to final results
+    const carriedSuccesses: PublishResult[] =
+      ((existingPosts || [])
+        .filter((p: any) => alreadyPublished.has(p.platform))
+        .map((p: any) => ({
+          platform: p.platform as Platform,
+          success: true,
+          platformPostId: p.platform_post_id as string | undefined,
+          permalink: p.permalink as string | undefined,
+        })) as PublishResult[]) || [];
+
+    const allResults = [...results, ...carriedSuccesses];
+
+    if (results.length > 0) {
+      const publishedAt = new Date().toISOString();
+      await recordPlatformPosts({
+        supabase,
+        postId,
+        publishResults: results,
+        publishedAt,
+      });
+      await createInitialAnalytics({
+        supabase,
+        postId,
+        publishResults: results,
+      });
     }
 
-    // Build account ID map
-    const accountIds: Partial<Record<Platform, string>> = {};
-    accounts.forEach((account: any) => {
-      accountIds[account.platform as Platform] = account.id;
-    });
+    const allSuccessful = allResults.length > 0 && allResults.every((r) => r.success);
+    const anySuccessful = allResults.some((r) => r.success);
+    const firstError = allResults.find((r) => !r.success)?.error || null;
 
-    // Prepare content
-    const content = {
-      text: post.content?.text || '',
-      mediaUrls: post.content?.media_urls || [],
-      link: post.content?.link,
+    const updates: Record<string, any> = {
+      status: allSuccessful ? 'published' : anySuccessful ? 'partial' : 'failed',
+      error_message: firstError,
+      metadata: {
+        ...metadata,
+        accountIds,
+      },
     };
 
-    // Publish
-    const results = await platformPublisher.publishToAll({
-      platforms: post.platforms || [],
-      content,
-      accountIds,
-    });
-
-    // Store platform post IDs
-    const platformPostInserts = results
-      .filter((r) => r.success)
-      .map((r) => ({
-        post_id: postId,
-        platform: r.platform,
-        platform_post_id: r.platformPostId!,
-        permalink: r.permalink,
-        published_at: new Date().toISOString(),
-        status: 'published',
-      }));
-
-    if (platformPostInserts.length > 0) {
-      await supabase.from('platform_posts').insert(platformPostInserts);
+    if (anySuccessful) {
+      updates.published_at = new Date().toISOString();
+      updates.external_post_id = JSON.stringify(extractExternalIds(allResults));
+    } else {
+      updates.published_at = null;
     }
 
-    // Store failed results
-    const failedResults = results.filter((r) => !r.success);
-    if (failedResults.length > 0) {
-      const failedInserts = failedResults.map((r) => ({
-        post_id: postId,
-        platform: r.platform,
-        platform_post_id: '',
-        status: 'failed',
-        error_message: r.error,
-        published_at: new Date().toISOString(),
-      }));
-
-      await supabase.from('platform_posts').insert(failedInserts);
-    }
-
-    // Update post status
-    const allSuccessful = results.every((r) => r.success);
-    const anySuccessful = results.some((r) => r.success);
-
-    await supabase
-      .from('posts')
-      .update({
-        status: allSuccessful ? 'published' : anySuccessful ? 'partial' : 'failed',
-        published_at: anySuccessful ? new Date().toISOString() : null,
-      })
-      .eq('id', postId);
+    await supabase.from('posts').update(updates).eq('id', postId);
 
     return NextResponse.json({
       success: true,
-      results,
+      results: allResults,
       message: allSuccessful
         ? 'Published to all platforms successfully'
         : anySuccessful

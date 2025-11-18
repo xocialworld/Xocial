@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element -- Social account avatars are sourced directly from platform URLs and require <img> */
 
 import * as React from "react";
 import { Card } from "@/components/ui/card";
@@ -7,6 +8,18 @@ import { Button } from "@/components/ui/button";
 import { MoreVertical, Trash2, RefreshCw, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SocialAccount } from "@/types";
+
+const DEFAULT_METRICS = {
+  postsPublished: 0,
+  totalLikes: 0,
+  totalComments: 0,
+  totalShares: 0,
+  totalEngagement: 0,
+  avgEngagementRate: 0,
+  lastPublishedAt: null,
+  lastSyncedAt: null,
+  totalVideoViews: 0,
+};
 
 interface AccountCardProps {
   account: SocialAccount;
@@ -36,6 +49,11 @@ const platformIcons = {
 export function AccountCard({ account, onDisconnect, onSync, className }: AccountCardProps) {
   const [showMenu, setShowMenu] = React.useState(false);
   const [syncing, setSyncing] = React.useState(false);
+  const metrics = account.metrics ?? DEFAULT_METRICS;
+  const youtubeStats =
+    account.platform === "youtube"
+      ? (account.metadata as any)?.statistics ?? null
+      : null;
 
   const handleSync = async () => {
     setSyncing(true);
@@ -136,30 +154,60 @@ export function AccountCard({ account, onDisconnect, onSync, className }: Accoun
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4 pt-4 border-t border-secondary-200">
-          <div className="text-center">
-            <p className="text-2xl font-bold text-secondary-900">
-              {account.follower_count?.toLocaleString() || 0}
-            </p>
-            <p className="text-xs text-secondary-600">Followers</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-secondary-900">-</p>
-            <p className="text-xs text-secondary-600">Posts</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-secondary-900">-</p>
-            <p className="text-xs text-secondary-600">Engagement</p>
-          </div>
+          <StatBlock label="Followers" value={account.follower_count?.toLocaleString() ?? "0"} />
+          <StatBlock label="Posts (90d)" value={metrics.postsPublished.toLocaleString()} />
+          <StatBlock
+            label="Engagement"
+            value={metrics.totalEngagement.toLocaleString()}
+            helper={`${metrics.avgEngagementRate.toFixed(2)}% avg`}
+          />
         </div>
 
-        {/* Last Synced */}
-        {account.last_synced_at && (
-          <p className="mt-4 text-xs text-center text-secondary-500">
-            Last synced: {new Date(account.last_synced_at).toLocaleString()}
+        {/* Platform-specific insights */}
+        <div className="mt-4 space-y-2 text-xs text-secondary-600">
+          <p className="text-center">
+            Last published:{" "}
+            {metrics.lastPublishedAt ? new Date(metrics.lastPublishedAt).toLocaleString() : "—"}
           </p>
-        )}
+          <p className="text-center">
+            Last analytics sync:{" "}
+            {metrics.lastSyncedAt
+              ? new Date(metrics.lastSyncedAt).toLocaleString()
+              : account.last_synced_at
+              ? new Date(account.last_synced_at).toLocaleString()
+              : "—"}
+          </p>
+          {youtubeStats && (
+            <p className="text-center">
+              {youtubeStats.videoCount
+                ? `${Number(youtubeStats.videoCount).toLocaleString()} videos • `
+                : ""}
+              {youtubeStats.viewCount
+                ? `${Number(youtubeStats.viewCount).toLocaleString()} lifetime views`
+                : ""}
+            </p>
+          )}
+        </div>
       </div>
     </Card>
+  );
+}
+
+function StatBlock({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string;
+  helper?: string;
+}) {
+  return (
+    <div className="text-center">
+      <p className="text-2xl font-bold text-secondary-900">{value}</p>
+      <p className="text-xs text-secondary-600">{label}</p>
+      {helper ? <p className="text-[10px] text-secondary-500 mt-0.5">{helper}</p> : null}
+    </div>
   );
 }
 

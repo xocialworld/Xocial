@@ -13,6 +13,7 @@ interface CalendarGridProps {
   selectedDate: Date | null;
   onDateSelect: (date: Date) => void;
   onPostClick?: (post: Post) => void;
+  onPostDrop?: (postId: string, date: Date) => void;
 }
 
 export function CalendarGrid({
@@ -20,8 +21,10 @@ export function CalendarGrid({
   selectedDate,
   onDateSelect,
   onPostClick,
+  onPostDrop,
 }: CalendarGridProps) {
   const [currentMonth, setCurrentMonth] = React.useState(new Date());
+  const [draggedPostId, setDraggedPostId] = React.useState<string | null>(null);
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -129,6 +132,10 @@ export function CalendarGrid({
               isToday={isTodayDate}
               onSelect={() => onDateSelect(day)}
               onPostClick={onPostClick}
+              onDropPost={onPostDrop ? (postId) => onPostDrop(postId, day) : undefined}
+              onPostDragStart={setDraggedPostId}
+              onPostDragEnd={() => setDraggedPostId(null)}
+              draggedPostId={draggedPostId}
             />
           );
         })}

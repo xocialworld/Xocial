@@ -38,28 +38,23 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       }
     );
 
-    // Get published posts from last 7 days that need metric updates
+    // Get recently published platform posts from the last 7 days
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    const { data: posts, error: fetchError } = await supabase
-      .from('posts')
-      .select(`
-        *,
-        workspace:workspaces!inner(id),
-        social_account:social_accounts(*)
-      `)
+    const { data: platformPostsData, error: fetchError } = await supabase
+      .from('platform_posts')
+      .select('post_id, platform, platform_post_id, published_at, posts:posts!inner(workspace_id)')
       .eq('status', 'published')
       .gte('published_at', sevenDaysAgo.toISOString())
-      .not('external_post_id', 'is', null)
-      .limit(100); // Process max 100 posts per run
+      .limit(200);
 
     if (fetchError) {
       console.error('[Cron: Sync Metrics] Error fetching posts:', fetchError);
       return cronErrorResponse('Failed to fetch posts', fetchError);
     }
 
-    if (!posts || posts.length === 0) {
+    if (!platformPostsData || platformPostsData.length === 0) {
       console.log('[Cron: Sync Metrics] No posts to sync');
       return cronSuccessResponse({
         message: 'No posts to sync',
@@ -68,101 +63,96 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       });
     }
 
-    console.log(`[Cron: Sync Metrics] Found ${posts.length} posts to sync`);
+    type PlatformPostRow = {
+      post_id: string;
+      platform: string;
+      platform_post_id: string;
+      published_at: string;
+      posts: { workspace_id: string };
+    };
+
+    const platformPosts: PlatformPostRow[] = platformPostsData.map((row: any) => ({
+      post_id: row.post_id,
+      platform: row.platform,
+      platform_post_id: row.platform_post_id,
+      published_at: row.published_at,
+      posts: Array.isArray(row.posts) ? row.posts[0] : row.posts,
+    }));
+
+    console.log(`[Cron: Sync Metrics] Found ${platformPosts.length} platform-posts to sync`);
 
     const results = [];
 
-    // Process each post
-    for (const post of posts) {
+    // Process each platform-post
+    for (const pp of platformPosts) {
       const postStartTime = Date.now();
       
       try {
-        console.log(`[Cron: Sync Metrics] Processing post ${post.id}`);
+        console.log(`[Cron: Sync Metrics] Processing post ${pp.post_id} (${pp.platform})`);
 
-        // Parse external post IDs
-        let externalIds: Record<string, string> = {};
         try {
-          externalIds = typeof post.external_post_id === 'string' 
-            ? JSON.parse(post.external_post_id)
-            : post.external_post_id || {};
-        } catch (e) {
-          console.warn(`[Cron: Sync Metrics] Could not parse external_post_id for post ${post.id}`);
-          continue;
-        }
+          const metrics = await fetchPlatformMetrics(
+            pp.platform,
+            pp.platform_post_id,
+            pp.posts.workspace_id,
+            supabase
+          );
 
-        // Fetch metrics for each platform
-        for (const platform of post.platforms) {
-          const externalPostId = externalIds[platform];
-          
-          if (!externalPostId) {
-            console.log(`[Cron: Sync Metrics] No external ID for ${platform} on post ${post.id}`);
-            continue;
-          }
+          if (metrics) {
+            // Calculate engagement rate
+            const engagementRate = metrics.reach > 0
+              ? ((metrics.likes + metrics.comments + metrics.shares) / metrics.reach) * 100
+              : 0;
 
-          try {
-            const metrics = await fetchPlatformMetrics(
-              platform,
-              externalPostId,
-              post.workspace.id,
-              supabase
-            );
+            // Check if analytics record exists
+            const { data: existingAnalytics } = await supabase
+              .from('post_analytics')
+              .select('id')
+              .eq('post_id', pp.post_id)
+              .eq('platform', pp.platform)
+              .single();
 
-            if (metrics) {
-              // Calculate engagement rate
-              const engagementRate = metrics.reach > 0
-                ? ((metrics.likes + metrics.comments + metrics.shares) / metrics.reach) * 100
-                : 0;
-
-              // Check if analytics record exists
-              const { data: existingAnalytics } = await supabase
+            if (existingAnalytics) {
+              // Update existing record
+              await supabase
                 .from('post_analytics')
-                .select('id')
-                .eq('post_id', post.id)
-                .eq('platform', platform)
-                .single();
-
-              if (existingAnalytics) {
-                // Update existing record
-                await supabase
-                  .from('post_analytics')
-                  .update({
-                    ...metrics,
-                    engagement_rate: parseFloat(engagementRate.toFixed(2)),
-                    fetched_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                  })
-                  .eq('id', existingAnalytics.id);
-              } else {
-                // Create new record
-                await supabase
-                  .from('post_analytics')
-                  .insert({
-                    post_id: post.id,
-                    platform,
-                    external_post_id: externalPostId,
-                    ...metrics,
-                    engagement_rate: parseFloat(engagementRate.toFixed(2)),
-                  });
-              }
-
-              console.log(`[Cron: Sync Metrics] Synced ${platform} metrics for post ${post.id}`);
+                .update({
+                  ...metrics,
+                  engagement_rate: parseFloat(engagementRate.toFixed(2)),
+                  last_synced_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', existingAnalytics.id);
+            } else {
+              // Create new record
+              await supabase
+                .from('post_analytics')
+                .insert({
+                  post_id: pp.post_id,
+                  platform: pp.platform,
+                  external_post_id: pp.platform_post_id,
+                  ...metrics,
+                  engagement_rate: parseFloat(engagementRate.toFixed(2)),
+                  last_synced_at: new Date().toISOString(),
+                });
             }
-          } catch (error: any) {
-            console.error(`[Cron: Sync Metrics] Error syncing ${platform} for post ${post.id}:`, error);
-            // Continue with other platforms
+
+            console.log(`[Cron: Sync Metrics] Synced ${pp.platform} metrics for post ${pp.post_id}`);
           }
+        } catch (error: any) {
+          console.error(`[Cron: Sync Metrics] Error syncing ${pp.platform} for post ${pp.post_id}:`, error);
+          // Continue to next record
         }
 
         results.push({
-          postId: post.id,
+          postId: pp.post_id,
           success: true,
-          platforms: post.platforms,
           duration: Date.now() - postStartTime,
         });
       } catch (error: any) {
-        console.error(`[Cron: Sync Metrics] Error processing post ${post.id}:`, error);
+        console.error(`[Cron: Sync Metrics] Error processing post ${pp.post_id}:`, error);
         results.push({
-          postId: post.id,
+          postId: pp.post_id,
           success: false,
           error: error.message,
           duration: Date.now() - postStartTime,
@@ -347,21 +337,94 @@ async function fetchLinkedInMetrics(postId: string, accessToken: string) {
   }
 }
 
-async function fetchYouTubeMetrics(postId: string, accessToken: string) {
+async function fetchYouTubeMetrics(videoId: string, accessToken: string) {
   try {
-    const client = await createYouTubeClient(accessToken);
-    const stats = await (client as any).getVideoStatistics?.(postId) || {};
+    // Fetch video statistics from YouTube Data API
+    const params = new URLSearchParams({
+      part: 'statistics,snippet',
+      id: videoId,
+    });
+    
+    const response = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?${params.toString()}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch YouTube video statistics');
+    }
+    
+    const data = await response.json();
+    if (!data.items || data.items.length === 0) {
+      throw new Error('Video not found');
+    }
+    
+    const video = data.items[0];
+    const stats = video.statistics;
+    
+    const views = parseInt(stats.viewCount || '0');
+    const likes = parseInt(stats.likeCount || '0');
+    const comments = parseInt(stats.commentCount || '0');
+    
+    // Try to fetch detailed analytics if possible
+    let detailedMetrics = {
+      impressions: views,
+      reach: views,
+    };
+    
+    try {
+      // Get channel ID
+      const channelId = video.snippet.channelId;
+      const endDate = new Date().toISOString().split('T')[0];
+      const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      
+      const analyticsParams = new URLSearchParams({
+        ids: `channel==${channelId}`,
+        startDate,
+        endDate,
+        metrics: 'views,likes,comments,shares,estimatedMinutesWatched,impressions',
+        dimensions: 'video',
+        filters: `video==${videoId}`,
+      });
+      
+      const analyticsResponse = await fetch(
+        `https://youtubeanalytics.googleapis.com/v2/reports?${analyticsParams.toString()}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json',
+          },
+        }
+      );
+      
+      if (analyticsResponse.ok) {
+        const analyticsData = await analyticsResponse.json();
+        if (analyticsData.rows && analyticsData.rows.length > 0) {
+          const row = analyticsData.rows[0];
+          detailedMetrics = {
+            impressions: row[5] || views, // impressions
+            reach: row[0] || views, // views
+          };
+        }
+      }
+    } catch (analyticsError) {
+      console.warn('[Metrics] Could not fetch detailed YouTube analytics:', analyticsError);
+    }
     
     return {
-      impressions: 0,
-      reach: 0,
-      engagement: stats.likes + stats.comments,
-      likes: stats.likes || 0,
-      comments: stats.comments || 0,
-      shares: 0,
+      impressions: detailedMetrics.impressions,
+      reach: detailedMetrics.reach,
+      engagement: likes + comments,
+      likes,
+      comments,
+      shares: 0, // YouTube API doesn't provide shares count directly
       saves: 0,
       clicks: 0,
-      video_views: stats.views || 0,
+      video_views: views,
     };
   } catch (error) {
     console.error('[Metrics] YouTube fetch error:', error);

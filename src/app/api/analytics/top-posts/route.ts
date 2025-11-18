@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { checkRateLimit, getWorkspaceFromRequest } from '@/lib/api-middleware';
+import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,6 +12,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
+      );
+    }
+
+    // Rate limit top posts analytics
+    const limited = checkRateLimit(`${user.id}:analytics:top-posts`, 60, 60_000);
+    if (!limited) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please slow down.' },
+        { status: 429 }
       );
     }
 
@@ -25,19 +36,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user's workspace
-    const { data: workspace } = await supabase
-      .from('workspaces')
-      .select('id')
-      .eq('owner_id', user.id)
-      .single();
-
-    if (!workspace) {
-      return NextResponse.json(
-        { error: 'Workspace not found' },
-        { status: 404 }
-      );
-    }
+    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
 
     // Get posts with their analytics
     const { data: posts } = await supabase
@@ -47,7 +46,7 @@ export async function GET(request: NextRequest) {
         content,
         platforms,
         published_at,
-        post_analytics(likes, comments, shares)
+        post_analytics(platform, likes, comments, shares)
       `)
       .eq('workspace_id', workspace.id)
       .gte('published_at', from)
@@ -64,58 +63,62 @@ export async function GET(request: NextRequest) {
 
     // Calculate engagement for each post
     const postsWithEngagement = posts.map(post => {
-      const analytics = post.post_analytics as any;
+      const analytics = Array.isArray(post.post_analytics) ? post.post_analytics : [];
       let likes = 0;
       let comments = 0;
       let shares = 0;
 
-      if (analytics && Array.isArray(analytics)) {
-        analytics.forEach((a: any) => {
-          likes += a.likes || 0;
-          comments += a.comments || 0;
-          shares += a.shares || 0;
-        });
-      }
+      analytics.forEach((a: any) => {
+        likes += a?.likes || 0;
+        comments += a?.comments || 0;
+        shares += a?.shares || 0;
+      });
 
       const engagement = likes + comments + shares;
-      
-      // Extract text content from JSONB
-      let contentText = '';
-      if (typeof post.content === 'object' && post.content !== null) {
-        const contentObj = post.content as Record<string, any>;
-        const firstPlatform = Object.keys(contentObj)[0];
-        if (firstPlatform && contentObj[firstPlatform]?.text) {
-          contentText = contentObj[firstPlatform].text;
-        }
-      }
+      const contentText = extractContentSnippet(post.content).slice(0, 150);
 
-      // Get first platform
-      const platform = Array.isArray(post.platforms) && post.platforms.length > 0
-        ? post.platforms[0]
-        : 'unknown';
+      const platformLeader = analytics.reduce<{ platform?: string; score: number } | null>(
+        (leader, metric) => {
+          const score =
+            (metric?.likes || 0) + (metric?.comments || 0) + (metric?.shares || 0);
+          if (!leader || score > leader.score) {
+            return {
+              platform: metric?.platform,
+              score,
+            };
+          }
+          return leader;
+        },
+        null
+      );
+
+      const primaryPlatform =
+        platformLeader?.platform ||
+        (Array.isArray(post.platforms) && post.platforms[0]) ||
+        'unknown';
 
       return {
         id: post.id,
-        content: contentText.slice(0, 150), // Truncate for display
-        platform,
+        content: contentText,
+        platform: primaryPlatform,
         publishedAt: post.published_at,
         likes,
         comments,
         shares,
         engagement,
-        engagementRate: 0, // Will calculate after getting follower counts
+        engagementRate: 0,
       };
     });
 
     // Get follower counts for engagement rate calculation
     const { data: accounts } = await supabase
       .from('social_accounts')
-      .select('platform, followers_count')
+      .select('platform, follower_count')
       .eq('workspace_id', workspace.id);
 
     const followerMap = new Map<string, number>();
     accounts?.forEach(account => {
-      followerMap.set(account.platform, account.followers_count || 0);
+      followerMap.set(account.platform, account.follower_count || 0);
     });
 
     // Calculate engagement rates
@@ -134,11 +137,46 @@ export async function GET(request: NextRequest) {
       data: topPosts,
     });
   } catch (error) {
-    console.error('Top posts error:', error);
+    logger.error('Top posts error', error as Error);
     return NextResponse.json(
       { error: 'Failed to fetch top posts' },
       { status: 500 }
     );
   }
+}
+
+function extractContentSnippet(content: any): string {
+  if (!content) return '';
+
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    for (const entry of content) {
+      if (typeof entry === 'string') {
+        return entry;
+      }
+      if (entry && typeof entry === 'object' && typeof entry.text === 'string') {
+        return entry.text;
+      }
+    }
+  }
+
+  if (typeof content === 'object') {
+    if (typeof content.text === 'string') {
+      return content.text;
+    }
+    for (const value of Object.values(content)) {
+      if (typeof value === 'string') {
+        return value;
+      }
+      if (value && typeof value === 'object' && typeof (value as any).text === 'string') {
+        return (value as any).text;
+      }
+    }
+  }
+
+  return '';
 }
 

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { checkWorkspaceAccess } from '@/lib/api-middleware';
+import { getWorkspaceFromRequest } from '@/lib/api-middleware';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request: NextRequest) {
@@ -15,16 +17,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user's workspace
-    const { data: workspace } = await supabase
-      .from('workspaces')
-      .select('id')
-      .eq('owner_id', user.id)
-      .single();
+    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
 
-    if (!workspace) {
+    const role = await checkWorkspaceAccess(user.id, workspace.id);
+    if (role === 'viewer') {
       return NextResponse.json(
-        { error: 'Workspace not found' },
-        { status: 404 }
+        { error: 'You do not have permission to upload media' },
+        { status: 403 }
       );
     }
 

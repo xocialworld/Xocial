@@ -4,6 +4,7 @@
  */
 
 'use client';
+/* eslint-disable @next/next/no-img-element -- Team avatars may reference arbitrary remote URLs that require raw <img> usage */
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -25,6 +26,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
+import { useSelectedWorkspace } from '@/store/workspaceStore';
 
 interface Member {
   id: string;
@@ -42,8 +44,10 @@ interface Member {
 /**
  * Fetch workspace members
  */
-async function fetchMembers() {
-  const response = await fetch('/api/team/members');
+async function fetchMembers(workspaceId?: string) {
+  const response = await fetch(
+    `/api/team/members${workspaceId ? `?workspaceId=${workspaceId}` : ''}`
+  );
   if (!response.ok) throw new Error('Failed to fetch members');
   return response.json();
 }
@@ -51,7 +55,7 @@ async function fetchMembers() {
 /**
  * Invite member
  */
-async function inviteMember(data: { email: string; role: string; message?: string }) {
+async function inviteMember(data: { email: string; role: string; message?: string; workspaceId?: string }) {
   const response = await fetch('/api/team/invite', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -64,10 +68,13 @@ async function inviteMember(data: { email: string; role: string; message?: strin
 /**
  * Remove member
  */
-async function removeMember(memberId: string) {
-  const response = await fetch(`/api/team/members/${memberId}`, {
-    method: 'DELETE',
-  });
+async function removeMember(memberId: string, workspaceId?: string) {
+  const response = await fetch(
+    `/api/team/members/${memberId}${workspaceId ? `?workspaceId=${workspaceId}` : ''}`,
+    {
+      method: 'DELETE',
+    }
+  );
   if (!response.ok) throw new Error('Failed to remove member');
   return response.json();
 }
@@ -78,18 +85,21 @@ export default function TeamManagementPage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('viewer');
   const [inviteMessage, setInviteMessage] = useState('');
+  const selectedWorkspace = useSelectedWorkspace();
+  const activeWorkspaceId = selectedWorkspace?.id;
 
   // Fetch members
   const { data, isLoading } = useQuery({
-    queryKey: ['team-members'],
-    queryFn: fetchMembers,
+    queryKey: ['team-members', activeWorkspaceId],
+    queryFn: () => fetchMembers(activeWorkspaceId),
   });
 
   const members = data?.data?.members || [];
 
   // Invite mutation
   const inviteMutation = useMutation({
-    mutationFn: inviteMember,
+    mutationFn: (formData: { email: string; role: string; message?: string }) =>
+      inviteMember({ ...formData, workspaceId: activeWorkspaceId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['team-members'] });
       toast.success('Invitation sent successfully');
@@ -104,7 +114,7 @@ export default function TeamManagementPage() {
 
   // Remove mutation
   const removeMutation = useMutation({
-    mutationFn: removeMember,
+    mutationFn: (memberId: string) => removeMember(memberId, activeWorkspaceId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['team-members'] });
       toast.success('Member removed successfully');
@@ -119,6 +129,11 @@ export default function TeamManagementPage() {
     
     if (!inviteEmail) {
       toast.error('Please enter an email address');
+      return;
+    }
+
+    if (!activeWorkspaceId) {
+      toast.error('Select a workspace before inviting members');
       return;
     }
 

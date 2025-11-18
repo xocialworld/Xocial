@@ -52,3 +52,11 @@ export function getPlatformIcon(platform: string): string {
   return platform;
 }
 
+export function slugify(input: string, maxLength = 48) {
+  return (input || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)+/g, '')
+    .slice(0, maxLength);
+}
+

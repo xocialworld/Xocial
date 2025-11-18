@@ -1,21 +1,28 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { useState } from 'react';
-import { PostComposer } from './components/post-composer';
-import { PageHeader } from '@/components/shared/page-header';
+type ComposeRedirectProps = {
+  searchParams?: Record<string, string | string[] | undefined>;
+};
 
-export default function ComposePage() {
-  return (
-    <div className="p-8">
-      <PageHeader
-        title="Create Post"
-        description="Compose and schedule posts across all your social media platforms"
-      />
-      
-      <div className="mt-8">
-        <PostComposer />
-      </div>
-    </div>
-  );
+export default function ComposeRedirect({ searchParams }: ComposeRedirectProps) {
+  const query = new URLSearchParams();
+
+  if (searchParams) {
+    Object.entries(searchParams).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        value.forEach((entry) => {
+          if (entry) {
+            query.append(key, entry);
+          }
+        });
+      } else if (value) {
+        query.set(key, value);
+      }
+    });
+  }
+
+  const target = query.toString() ? `/c?${query.toString()}` : '/c';
+
+  redirect(target);
 }
 

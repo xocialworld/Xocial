@@ -10,6 +10,17 @@ import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { withCronVerification, cronSuccessResponse, cronErrorResponse } from '@/lib/cron-verification';
 import { PlatformPublisher } from '@/lib/platforms/publisher';
+import {
+  recordPlatformPosts,
+  createInitialAnalytics,
+  extractExternalIds,
+  buildPlatformContentPayload,
+} from '@/lib/platforms/publish-utils';
+import {
+  normalizeMetadata,
+  normalizePlatforms,
+  resolveAccountIds,
+} from '@/lib/platforms/post-publish-helpers';
 
 /**
  * GET /api/cron/publish
@@ -83,79 +94,83 @@ export const GET = withCronVerification(async (request: NextRequest) => {
           throw updateError;
         }
 
-        // Extract content for each platform
-        const contentData = post.content || {};
-        
-        // Build account IDs map (platform -> account_id from metadata)
-        const accountIds: Record<string, string> = {};
-        const metadata = post.metadata || {};
-        
-        if (metadata.accountIds) {
-          Object.assign(accountIds, metadata.accountIds);
+        const metadata = normalizeMetadata(post.metadata);
+        const platforms = normalizePlatforms(post.platforms);
+
+        if (platforms.length === 0) {
+          throw new Error('No supported platforms found for this post');
         }
 
-        // Prepare media URLs
-        const mediaUrls = post.media?.map((m: any) => m.url) || [];
+        const accountIds = await resolveAccountIds(
+          supabase,
+          post.workspace_id,
+          platforms,
+          metadata
+        );
+
+        const mediaUrls = Array.isArray(post.media)
+          ? post.media
+              .map((item: any) => item?.url)
+              .filter((url: unknown): url is string => typeof url === 'string' && url.length > 0)
+          : [];
+
+        const { fallback, perPlatform } = buildPlatformContentPayload(
+          post.content,
+          platforms,
+          mediaUrls
+        );
 
         // Publish to all platforms
         const publishResults = await publisher.publishToAll({
-          platforms: post.platforms,
-          content: {
-            text: contentData.text || contentData.default || '',
-            mediaUrls,
-          },
+          platforms,
+          content: fallback,
+          platformContent: perPlatform,
           accountIds,
+          scheduledFor: post.scheduled_at ? new Date(post.scheduled_at) : undefined,
         });
 
         // Check if all publishes succeeded
         const allSucceeded = publishResults.every((r) => r.success);
-        const externalIds: Record<string, string> = {};
+        const externalIds = extractExternalIds(publishResults);
         const errors: string[] = [];
 
         publishResults.forEach((result) => {
-          if (result.success && result.platformPostId) {
-            externalIds[result.platform] = result.platformPostId;
-          } else if (!result.success && result.error) {
+          if (!result.success && result.error) {
             errors.push(`${result.platform}: ${result.error}`);
           }
         });
 
         // Update post with results
         if (allSucceeded) {
+          const publishedAt = new Date().toISOString();
+
           await supabase
             .from('posts')
             .update({
               status: 'published',
-              published_at: new Date().toISOString(),
+              published_at: publishedAt,
               external_post_id: JSON.stringify(externalIds),
               metadata: {
                 ...metadata,
+                accountIds,
                 publishResults,
-                publishedAt: new Date().toISOString(),
+                publishedAt,
               },
             })
             .eq('id', post.id);
 
-          // Create initial analytics records
-          for (const result of publishResults) {
-            if (result.success && result.platformPostId) {
-              await supabase.from('post_analytics').insert({
-                post_id: post.id,
-                platform: result.platform,
-                external_post_id: result.platformPostId,
-                impressions: 0,
-                reach: 0,
-                engagement: 0,
-                likes: 0,
-                comments: 0,
-                shares: 0,
-                saves: 0,
-                clicks: 0,
-                video_views: 0,
-                engagement_rate: 0,
-              });
-            }
-          }
+          await recordPlatformPosts({
+            supabase,
+            postId: post.id,
+            publishResults,
+            publishedAt,
+          });
+
+          await createInitialAnalytics({
+            supabase,
+            postId: post.id,
+            publishResults,
+          });
 
           console.log(`[Cron: Publish] Successfully published post ${post.id}`);
           
@@ -174,6 +189,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
               error_message: errors.join('; '),
               metadata: {
                 ...metadata,
+                accountIds,
                 publishResults,
                 failedAt: new Date().toISOString(),
               },

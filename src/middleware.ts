@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
-import { getSecurityHeaders } from '@/lib/security';
+import { getSecurityHeaders } from '@/lib/security-headers';
 
 /**
  * Middleware for authentication and security
@@ -21,7 +21,14 @@ export async function middleware(request: NextRequest) {
   }
 
   // Update Supabase session for authenticated routes
-  const response = await updateSession(request);
+  // Be resilient in development if environment variables are missing
+  let response: NextResponse;
+  try {
+    response = await updateSession(request);
+  } catch (err) {
+    // Avoid hard-failing the whole app due to auth/session setup
+    response = NextResponse.next();
+  }
 
   // Add comprehensive security headers
   const securityHeaders = getSecurityHeaders();

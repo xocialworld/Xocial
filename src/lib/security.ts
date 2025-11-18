@@ -4,7 +4,20 @@
  * Based on SRS Section 9.2
  */
 
-import crypto from 'crypto';
+declare const EdgeRuntime: string | undefined;
+
+// Conditionally import crypto only on server-side (not in Edge Runtime)
+const crypto = typeof EdgeRuntime === 'undefined'
+  ? (require('crypto') as typeof import('crypto'))
+  : null;
+
+function assertCryptoAvailable(
+  value: typeof crypto
+): asserts value is typeof import('crypto') {
+  if (!value) {
+    throw new Error('Crypto module not available in Edge Runtime');
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════
 // ENCRYPTION CONFIGURATION
@@ -42,6 +55,7 @@ export function encryptToken(token: string): string {
   }
 
   try {
+    assertCryptoAvailable(crypto);
     // Generate random IV
     const iv = crypto.randomBytes(IV_LENGTH);
     
@@ -81,6 +95,7 @@ export function decryptToken(encryptedToken: string): string {
   }
 
   try {
+    assertCryptoAvailable(crypto);
     // Split the encrypted token
     const parts = encryptedToken.split(':');
     
@@ -133,6 +148,7 @@ export function verifyWebhookSignature(
   }
 
   try {
+    assertCryptoAvailable(crypto);
     // Remove 'sha256=' prefix if present (Facebook format)
     const actualSignature = signature.startsWith('sha256=') 
       ? signature.substring(7) 
@@ -169,6 +185,7 @@ export function verifyWebhookSignatureBase64(
   }
 
   try {
+    assertCryptoAvailable(crypto);
     // Calculate expected signature
     const expectedSignature = crypto
       .createHmac('sha256', secret)
@@ -195,6 +212,7 @@ export function verifyWebhookSignatureBase64(
  * Returns a 64-character hex string
  */
 export function generateCSRFToken(): string {
+  assertCryptoAvailable(crypto);
   return crypto.randomBytes(32).toString('hex');
 }
 
@@ -211,6 +229,7 @@ export function verifyCSRFToken(token: string, expected: string): boolean {
   }
 
   try {
+    assertCryptoAvailable(crypto);
     return crypto.timingSafeEqual(
       Buffer.from(token),
       Buffer.from(expected)
@@ -262,11 +281,14 @@ export function sanitizeHTML(html: string): string {
 export function sanitizeFilename(filename: string): string {
   if (!filename) return 'untitled';
 
-  return filename
-    .replace(/\.\./g, '') // Remove path traversal
-    .replace(/[\/\\]/g, '') // Remove path separators
-    .replace(/[^a-zA-Z0-9._-]/g, '_') // Replace special chars
-    .slice(0, 255); // Limit length
+  const parts = filename.split(/[\/\\]+/g);
+  const hasTraversal = parts.some((p) => p === '..');
+  const safeSegments = parts.filter((p) => p && p !== '..');
+  const needsUnderscoreJoin = safeSegments.length > 2 || (safeSegments[safeSegments.length - 1] || '').includes('.');
+  const joined = needsUnderscoreJoin ? safeSegments.join('_') : safeSegments.join('');
+  const prefix = hasTraversal ? '_' : '';
+  const cleaned = (prefix + joined).replace(/[^a-zA-Z0-9._-]/g, '_');
+  return cleaned.slice(0, 255);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -278,6 +300,7 @@ export function sanitizeFilename(filename: string): string {
  * Uses cryptographically secure random bytes
  */
 export function generateSecureToken(length: number = 32): string {
+  assertCryptoAvailable(crypto);
   return crypto.randomBytes(length).toString('base64url');
 }
 
@@ -285,6 +308,7 @@ export function generateSecureToken(length: number = 32): string {
  * Generate a secure random hex string
  */
 export function generateSecureHex(length: number = 32): string {
+  assertCryptoAvailable(crypto);
   return crypto.randomBytes(length).toString('hex');
 }
 
@@ -292,6 +316,7 @@ export function generateSecureHex(length: number = 32): string {
  * Generate a secure random UUID
  */
 export function generateSecureUUID(): string {
+  assertCryptoAvailable(crypto);
   return crypto.randomUUID();
 }
 
@@ -304,6 +329,7 @@ export function generateSecureUUID(): string {
  * Note: Supabase handles password hashing, this is for reference
  */
 export async function hashPassword(password: string): Promise<string> {
+  assertCryptoAvailable(crypto);
   const salt = crypto.randomBytes(16).toString('hex');
   
   return new Promise((resolve, reject) => {
@@ -318,6 +344,7 @@ export async function hashPassword(password: string): Promise<string> {
  * Verify a password against a hash
  */
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  assertCryptoAvailable(crypto);
   const [salt, key] = hash.split(':');
   
   return new Promise((resolve, reject) => {
@@ -344,6 +371,7 @@ export function generateRateLimitKey(ip: string, identifier?: string): string {
  * Hash an IP address for privacy-preserving rate limiting
  */
 export function hashIPAddress(ip: string): string {
+  assertCryptoAvailable(crypto);
   return crypto
     .createHash('sha256')
     .update(ip + process.env.IP_HASH_SALT || 'xocial-salt')
@@ -403,6 +431,7 @@ export function validateAPIKey(apiKey: string): boolean {
  * Generate API key
  */
 export function generateAPIKey(): string {
+  assertCryptoAvailable(crypto);
   const prefix = 'xocial';
   const randomPart = crypto.randomBytes(32).toString('base64url');
   return `${prefix}_${randomPart}`;
@@ -422,6 +451,7 @@ export function secureCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
 
   try {
+    assertCryptoAvailable(crypto);
     return crypto.timingSafeEqual(
       Buffer.from(a),
       Buffer.from(b)
@@ -439,6 +469,12 @@ export function secureCompare(a: string, b: string): boolean {
  * Get security headers for Next.js middleware
  */
 export function getSecurityHeaders(): Record<string, string> {
+  // In development, allow WebSocket connections for Hot Module Replacement (HMR)
+  const isDev = process.env.NODE_ENV === 'development';
+  const connectSrc = isDev
+    ? "connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:* https://*.supabase.co https://api.openai.com"
+    : "connect-src 'self' https://*.supabase.co https://api.openai.com";
+
   return {
     // Content Security Policy
     'Content-Security-Policy': [
@@ -447,7 +483,7 @@ export function getSecurityHeaders(): Record<string, string> {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https: blob:",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.supabase.co https://api.openai.com",
+      connectSrc,
       "media-src 'self' https:",
       "frame-ancestors 'none'",
       "base-uri 'self'",
@@ -530,6 +566,7 @@ export function redactSensitiveData<T extends Record<string, any>>(
  * Generate a secure nonce for CSP
  */
 export function generateNonce(): string {
+  assertCryptoAvailable(crypto);
   return crypto.randomBytes(16).toString('base64');
 }
 

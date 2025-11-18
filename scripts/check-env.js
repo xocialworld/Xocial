@@ -23,6 +23,9 @@ const colors = {
 
 const { reset, red, green, yellow, blue, cyan, bold } = colors;
 
+// Detect if running in production
+const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+
 // Required environment variables
 const REQUIRED_VARS = [
   {
@@ -38,25 +41,58 @@ const REQUIRED_VARS = [
     getFrom: 'https://app.supabase.com/project/_/settings/api',
   },
   {
-    name: 'OPENAI_API_KEY',
-    description: 'Your OpenAI API key',
+    name: 'SUPABASE_SERVICE_ROLE_KEY',
+    description: 'Supabase service role key (needed for cron jobs and server tasks)',
+    example: 'eyJhbGc...',
+    getFrom: 'https://app.supabase.com/project/_/settings/api',
+  },
+  {
+    name: 'VERCEL_AI_GATEWAY_API_KEY',
+    description: 'Your Vercel AI Gateway API key',
     example: 'sk-...',
-    getFrom: 'https://platform.openai.com/api-keys',
+    getFrom: 'https://vercel.com/dashboard/ai-gateway',
+  },
+  {
+    name: 'ENCRYPTION_KEY',
+    description: '64-hex key for AES-256-GCM token encryption',
+    example: 'openssl rand -hex 32',
+    getFrom: 'Generate locally with openssl',
   },
 ];
 
-// Optional environment variables
+// Production-only required variables (optional in development)
+const PRODUCTION_REQUIRED_VARS = [
+  {
+    name: 'CRON_SECRET',
+    description: 'Secret for authenticating Vercel cron requests',
+    example: 'openssl rand -hex 32',
+    getFrom: 'Generate locally with openssl',
+    devNote: 'Only required in production (Vercel cron jobs)',
+  },
+];
+
+// Optional/recommended environment variables
 const OPTIONAL_VARS = [
   {
     name: 'NEXT_PUBLIC_APP_URL',
     description: 'Application URL (defaults to http://localhost:3000)',
     example: 'http://localhost:3000',
   },
-  {
-    name: 'SUPABASE_SERVICE_ROLE_KEY',
-    description: 'Supabase service role key (for admin operations)',
-    example: 'eyJhbGc...',
-  },
+  // OAuth credentials per platform
+  { name: 'FACEBOOK_APP_ID', description: 'Meta App ID', example: '123456789012345' },
+  { name: 'FACEBOOK_APP_SECRET', description: 'Meta App Secret', example: 'a1b2c3...' },
+  { name: 'FACEBOOK_WEBHOOK_VERIFY_TOKEN', description: 'Meta webhook token', example: 'random-hex' },
+  { name: 'INSTAGRAM_CLIENT_ID', description: 'Instagram Client ID (often same as FB App ID)', example: '123456789012345' },
+  { name: 'INSTAGRAM_CLIENT_SECRET', description: 'Instagram Client Secret (FB App Secret)', example: 'a1b2c3...' },
+  { name: 'INSTAGRAM_WEBHOOK_VERIFY_TOKEN', description: 'Instagram webhook token', example: 'random-hex' },
+  { name: 'TWITTER_CLIENT_ID', description: 'Twitter Client ID', example: 'xxx' },
+  { name: 'TWITTER_CLIENT_SECRET', description: 'Twitter Client Secret', example: 'xxx' },
+  { name: 'LINKEDIN_CLIENT_ID', description: 'LinkedIn Client ID', example: 'xxx' },
+  { name: 'LINKEDIN_CLIENT_SECRET', description: 'LinkedIn Client Secret', example: 'xxx' },
+  { name: 'YOUTUBE_CLIENT_ID', description: 'YouTube Client ID', example: 'xxx' },
+  { name: 'YOUTUBE_CLIENT_SECRET', description: 'YouTube Client Secret', example: 'xxx' },
+  { name: 'TIKTOK_CLIENT_KEY', description: 'TikTok Client Key', example: 'xxx' },
+  { name: 'TIKTOK_CLIENT_SECRET', description: 'TikTok Client Secret', example: 'xxx' },
 ];
 
 function printHeader() {
@@ -109,15 +145,24 @@ function checkRequiredVars(envVars) {
   
   let allPresent = true;
   const missing = [];
+  const invalid = [];
 
   REQUIRED_VARS.forEach(({ name, description, example, getFrom }) => {
     const value = envVars[name];
     const isPresent = value && value.length > 0 && !value.includes('your_') && !value.includes('your-');
 
     if (isPresent) {
-      const maskedValue = maskValue(value, name);
-      console.log(`  ${green}✓${reset} ${name}`);
-      console.log(`    ${cyan}→ ${maskedValue}${reset}`);
+      // Extra validations for certain vars
+      const validationError = validateVar(name, value);
+      if (validationError) {
+        allPresent = false;
+        invalid.push({ name, description, example, getFrom, error: validationError });
+        console.log(`  ${red}✗${reset} ${name} ${red}(${validationError})${reset}`);
+      } else {
+        const maskedValue = maskValue(value, name);
+        console.log(`  ${green}✓${reset} ${name}`);
+        console.log(`    ${cyan}→ ${maskedValue}${reset}`);
+      }
     } else {
       allPresent = false;
       missing.push({ name, description, example, getFrom });
@@ -135,9 +180,85 @@ function checkRequiredVars(envVars) {
       console.log(`  Example: ${cyan}${example}${reset}`);
       console.log(`  Get from: ${blue}${getFrom}${reset}\n`);
     });
+    invalid.forEach(({ name, description, example, getFrom, error }) => {
+      console.log(`${yellow}${bold}${name}${reset}`);
+      console.log(`  ${description}`);
+      console.log(`  ${red}Invalid format:${reset} ${error}`);
+      console.log(`  Example: ${cyan}${example}${reset}`);
+      if (getFrom) console.log(`  Get from: ${blue}${getFrom}${reset}\n`);
+      else console.log();
+    });
   }
 
   return allPresent;
+}
+
+function checkProductionRequiredVars(envVars) {
+  if (PRODUCTION_REQUIRED_VARS.length === 0) return true;
+  
+  console.log(`${bold}Checking Production-Only Variables:${reset}`);
+  console.log(`${yellow}(Required in production, optional in development)${reset}\n`);
+  
+  let allPresent = true;
+  const warnings = [];
+
+  PRODUCTION_REQUIRED_VARS.forEach(({ name, description, example, getFrom, devNote }) => {
+    const value = envVars[name];
+    const isPresent = value && value.length > 0 && !value.includes('your_') && !value.includes('your-');
+
+    if (isPresent) {
+      const validationError = validateVar(name, value);
+      if (validationError) {
+        if (isProduction) {
+          allPresent = false;
+          console.log(`  ${red}✗${reset} ${name} ${red}(${validationError})${reset}`);
+        } else {
+          console.log(`  ${yellow}⚠${reset} ${name} ${yellow}(${validationError})${reset}`);
+          warnings.push({ name, description, example, getFrom, devNote, error: validationError });
+        }
+      } else {
+        const maskedValue = maskValue(value, name);
+        console.log(`  ${green}✓${reset} ${name}`);
+        console.log(`    ${cyan}→ ${maskedValue}${reset}`);
+      }
+    } else {
+      if (isProduction) {
+        allPresent = false;
+        console.log(`  ${red}✗${reset} ${name} ${red}(missing)${reset}`);
+      } else {
+        console.log(`  ${yellow}○${reset} ${name} ${yellow}(not set - ${devNote})${reset}`);
+        warnings.push({ name, description, example, getFrom, devNote });
+      }
+    }
+  });
+
+  console.log();
+
+  if (warnings.length > 0 && !isProduction) {
+    console.log(`${yellow}${bold}Development Mode Warnings:${reset}\n`);
+    warnings.forEach(({ name, description, devNote, error }) => {
+      console.log(`${yellow}${bold}${name}${reset}`);
+      console.log(`  ${description}`);
+      console.log(`  ${cyan}Note:${reset} ${devNote}`);
+      if (error) console.log(`  ${yellow}Current value:${reset} ${error}`);
+      console.log();
+    });
+  } else if (!allPresent && isProduction) {
+    console.log(`${red}${bold}Missing Production Variables:${reset}\n`);
+    PRODUCTION_REQUIRED_VARS.forEach(({ name, description, example, getFrom }) => {
+      const value = envVars[name];
+      const isPresent = value && value.length > 0;
+      if (!isPresent) {
+        console.log(`${yellow}${bold}${name}${reset}`);
+        console.log(`  ${description}`);
+        console.log(`  Example: ${cyan}${example}${reset}`);
+        console.log(`  Get from: ${blue}${getFrom}${reset}\n`);
+      }
+    });
+  }
+
+  // In development, return true even if warnings exist
+  return isProduction ? allPresent : true;
 }
 
 function checkOptionalVars(envVars) {
@@ -183,8 +304,12 @@ function printEnvTemplate() {
   console.log(`${cyan}# Supabase Configuration${reset}`);
   console.log(`NEXT_PUBLIC_SUPABASE_URL=your_supabase_url_here`);
   console.log(`NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here\n`);
-  console.log(`${cyan}# OpenAI Configuration${reset}`);
-  console.log(`OPENAI_API_KEY=your_openai_api_key_here\n`);
+  console.log(`SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here\n`);
+  console.log(`${cyan}# Vercel AI Gateway Configuration${reset}`);
+  console.log(`VERCEL_AI_GATEWAY_API_KEY=your_vercel_ai_gateway_api_key_here\n`);
+  console.log(`${cyan}# Security${reset}`);
+  console.log(`ENCRYPTION_KEY=$(openssl rand -hex 32)`);
+  console.log(`CRON_SECRET=$(openssl rand -hex 32)\n`);
   console.log(`${cyan}# Application Configuration${reset}`);
   console.log(`NEXT_PUBLIC_APP_URL=http://localhost:3000\n`);
 }
@@ -194,15 +319,42 @@ function printSummary(allGood) {
   
   if (allGood) {
     console.log(`${green}${bold}✓ All required environment variables are configured!${reset}\n`);
+    if (!isProduction) {
+      console.log(`${cyan}Running in: ${bold}Development Mode${reset}`);
+      console.log(`${yellow}Note: Some production-only variables may show warnings above.${reset}\n`);
+    }
     console.log(`${bold}Next steps:${reset}`);
-    console.log(`  1. Run the database migration (see SETUP_GUIDE.md)`);
+    console.log(`  1. Run database migrations (see README.md)`);
     console.log(`  2. Start the development server: ${cyan}npm run dev${reset}\n`);
   } else {
+    if (isProduction) {
+      console.log(`${red}${bold}✗ Production environment setup is incomplete${reset}\n`);
+  } else {
     console.log(`${red}${bold}✗ Environment setup is incomplete${reset}\n`);
+    }
     console.log(`${bold}Please fix the issues above before running the application.${reset}\n`);
     console.log(`${bold}📚 Resources:${reset}`);
-    console.log(`  • Detailed guide: ${cyan}./ENV_SETUP.md${reset}`);
-    console.log(`  • Setup guide: ${cyan}./SETUP_GUIDE.md${reset}\n`);
+    console.log(`  • Variables reference: ${cyan}./ENV_VARIABLES_REFERENCE.md${reset}`);
+    console.log(`  • Project readme: ${cyan}./README.md${reset}\n`);
+  }
+}
+
+function validateVar(name, value) {
+  switch (name) {
+    case 'ENCRYPTION_KEY': {
+      const hex64 = /^[a-f0-9]{64}$/i.test(value);
+      return hex64 ? null : 'Must be 64 hex characters (openssl rand -hex 32)';
+    }
+    case 'CRON_SECRET': {
+      const ok = /^[a-zA-Z0-9_\-]{16,}$/.test(value) || /^[a-f0-9]{32,}$/i.test(value);
+      return ok ? null : 'Should be a reasonably long random string (>=16 chars)';
+    }
+    case 'NEXT_PUBLIC_SUPABASE_URL': {
+      const ok = /^https:\/\/.+\.supabase\.co/.test(value);
+      return ok ? null : 'Should be a valid supabase URL (https://*.supabase.co)';
+    }
+    default:
+      return null;
   }
 }
 
@@ -218,10 +370,11 @@ function main() {
 
   const envVars = loadEnvFile();
   const allRequiredPresent = checkRequiredVars(envVars);
+  const allProductionPresent = checkProductionRequiredVars(envVars);
   checkOptionalVars(envVars);
-  printSummary(allRequiredPresent);
+  printSummary(allRequiredPresent && allProductionPresent);
 
-  if (!allRequiredPresent) {
+  if (!allRequiredPresent || !allProductionPresent) {
     process.exit(1);
   }
 }

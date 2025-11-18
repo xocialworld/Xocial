@@ -228,6 +228,50 @@ export class InstagramClient {
       return false;
     }
   }
+
+  /**
+   * Get comments for a media item
+   */
+  async getComments(mediaId: string): Promise<any[]> {
+    const url = `${this.baseUrl}/${mediaId}/comments`;
+    const params = new URLSearchParams({
+      fields: 'id,text,username,timestamp,like_count,replies',
+      access_token: this.accessToken,
+    });
+
+    const response = await fetch(`${url}?${params}`);
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error?.message || 'Failed to fetch Instagram comments');
+    }
+
+    const data = await response.json();
+    return data.data || [];
+  }
+
+  /**
+   * Reply to a comment
+   */
+  async replyToComment(commentId: string, message: string): Promise<{ id: string }> {
+    const url = `${this.baseUrl}/${commentId}/replies`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        access_token: this.accessToken,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error?.message || 'Failed to reply to Instagram comment');
+    }
+
+    return response.json();
+  }
 }
 
 /**
@@ -238,29 +282,22 @@ export async function createInstagramClient(accountId: string): Promise<Instagra
   
   const { data: account, error } = await supabase
     .from('social_accounts')
-    .select('platform_user_id')
+    .select('account_id, access_token, is_active')
     .eq('id', accountId)
     .eq('platform', 'instagram')
     .single();
 
-  if (error || !account) {
-    throw new Error('Instagram account not found');
+  if (error || !account || !account.is_active) {
+    throw new Error('Instagram account not found or inactive');
   }
 
-  // Get OAuth token
-  const { data: token, error: tokenError } = await supabase
-    .from('oauth_tokens')
-    .select('access_token')
-    .eq('account_id', accountId)
-    .single();
-
-  if (tokenError || !token) {
-    throw new Error('Instagram access token not found');
+  if (!account.access_token) {
+    throw new Error('Instagram access token missing from account record');
   }
 
   return new InstagramClient({
-    accessToken: token.access_token,
-    instagramAccountId: account.platform_user_id,
+    accessToken: account.access_token,
+    instagramAccountId: account.account_id,
   });
 }
 

@@ -1,0 +1,140 @@
+import {
+  extractExternalIds,
+  parseAccountIdsFromMetadata,
+  buildPlatformContentPayload,
+  recordPlatformPosts,
+} from '@/lib/platforms/publish-utils';
+import type { PublishResult } from '@/lib/platforms/publisher';
+
+describe('publish utils', () => {
+  it('extracts external ids for successful publishes only', () => {
+    const results: PublishResult[] = [
+      {
+        platform: 'facebook',
+        success: true,
+        platformPostId: 'fb_123',
+        permalink: 'https://facebook.com/post/123',
+      },
+      {
+        platform: 'instagram',
+        success: false,
+        error: 'rate limit',
+      },
+      {
+        platform: 'twitter',
+        success: true,
+        platformPostId: 'tw_456',
+      },
+    ];
+
+    const externalIds = extractExternalIds(results);
+
+    expect(externalIds).toEqual({
+      facebook: 'fb_123',
+      twitter: 'tw_456',
+    });
+  });
+
+  it('parses account id maps from metadata objects and strings', () => {
+    const metadataObject = {
+      accountIds: {
+        facebook: 'acc_fb',
+        instagram: 'acc_ig',
+        invalid: 'noop',
+      },
+    };
+
+    const metadataString = JSON.stringify(metadataObject);
+
+    expect(parseAccountIdsFromMetadata(metadataObject)).toEqual({
+      facebook: 'acc_fb',
+      instagram: 'acc_ig',
+    });
+
+    expect(parseAccountIdsFromMetadata(metadataString)).toEqual({
+      facebook: 'acc_fb',
+      instagram: 'acc_ig',
+    });
+
+    expect(parseAccountIdsFromMetadata(undefined)).toEqual({});
+  });
+
+  it('builds per-platform content payloads with sensible fallbacks', () => {
+    const { fallback, perPlatform } = buildPlatformContentPayload(
+      {
+        default: { text: 'Default text', mediaUrls: ['default.jpg'] },
+        facebook: { text: 'FB text' },
+      },
+      ['facebook', 'instagram'],
+      ['from-post.jpg']
+    );
+
+    expect(fallback).toEqual({
+      text: 'Default text',
+      mediaUrls: ['default.jpg'],
+      link: undefined,
+    });
+
+    expect(perPlatform.facebook).toEqual({
+      text: 'FB text',
+      mediaUrls: ['default.jpg'],
+      link: undefined,
+    });
+
+    expect(perPlatform.instagram).toEqual({
+      text: 'Default text',
+      mediaUrls: ['default.jpg'],
+      link: undefined,
+    });
+  });
+
+  it('records platform posts with associated social accounts when available', async () => {
+    const insertMock = jest.fn().mockResolvedValue({ error: null });
+    const supabaseMock = {
+      from: jest.fn(() => ({
+        insert: insertMock,
+      })),
+    } as any;
+
+    const results: PublishResult[] = [
+      {
+        platform: 'youtube',
+        accountId: 'acc-123',
+        success: true,
+        platformPostId: 'yt_001',
+        permalink: 'https://youtube.com/watch?v=1',
+      },
+      {
+        platform: 'instagram',
+        success: true,
+        platformPostId: 'ig_001',
+      },
+      {
+        platform: 'facebook',
+        success: false,
+      },
+    ];
+
+    await recordPlatformPosts({
+      supabase: supabaseMock,
+      postId: 'post-abc',
+      publishResults: results,
+      publishedAt: '2025-11-14T00:00:00.000Z',
+    });
+
+    expect(supabaseMock.from).toHaveBeenCalledWith('platform_posts');
+    expect(insertMock).toHaveBeenCalledWith([
+      expect.objectContaining({
+        platform: 'youtube',
+        platform_post_id: 'yt_001',
+        social_account_id: 'acc-123',
+      }),
+      expect.objectContaining({
+        platform: 'instagram',
+        platform_post_id: 'ig_001',
+        social_account_id: null,
+      }),
+    ]);
+  });
+});
+

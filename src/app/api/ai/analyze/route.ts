@@ -6,6 +6,7 @@ import {
   validateRequest,
   APIError,
 } from '@/lib/api-middleware';
+import { analyzeContent } from '@/lib/openai';
 import { z } from 'zod';
 
 /**
@@ -22,11 +23,11 @@ const analyzeSchema = z.object({
 export const POST = withErrorHandler(async (request: NextRequest) => {
   await requireAuth(request);
 
-  // Check if OpenAI API key is configured
-  if (!process.env.OPENAI_API_KEY) {
+  // Check if Vercel AI Gateway is configured
+  if (!process.env.VERCEL_AI_GATEWAY_API_KEY) {
     throw new APIError(
       501,
-      'AI analysis is not configured. Please add OPENAI_API_KEY to environment variables.',
+      'AI analysis is not configured. Please add VERCEL_AI_GATEWAY_API_KEY to environment variables.',
       'AI_NOT_CONFIGURED'
     );
   }
@@ -34,17 +35,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   // Validate request
   const validatedData = await validateRequest(request, analyzeSchema);
 
-  // Return mock analysis for now (replace with actual OpenAI integration later)
-  const analysis = {
-    sentiment: 'neutral',
-    score: 0.5,
-    suggestions: [
-      'Add more engaging content',
-      'Consider using hashtags',
-      'Include a call-to-action',
-    ],
-  };
-
+  const analysis = await analyzeContent(validatedData.content);
   return successResponse(analysis);
 });
 

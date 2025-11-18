@@ -69,38 +69,42 @@ export function TopPostsTable({ posts }: TopPostsTableProps) {
         </p>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full">
+      <div className="overflow-x-auto" role="region" aria-label="Top posts table">
+        <table className="w-full" role="table" aria-label="Top performing posts">
           <thead>
             <tr className="border-b border-gray-200">
-              <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+              <th scope="col" className="text-left py-3 px-4 text-sm font-medium text-gray-600">
                 Content
               </th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+              <th scope="col" className="text-left py-3 px-4 text-sm font-medium text-gray-600">
                 Platform
               </th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+              <th scope="col" className="text-left py-3 px-4 text-sm font-medium text-gray-600">
                 Date
               </th>
-              <th className="text-center py-3 px-4 text-sm font-medium text-gray-600">
+              <th scope="col" className="text-center py-3 px-4 text-sm font-medium text-gray-600">
                 <SortButton label="Likes" sortKey="likes" />
               </th>
-              <th className="text-center py-3 px-4 text-sm font-medium text-gray-600">
+              <th scope="col" className="text-center py-3 px-4 text-sm font-medium text-gray-600">
                 <SortButton label="Comments" sortKey="comments" />
               </th>
-              <th className="text-center py-3 px-4 text-sm font-medium text-gray-600">
+              <th scope="col" className="text-center py-3 px-4 text-sm font-medium text-gray-600">
                 <SortButton label="Shares" sortKey="shares" />
               </th>
-              <th className="text-center py-3 px-4 text-sm font-medium text-gray-600">
+              <th scope="col" className="text-center py-3 px-4 text-sm font-medium text-gray-600">
                 <SortButton label="Total" sortKey="engagement" />
               </th>
-              <th className="text-center py-3 px-4 text-sm font-medium text-gray-600">
+              <th scope="col" className="text-center py-3 px-4 text-sm font-medium text-gray-600">
                 <SortButton label="Rate" sortKey="engagementRate" />
               </th>
             </tr>
           </thead>
           <tbody>
-            {sortedPosts.map((post, index) => (
+            {sortedPosts.map((post, index) => {
+              const contentPreview = post.content?.trim()
+                ? post.content
+                : 'Untitled post';
+              return (
               <tr 
                 key={post.id} 
                 className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
@@ -112,7 +116,7 @@ export function TopPostsTable({ posts }: TopPostsTableProps) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-900 truncate max-w-md">
-                        {post.content}
+                        {contentPreview}
                       </p>
                     </div>
                   </div>
@@ -153,7 +157,8 @@ export function TopPostsTable({ posts }: TopPostsTableProps) {
                   </span>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

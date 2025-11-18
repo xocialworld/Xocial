@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { format, eachDayOfInterval, parseISO } from 'date-fns';
+import { checkRateLimit, getWorkspaceFromRequest } from '@/lib/api-middleware';
+import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,6 +13,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
+      );
+    }
+
+    // Rate limit engagement analytics
+    const limited = checkRateLimit(`${user.id}:analytics:engagement`, 60, 60_000);
+    if (!limited) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please slow down.' },
+        { status: 429 }
       );
     }
 
@@ -25,19 +36,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user's workspace
-    const { data: workspace } = await supabase
-      .from('workspaces')
-      .select('id')
-      .eq('owner_id', user.id)
-      .single();
-
-    if (!workspace) {
-      return NextResponse.json(
-        { error: 'Workspace not found' },
-        { status: 404 }
-      );
-    }
+    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
 
     // Get all posts with analytics in the date range
     const { data: posts } = await supabase
@@ -94,7 +93,7 @@ export async function GET(request: NextRequest) {
       data: engagementData,
     });
   } catch (error) {
-    console.error('Engagement data error:', error);
+    logger.error('Engagement data error', error as Error);
     return NextResponse.json(
       { error: 'Failed to fetch engagement data' },
       { status: 500 }

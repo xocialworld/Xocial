@@ -10,6 +10,7 @@ import {
   exchangeTikTokCode,
   getTikTokUserInfo,
 } from '@/lib/oauth/tiktok';
+import { verifyOAuthState } from '@/lib/oauth/state-manager';
 
 /**
  * GET /api/oauth/tiktok/callback
@@ -36,7 +37,19 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(400, 'Authorization code is missing', 'MISSING_CODE');
   }
 
-  // TODO: Verify state parameter matches what was stored in session
+  // Verify state parameter for CSRF protection
+  if (!state) {
+    throw new APIError(400, 'State parameter is missing', 'MISSING_STATE');
+  }
+
+  const stateVerification = await verifyOAuthState(user.id, 'tiktok', state);
+  if (!stateVerification.valid) {
+    throw new APIError(
+      403,
+      `OAuth state verification failed: ${stateVerification.error}`,
+      'INVALID_STATE'
+    );
+  }
 
   // Exchange code for access token
   const config = {

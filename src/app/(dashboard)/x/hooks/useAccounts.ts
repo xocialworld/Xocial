@@ -4,17 +4,36 @@ import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { queryKeys } from '@/lib/react-query';
-import type { SocialAccount } from '@/types';
+import type { SocialAccount, SocialAccountMetrics } from '@/types';
 import { toast } from 'sonner';
+import { useSelectedWorkspace } from '@/store/workspaceStore';
+
+const DEFAULT_ACCOUNT_METRICS: SocialAccountMetrics = {
+  postsPublished: 0,
+  totalLikes: 0,
+  totalComments: 0,
+  totalShares: 0,
+  totalEngagement: 0,
+  avgEngagementRate: 0,
+  lastPublishedAt: null,
+  lastSyncedAt: null,
+  totalVideoViews: 0,
+};
 
 /**
  * Fetch social accounts for a workspace
  */
-async function fetchAccounts(workspaceId?: string): Promise<SocialAccount[]> {
+async function fetchAccounts(
+  workspaceId?: string,
+  filters?: { platform?: string; status?: 'active' | 'inactive'; owner?: 'me' | 'all' }
+): Promise<SocialAccount[]> {
   const params = new URLSearchParams();
   if (workspaceId) {
     params.set('workspaceId', workspaceId);
   }
+  if (filters?.platform) params.set('platform', filters.platform);
+  if (filters?.status) params.set('status', filters.status);
+  if (filters?.owner) params.set('owner', filters.owner);
 
   const response = await fetch(`/api/accounts${params.size ? `?${params.toString()}` : ''}`, {
     method: 'GET',
@@ -40,7 +59,11 @@ async function fetchAccounts(workspaceId?: string): Promise<SocialAccount[]> {
     throw new Error(message);
   }
 
-  return payload?.data?.accounts ?? [];
+  const accounts: SocialAccount[] = payload?.data?.accounts ?? [];
+  return accounts.map((account) => ({
+    ...account,
+    metrics: account.metrics ?? { ...DEFAULT_ACCOUNT_METRICS },
+  }));
 }
 
 /**
@@ -62,13 +85,19 @@ async function syncAccount(accountId: string): Promise<void> {
 /**
  * Disconnect a social account
  */
-async function disconnectAccount(accountId: string): Promise<void> {
+async function disconnectAccount(accountId: string, workspaceId?: string): Promise<void> {
   const supabase = createClient();
-  
-  const { error } = await supabase
+
+  let query = supabase
     .from('social_accounts')
     .update({ is_active: false })
     .eq('id', accountId);
+
+  if (workspaceId) {
+    query = query.eq('workspace_id', workspaceId);
+  }
+
+  const { error } = await query;
 
   if (error) throw error;
 }
@@ -76,32 +105,39 @@ async function disconnectAccount(accountId: string): Promise<void> {
 /**
  * Hook to fetch and manage social accounts with React Query
  */
-export function useAccounts(workspaceId?: string) {
+export function useAccounts(
+  workspaceId?: string,
+  filters?: { platform?: string; status?: 'active' | 'inactive'; owner?: 'me' | 'all' }
+) {
   const queryClient = useQueryClient();
   const supabase = createClient();
+  const selectedWorkspace = useSelectedWorkspace();
+  const activeWorkspaceId = workspaceId ?? selectedWorkspace?.id;
 
   // Fetch accounts with React Query
   const {
-    data: accounts = [],
+    data: accounts = [] as SocialAccount[],
     isLoading: loading,
     error,
     refetch,
   } = useQuery({
-    queryKey: queryKeys.accounts.list(workspaceId),
-    queryFn: () => fetchAccounts(workspaceId),
+    queryKey: queryKeys.accounts.list(JSON.stringify({ id: activeWorkspaceId, filters })),
+    queryFn: () => fetchAccounts(activeWorkspaceId, filters),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Set up real-time subscription
   useEffect(() => {
+    const channelName = `social_accounts_changes_${activeWorkspaceId ?? 'all'}`;
     const subscription = supabase
-      .channel('social_accounts_changes')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'social_accounts',
+          ...(activeWorkspaceId ? { filter: `workspace_id=eq.${activeWorkspaceId}` } : {}),
         },
         () => {
           // Invalidate and refetch accounts when changes occur
@@ -113,7 +149,7 @@ export function useAccounts(workspaceId?: string) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [queryClient, supabase]);
+  }, [activeWorkspaceId, queryClient, supabase]);
 
   // Sync account mutation
   const syncMutation = useMutation({
@@ -130,7 +166,7 @@ export function useAccounts(workspaceId?: string) {
 
   // Disconnect account mutation
   const disconnectMutation = useMutation({
-    mutationFn: disconnectAccount,
+    mutationFn: (id: string) => disconnectAccount(id, activeWorkspaceId),
     onMutate: async (accountId) => {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: queryKeys.accounts.all });

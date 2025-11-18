@@ -7,24 +7,29 @@ import { FacebookClient, createFacebookClient } from './facebook';
 import { InstagramClient, createInstagramClient } from './instagram';
 import { TwitterClient, createTwitterClient } from './twitter';
 import { LinkedInClient, createLinkedInClient } from './linkedin';
-import { YouTubeClient, createYouTubeClient } from './youtube';
+import { YouTubeClient, createYouTubeClient, publishToYouTube } from './youtube';
 import { TikTokClient, createTikTokClient } from './tiktok';
+import { retryWithBackoff, apiCircuitBreaker } from '@/lib/errors';
 
 export type Platform = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'youtube' | 'tiktok';
 
+export type PlatformContent = {
+  text: string;
+  mediaUrls?: string[];
+  link?: string;
+};
+
 export interface PublishRequest {
   platforms: Platform[];
-  content: {
-    text: string;
-    mediaUrls?: string[];
-    link?: string;
-  };
+  content: PlatformContent;
+  platformContent?: Partial<Record<Platform, PlatformContent>>;
   accountIds: Partial<Record<Platform, string>>; // Map of platform to account ID
   scheduledFor?: Date;
 }
 
 export interface PublishResult {
   platform: Platform;
+  accountId?: string;
   success: boolean;
   platformPostId?: string;
   error?: string;
@@ -46,10 +51,36 @@ export class PlatformPublisher {
           throw new Error(`No account ID for ${platform}`);
         }
 
-        const result = await this.publishToPlatform(platform, accountId, request.content, request.scheduledFor);
+        const platformSpecific =
+          request.platformContent?.[platform] ?? request.content;
+
+        const contentPayload: PlatformContent = {
+          text: platformSpecific.text ?? request.content.text,
+          mediaUrls: platformSpecific.mediaUrls ?? request.content.mediaUrls,
+          link: platformSpecific.link ?? request.content.link,
+        };
+
+        const result = await retryWithBackoff(
+          () =>
+            apiCircuitBreaker.execute(() =>
+              this.publishToPlatform(
+                platform,
+                accountId,
+                contentPayload,
+                request.scheduledFor
+              )
+            ),
+          {
+            maxRetries: 3,
+            initialDelay: 750,
+            maxDelay: 5000,
+            backoffMultiplier: 2,
+          }
+        );
         
         results.push({
           platform,
+          accountId,
           success: true,
           platformPostId: result.id,
           permalink: result.permalink,
@@ -57,6 +88,7 @@ export class PlatformPublisher {
       } catch (error: any) {
         results.push({
           platform,
+          accountId: request.accountIds[platform],
           success: false,
           error: error.message || 'Unknown error',
         });
@@ -73,7 +105,7 @@ export class PlatformPublisher {
   private async publishToPlatform(
     platform: Platform,
     accountId: string,
-    content: { text: string; mediaUrls?: string[]; link?: string },
+    content: PlatformContent,
     scheduledFor?: Date
   ): Promise<{ id: string; permalink?: string }> {
     switch (platform) {
@@ -242,19 +274,18 @@ export class PlatformPublisher {
     content: any,
     scheduledFor?: Date
   ): Promise<{ id: string }> {
-    const client = await createYouTubeClient(accountId);
-
     if (!content.mediaUrls || content.mediaUrls.length === 0) {
       throw new Error('YouTube requires a video file');
     }
 
-    const result = await client.uploadVideo({
-      title: content.text.substring(0, 100),
-      description: content.text,
+    const result = await publishToYouTube({
+      accountId,
       videoUrl: content.mediaUrls[0],
-      privacyStatus: scheduledFor ? 'private' : 'public',
-      publishAt: scheduledFor?.toISOString(),
+      title: content.text.substring(0, 100) || 'Untitled Video',
+      description: content.text || '',
       tags: this.extractHashtags(content.text),
+      privacyStatus: scheduledFor ? 'private' : 'public',
+      thumbnailUrl: content.mediaUrls[1], // Second media item as thumbnail if available
     });
 
     return { id: result.id };

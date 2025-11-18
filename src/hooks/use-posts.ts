@@ -6,11 +6,12 @@ import { queryKeys } from '@/lib/react-query';
 import type { Post } from '@/types';
 import { toast } from 'sonner';
 import { useEffect } from 'react';
+import { useSelectedWorkspace } from '@/store/workspaceStore';
 
 /**
  * Fetch posts for the current workspace
  */
-async function fetchPosts(filters?: Record<string, any>) {
+async function fetchPosts(workspaceId?: string, filters?: Record<string, any>) {
   const supabase = createClient();
   
   // Get current user
@@ -19,15 +20,31 @@ async function fetchPosts(filters?: Record<string, any>) {
     throw new Error('Not authenticated');
   }
 
-  // Get workspace
-  const { data: workspace } = await supabase
-    .from('workspaces')
-    .select('id')
-    .eq('owner_id', user.id)
-    .single();
+  // Determine workspace
+  let targetWorkspaceId = workspaceId;
 
-  if (!workspace) {
-    throw new Error('No workspace found');
+  if (!targetWorkspaceId) {
+    const { data: membership } = await supabase
+      .from('workspace_members')
+      .select('workspace_id')
+      .eq('user_id', user.id)
+      .order('joined_at', { ascending: true })
+      .maybeSingle();
+
+    if (membership?.workspace_id) {
+      targetWorkspaceId = membership.workspace_id;
+    } else {
+      const { data: fallbackWorkspace } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single();
+
+      if (!fallbackWorkspace) {
+        throw new Error('No workspace found');
+      }
+      targetWorkspaceId = fallbackWorkspace.id;
+    }
   }
 
   // Build query
@@ -37,7 +54,7 @@ async function fetchPosts(filters?: Record<string, any>) {
       *,
       post_analytics(*)
     `)
-    .eq('workspace_id', workspace.id)
+    .eq('workspace_id', targetWorkspaceId)
     .order('created_at', { ascending: false });
 
   // Apply filters
@@ -109,6 +126,7 @@ async function deletePost(id: string) {
 export function usePosts(filters?: Record<string, any>) {
   const queryClient = useQueryClient();
   const supabase = createClient();
+  const selectedWorkspace = useSelectedWorkspace();
 
   // Fetch posts with React Query
   const {
@@ -117,24 +135,25 @@ export function usePosts(filters?: Record<string, any>) {
     error,
     refetch,
   } = useQuery({
-    queryKey: queryKeys.posts.list(filters || {}),
-    queryFn: () => fetchPosts(filters),
+    queryKey: queryKeys.posts.list({ ...(filters || {}), workspaceId: selectedWorkspace?.id }),
+    queryFn: () => fetchPosts(selectedWorkspace?.id, filters),
     staleTime: 2 * 60 * 1000, // 2 minutes for posts
   });
 
   // Set up real-time subscription
   useEffect(() => {
+    const channelName = `posts_changes_${selectedWorkspace?.id ?? 'all'}`;
     const subscription = supabase
-      .channel('posts_changes')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'posts',
+          ...(selectedWorkspace?.id ? { filter: `workspace_id=eq.${selectedWorkspace.id}` } : {}),
         },
         () => {
-          // Invalidate and refetch posts when changes occur
           queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
         }
       )
@@ -143,7 +162,7 @@ export function usePosts(filters?: Record<string, any>) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [queryClient, supabase]);
+  }, [queryClient, supabase, selectedWorkspace?.id]);
 
   // Create post mutation
   const createMutation = useMutation({
@@ -250,6 +269,8 @@ export function usePosts(filters?: Record<string, any>) {
     refetch,
     createPost: createMutation.mutate,
     updatePost: (id: string, updates: Partial<Post>) => updateMutation.mutate({ id, updates }),
+    updatePostAsync: (id: string, updates: Partial<Post>) =>
+      updateMutation.mutateAsync({ id, updates }),
     deletePost: deleteMutation.mutate,
     isCreating: createMutation.isPending,
     isUpdating: updateMutation.isPending,

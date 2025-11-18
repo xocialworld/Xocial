@@ -8,11 +8,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { withErrorHandler } from '@/lib/api-middleware';
+import { env } from '@/lib/env';
 
 /**
  * Health check endpoint
  */
-export async function GET(request: NextRequest) {
+export const GET = withErrorHandler(async (request: NextRequest) => {
   const startTime = Date.now();
   const checks: Record<string, { status: 'ok' | 'error'; message?: string; duration?: number }> = {};
 
@@ -21,8 +23,11 @@ export async function GET(request: NextRequest) {
     try {
       const dbCheckStart = Date.now();
       const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
+        env.NEXT_PUBLIC_SUPABASE_URL,
+        env.SUPABASE_SERVICE_ROLE_KEY,
+        {
+          auth: { autoRefreshToken: false, persistSession: false },
+        }
       );
 
       const { error } = await supabase
@@ -46,18 +51,16 @@ export async function GET(request: NextRequest) {
     // Check 2: Environment variables
     try {
       const requiredEnvVars = [
-        'NEXT_PUBLIC_SUPABASE_URL',
-        'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-        'SUPABASE_SERVICE_ROLE_KEY',
+        !!env.NEXT_PUBLIC_SUPABASE_URL,
+        !!env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        !!env.SUPABASE_SERVICE_ROLE_KEY,
       ];
 
-      const missing = requiredEnvVars.filter((v) => !process.env[v]);
+      const missingCount = requiredEnvVars.filter((v) => !v).length;
 
       checks.environment = {
-        status: missing.length === 0 ? 'ok' : 'error',
-        message: missing.length === 0 
-          ? 'All required variables present' 
-          : `Missing: ${missing.join(', ')}`,
+        status: missingCount === 0 ? 'ok' : 'error',
+        message: missingCount === 0 ? 'All required variables present' : 'Missing required environment variables',
       };
     } catch (error: any) {
       checks.environment = {
@@ -66,16 +69,16 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    // Check 3: OpenAI API (optional)
-    if (process.env.OPENAI_API_KEY) {
-      checks.openai = {
+    // Check 3: Vercel AI Gateway
+    if (process.env.VERCEL_AI_GATEWAY_API_KEY) {
+      checks.aiGateway = {
         status: 'ok',
-        message: 'API key configured',
+        message: 'Gateway API key configured',
       };
     } else {
-      checks.openai = {
+      checks.aiGateway = {
         status: 'error',
-        message: 'API key not configured',
+        message: 'VERCEL_AI_GATEWAY_API_KEY missing',
       };
     }
 
@@ -102,7 +105,7 @@ export async function GET(request: NextRequest) {
       status: isHealthy ? 'healthy' : 'unhealthy',
       timestamp: new Date().toISOString(),
       uptime: typeof process !== 'undefined' ? process.uptime() : undefined,
-      environment: process.env.NODE_ENV,
+      environment: env.NODE_ENV,
       version: process.env.npm_package_version || '1.0.0',
       checks,
       duration: totalDuration,
@@ -129,7 +132,7 @@ export async function GET(request: NextRequest) {
       { status: 503 }
     );
   }
-}
+});
 
 // Prevent caching
 export const dynamic = 'force-dynamic';

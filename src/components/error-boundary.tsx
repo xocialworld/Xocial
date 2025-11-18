@@ -9,6 +9,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
+import { trackError } from '@/lib/monitoring';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -39,20 +40,14 @@ export class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // Log to error tracking service (e.g., Sentry)
+    // Log the error with component stack information
     console.error('Error Boundary caught error:', error, errorInfo);
 
-    // TODO: Send to monitoring service
-    // Example: logErrorToService(error, errorInfo);
-    if (typeof window !== 'undefined' && (window as any).Sentry) {
-      (window as any).Sentry.captureException(error, {
-        contexts: {
-          react: {
-            componentStack: errorInfo.componentStack,
-          },
-        },
-      });
-    }
+    // Track error for monitoring
+    trackError(error, {
+      componentStack: errorInfo.componentStack,
+      errorBoundary: true,
+    });
   }
 
   reset = () => {
@@ -86,7 +81,7 @@ function DefaultErrorFallback({ error, reset }: { error: Error; reset: () => voi
         </h1>
 
         <p className="text-gray-600 mb-6">
-          We encountered an unexpected error. Don't worry, your data is safe.
+          We encountered an unexpected error. Don&rsquo;t worry, your data is safe.
         </p>
 
         {process.env.NODE_ENV === 'development' && (

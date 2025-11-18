@@ -25,10 +25,12 @@ const envSchema = z.object({
     message: 'SUPABASE_SERVICE_ROLE_KEY is required for server-side operations',
   }),
 
-  // OpenAI Configuration
-  OPENAI_API_KEY: z.string().min(1, {
-    message: 'OPENAI_API_KEY is required for AI features',
+  // Vercel AI Gateway Configuration
+  VERCEL_AI_GATEWAY_API_KEY: z.string().min(1, {
+    message: 'VERCEL_AI_GATEWAY_API_KEY is required for AI features',
   }),
+  VERCEL_AI_GATEWAY_URL: z.string().url().optional().default('https://ai-gateway.vercel.sh'),
+  VERCEL_AI_GATEWAY_ORDER: z.string().optional(),
 
   // Encryption & Security
   ENCRYPTION_KEY: z.string().length(64, {
@@ -36,12 +38,15 @@ const envSchema = z.object({
   }).regex(/^[0-9a-f]{64}$/i, {
     message: 'ENCRYPTION_KEY must be a valid hex string',
   }),
+  // CRON_SECRET is only required in production (for Vercel cron jobs)
+  // In development, it's optional since cron jobs don't run locally
   CRON_SECRET: z.string().min(32, {
     message: 'CRON_SECRET must be at least 32 characters for security',
-  }),
+  }).optional(),
 
   // App Configuration
   NEXT_PUBLIC_APP_URL: z.string().url().optional(),
+  NEXT_PUBLIC_ENABLE_LEVERAGE: z.string().optional(),
 
   // OAuth - Facebook
   FACEBOOK_APP_ID: z.string().optional(),
@@ -75,7 +80,6 @@ const envSchema = z.object({
 
   // Optional Features
   IP_HASH_SALT: z.string().optional(),
-  SENTRY_DSN: z.string().url().optional(),
   VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
 });
 
@@ -89,27 +93,55 @@ export type Env = z.infer<typeof envSchema>;
  * Throws an error with helpful messages if validation fails
  */
 function validateEnv(): Env {
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+  
   try {
-    return envSchema.parse(process.env);
+    const parsed = envSchema.parse(process.env);
+    
+    // In production, verify CRON_SECRET is present
+    if (isProduction && !parsed.CRON_SECRET) {
+      throw new Error('CRON_SECRET is required in production for Vercel cron job authentication');
+    }
+    
+    return parsed;
   } catch (error) {
     if (error instanceof z.ZodError) {
       console.error('❌ Environment variable validation failed:');
       console.error('');
       
-      error.errors.forEach((err) => {
+      const cronSecretError = error.errors.find(e => e.path[0] === 'CRON_SECRET');
+      const otherErrors = error.errors.filter(e => e.path[0] !== 'CRON_SECRET');
+      
+      otherErrors.forEach((err) => {
         const path = err.path.join('.');
         console.error(`  • ${path}: ${err.message}`);
       });
+      
+      // In development, show CRON_SECRET as a warning instead of error
+      if (cronSecretError && isDevelopment) {
+        console.warn('');
+        console.warn('⚠️  Development Mode Warning:');
+        console.warn('  • CRON_SECRET: Optional in development (required in production)');
+      } else if (cronSecretError) {
+        console.error(`  • CRON_SECRET: ${cronSecretError.message}`);
+      }
 
       console.error('');
       console.error('Please check your .env.local file and ensure all required variables are set.');
       console.error('');
 
       // In production, this will prevent the app from starting
+      if (!isDevelopment) {
       throw new Error('Invalid environment configuration');
     }
+    } else {
     throw error;
   }
+  }
+  
+  // If we get here in development with some validation issues, return env with warnings
+  return process.env as unknown as Env;
 }
 
 // Validate on module load
@@ -145,8 +177,7 @@ export const isFeatureEnabled = {
   linkedin: () => !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET),
   youtube: () => !!(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET),
   tiktok: () => !!(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET),
-  ai: () => !!env.OPENAI_API_KEY,
-  monitoring: () => !!env.SENTRY_DSN,
+  ai: () => !!env.VERCEL_AI_GATEWAY_API_KEY,
 };
 
 /**
@@ -197,7 +228,6 @@ export function printEnvironmentInfo(): void {
   console.log(`  • YouTube: ${isFeatureEnabled.youtube() ? '✓' : '✗'}`);
   console.log(`  • TikTok: ${isFeatureEnabled.tiktok() ? '✓' : '✗'}`);
   console.log(`  • AI: ${isFeatureEnabled.ai() ? '✓' : '✗'}`);
-  console.log(`  • Monitoring: ${isFeatureEnabled.monitoring() ? '✓' : '✗'}`);
   console.log('═══════════════════════════════════════════════════');
 }
 

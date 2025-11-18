@@ -28,7 +28,7 @@ export default function ConnectAccountPage() {
       description: "Connect your Facebook pages to manage posts and insights",
       icon: "📘",
       color: "bg-[#1877F2]",
-      isConfigured: !!process.env.NEXT_PUBLIC_FACEBOOK_ENABLED || true,
+      isConfigured: !!process.env.NEXT_PUBLIC_FACEBOOK_ENABLED,
     },
     {
       id: "instagram",
@@ -36,7 +36,7 @@ export default function ConnectAccountPage() {
       description: "Connect Instagram Business accounts linked to your Facebook pages",
       icon: "📷",
       color: "bg-gradient-to-br from-[#F58529] via-[#DD2A7B] to-[#8134AF]",
-      isConfigured: !!process.env.NEXT_PUBLIC_FACEBOOK_ENABLED || true,
+      isConfigured: !!process.env.NEXT_PUBLIC_FACEBOOK_ENABLED,
     },
     {
       id: "twitter",
@@ -44,7 +44,7 @@ export default function ConnectAccountPage() {
       description: "Connect your Twitter account to schedule tweets and track engagement",
       icon: "🐦",
       color: "bg-[#1DA1F2]",
-      isConfigured: !!process.env.NEXT_PUBLIC_TWITTER_ENABLED || true,
+      isConfigured: !!process.env.NEXT_PUBLIC_TWITTER_ENABLED,
     },
     {
       id: "linkedin",
@@ -61,7 +61,7 @@ export default function ConnectAccountPage() {
       description: "Connect your YouTube channel to manage video uploads and analytics",
       icon: "🎥",
       color: "bg-[#FF0000]",
-      isConfigured: !!process.env.NEXT_PUBLIC_YOUTUBE_ENABLED || true,
+      isConfigured: !!process.env.NEXT_PUBLIC_YOUTUBE_ENABLED,
     },
     {
       id: "tiktok",
@@ -75,13 +75,15 @@ export default function ConnectAccountPage() {
   ];
 
   const handleConnect = async (platformId: string) => {
+    const platform = platforms.find(p => p.id === platformId);
+    if (platform && !platform.isConfigured) {
+      toast.error(`${platform.name} is not configured. Please contact your administrator.`);
+      return;
+    }
     setConnecting(platformId);
-    
     try {
-      // Redirect to OAuth initiation endpoint
-      window.location.href = `/api/oauth/connect?platform=${platformId}`;
+      window.location.href = `/api/oauth/connect?platform=${platformId}&redirect=/x`;
     } catch (error) {
-      console.error('Failed to initiate OAuth:', error);
       toast.error(`Failed to connect to ${platformId}. Please try again.`);
       setConnecting(null);
     }
@@ -193,7 +195,7 @@ export default function ConnectAccountPage() {
             <li>For Instagram: You must have a Business account linked to a Facebook page</li>
             <li>For YouTube: You must have a YouTube channel associated with your Google account</li>
             <li>
-              For platforms showing "Setup Required": Contact your administrator to configure credentials
+              For platforms showing &quot;Setup Required&quot;: Contact your administrator to configure credentials
             </li>
           </ul>
         </div>

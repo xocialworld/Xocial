@@ -2,18 +2,26 @@
 -- Migration for Meta Graph API v24.0 compatibility
 -- Date: 2025-11-04
 
--- Add views column alongside impressions (keep both for backward compatibility)
-ALTER TABLE post_analytics 
-ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_name = 'post_analytics'
+  ) THEN
+    ALTER TABLE public.post_analytics
+      ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0;
 
--- Backfill views from impressions for existing data
-UPDATE post_analytics 
-SET views = impressions 
-WHERE views = 0 AND impressions > 0;
+    UPDATE public.post_analytics
+    SET views = impressions
+    WHERE views = 0 AND impressions > 0;
 
--- Add index for better query performance
-CREATE INDEX IF NOT EXISTS idx_post_analytics_views 
-ON post_analytics(views DESC);
+    CREATE INDEX IF NOT EXISTS idx_post_analytics_views
+      ON public.post_analytics(views DESC);
+  ELSE
+    RAISE NOTICE 'Table public.post_analytics does not exist; skipping views column migration.';
+  END IF;
+END $$;
 
 -- Update RLS policies (no changes needed, just verify)
 -- Existing policies already cover the new column

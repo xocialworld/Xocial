@@ -32,28 +32,40 @@ export interface FacebookPage {
   access_token: string;
   category: string;
   tasks: string[];
+  category_list?: Array<{ id: string; name: string }>;
 }
 
 /**
  * Generate Facebook OAuth authorization URL
  */
-export function getFacebookAuthUrl(config: FacebookOAuthConfig, state: string): string {
+export function getFacebookAuthUrl(
+  config: FacebookOAuthConfig,
+  state: string,
+  includeInstagramScopes: boolean = false
+): string {
+  const scopes = [
+    'email',
+    'pages_show_list',
+    'pages_read_engagement',
+    'pages_manage_posts',
+    'pages_read_user_content',
+    'pages_manage_engagement',
+  ];
+
+  if (includeInstagramScopes) {
+    scopes.push(
+      'instagram_basic',
+      'instagram_content_publish',
+      'instagram_manage_comments',
+      'instagram_manage_insights'
+    );
+  }
+
   const params = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     state,
-    scope: [
-      'email',
-      'pages_show_list',
-      'pages_read_engagement',
-      'pages_manage_posts',
-      'pages_read_user_content',
-      'pages_manage_engagement',
-      'instagram_basic',
-      'instagram_content_publish',
-      'instagram_manage_comments',
-      'instagram_manage_insights',
-    ].join(','),
+    scope: scopes.join(','),
     response_type: 'code',
   });
 

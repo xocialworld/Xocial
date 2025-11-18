@@ -14,7 +14,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   const { user, supabase } = await requireAuth(request);
 
   // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
+  const workspace = await getUserWorkspace(user.id, supabase);
 
   // Get time range from query params
   const searchParams = request.nextUrl.searchParams;

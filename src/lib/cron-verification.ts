@@ -6,13 +6,39 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
+ * Check if running in development mode
+ */
+function isDevelopment(): boolean {
+  return process.env.NODE_ENV === 'development';
+}
+
+/**
  * Verify that a request is from a valid cron job
  * Checks the Authorization header for the cron secret
+ * 
+ * In development mode:
+ * - Allows requests without authentication (cron jobs don't run locally)
+ * - Logs a warning if CRON_SECRET is missing
+ * 
+ * In production mode:
+ * - Requires valid CRON_SECRET
+ * - Rejects requests with invalid or missing authentication
  */
 export function verifyCronRequest(request: NextRequest): boolean {
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
 
+  // In development, allow cron requests without verification
+  // since they're typically triggered manually for testing
+  if (isDevelopment()) {
+    if (!cronSecret) {
+      console.warn('[Cron Verification] ⚠️  CRON_SECRET not configured (OK in development)');
+    }
+    console.log('[Cron Verification] Development mode - allowing request');
+    return true;
+  }
+
+  // Production mode - strict verification required
   if (!cronSecret) {
     console.error('[Cron Verification] CRON_SECRET is not configured');
     return false;

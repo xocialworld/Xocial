@@ -16,9 +16,11 @@ const SelectContext = React.createContext<{
   onValueChange?: (value: string) => void;
   open: boolean;
   setOpen: (open: boolean) => void;
+  listId?: string;
 }>({
   open: false,
   setOpen: () => {},
+  listId: undefined,
 });
 
 // Main Select component (for the old API)
@@ -43,17 +45,16 @@ interface SelectProps {
   disabled?: boolean;
 }
 
-const Select: React.FC<SelectProps | SelectPropsOld> = (props) => {
-  // Check if using old API (has options prop)
-  if ('options' in props && props.options) {
-    return <SelectOld {...props as SelectPropsOld} />;
-  }
-  
-  // New API
-  const { value, onValueChange, defaultValue, children } = props as SelectProps;
+const SelectNew: React.FC<SelectProps> = ({
+  value,
+  onValueChange,
+  defaultValue,
+  children,
+}) => {
   const [internalValue, setInternalValue] = React.useState(defaultValue);
   const [open, setOpen] = React.useState(false);
-  
+  const listId = React.useId();
+
   const currentValue = value !== undefined ? value : internalValue;
 
   const handleValueChange = (newValue: string) => {
@@ -63,10 +64,20 @@ const Select: React.FC<SelectProps | SelectPropsOld> = (props) => {
   };
 
   return (
-    <SelectContext.Provider value={{ value: currentValue, onValueChange: handleValueChange, open, setOpen }}>
+    <SelectContext.Provider
+      value={{ value: currentValue, onValueChange: handleValueChange, open, setOpen, listId }}
+    >
       <div className="relative">{children}</div>
     </SelectContext.Provider>
   );
+};
+
+const SelectComponent: React.FC<SelectProps | SelectPropsOld> = (props) => {
+  if ('options' in props && props.options) {
+    return <SelectOld {...(props as SelectPropsOld)} />;
+  }
+
+  return <SelectNew {...(props as SelectProps)} />;
 };
 
 // Old API Select component
@@ -172,12 +183,13 @@ const SelectOld = React.forwardRef<HTMLDivElement, SelectPropsOld>(
     );
   }
 );
+SelectOld.displayName = "SelectOld";
 
 const SelectTrigger = React.forwardRef<
   HTMLButtonElement,
   React.ButtonHTMLAttributes<HTMLButtonElement> & { className?: string }
 >(({ className, children, ...props }, ref) => {
-  const { open, setOpen } = React.useContext(SelectContext);
+  const { open, setOpen, listId } = React.useContext(SelectContext);
 
   return (
     <button
@@ -185,6 +197,8 @@ const SelectTrigger = React.forwardRef<
       type="button"
       role="combobox"
       aria-expanded={open}
+      aria-controls={listId}
+      aria-haspopup="listbox"
       className={cn(
         "flex w-full items-center justify-between rounded-md border border-secondary-300 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-secondary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
         className
@@ -206,7 +220,7 @@ const SelectValue: React.FC<{ placeholder?: string; className?: string }> = ({ p
 };
 
 const SelectContent: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => {
-  const { open, setOpen } = React.useContext(SelectContext);
+  const { open, setOpen, listId } = React.useContext(SelectContext);
   const ref = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -230,6 +244,8 @@ const SelectContent: React.FC<{ children: React.ReactNode; className?: string }>
   return (
     <div
       ref={ref}
+      id={listId}
+      role="listbox"
       className={cn(
         "absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border bg-white shadow-lg",
         className
@@ -267,7 +283,9 @@ const SelectItem: React.FC<{
   );
 };
 
-Select.displayName = "Select";
+SelectComponent.displayName = "Select";
 
-export { Select, SelectTrigger, SelectValue, SelectContent, SelectItem };
+export const Select = SelectComponent;
+
+export { SelectTrigger, SelectValue, SelectContent, SelectItem };
 

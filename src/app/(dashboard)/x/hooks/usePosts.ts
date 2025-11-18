@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Post } from '@/types';
 import { toast } from 'sonner';
@@ -12,10 +12,10 @@ export function usePosts(workspaceId?: string, accountId?: string) {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const POSTS_PER_PAGE = 12;
 
-  const fetchPosts = async (pageNum: number = 1, append: boolean = false) => {
+  const fetchPosts = useCallback(async (pageNum: number = 1, append: boolean = false) => {
     try {
       setLoading(true);
       setError(null);
@@ -75,15 +75,17 @@ export function usePosts(workspaceId?: string, accountId?: string) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [supabase, workspaceId, accountId]);
 
-  const loadMore = () => {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchPosts(nextPage, true);
-  };
+  const loadMore = useCallback(() => {
+    setPage((prev) => {
+      const nextPage = prev + 1;
+      fetchPosts(nextPage, true);
+      return nextPage;
+    });
+  }, [fetchPosts]);
 
-  const deletePost = async (postId: string) => {
+  const deletePost = useCallback(async (postId: string) => {
     try {
       const { error: deleteError } = await supabase
         .from('posts')
@@ -97,9 +99,10 @@ export function usePosts(workspaceId?: string, accountId?: string) {
     } catch (err: any) {
       toast.error('Failed to delete post');
     }
-  };
+  }, [supabase]);
 
   useEffect(() => {
+    setPage(1);
     fetchPosts();
 
     // Subscribe to real-time updates
@@ -121,7 +124,7 @@ export function usePosts(workspaceId?: string, accountId?: string) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [workspaceId, accountId]);
+  }, [workspaceId, accountId, supabase, fetchPosts]);
 
   return {
     posts,

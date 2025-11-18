@@ -1,15 +1,20 @@
 /**
  * Cron Job: Refresh Expiring Tokens
- * Runs daily at 2 AM to refresh Facebook/Instagram tokens expiring within 7 days
+ * Runs daily at 2 AM to refresh tokens for all platforms expiring within 7 days
  * 
  * Triggered by: Vercel Cron
  * Schedule: 0 2 * * * (daily at 2 AM)
+ * 
+ * Platforms supported: Facebook, Instagram, YouTube, LinkedIn, Twitter, TikTok
  */
 
 import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { withCronVerification, cronSuccessResponse, cronErrorResponse } from '@/lib/cron-verification';
-import { refreshFacebookToken } from '@/lib/oauth/token-refresh';
+import { refreshMetaToken } from '@/lib/oauth/token-refresh';
+import { refreshYouTubeToken } from '@/lib/oauth/youtube';
+import { encryptToken, decryptToken } from '@/lib/encryption';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/cron/refresh-tokens
@@ -33,14 +38,15 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       }
     );
 
-    // Get all Facebook accounts expiring within 7 days
+    // Get all accounts with tokens expiring within 7 days (all platforms)
     const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     const { data: accounts, error: fetchError } = await supabase
       .from('social_accounts')
-      .select('id, account_name, token_expires_at')
-      .eq('platform', 'facebook')
+      .select('id, account_name, platform, token_expires_at, access_token, refresh_token')
+      .in('platform', ['facebook', 'instagram', 'youtube', 'linkedin', 'twitter', 'tiktok'])
       .eq('is_active', true)
+      .not('refresh_token', 'is', null)
       .lt('token_expires_at', sevenDaysFromNow.toISOString());
 
     if (fetchError) {
@@ -65,12 +71,59 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       const accountStartTime = Date.now();
       
       try {
-        console.log(`[Cron: Refresh Tokens] Refreshing token for account ${account.id}`);
-        const result = await refreshFacebookToken(account.id);
+        console.log(
+          `[Cron: Refresh Tokens] Refreshing token for ${account.platform} account ${account.id}`
+        );
+        
+        let result;
+        
+        // Handle different platforms
+        if (account.platform === 'facebook' || account.platform === 'instagram') {
+          result = await refreshMetaToken(account.id);
+        } else if (account.platform === 'youtube') {
+          // Decrypt refresh token
+          const decryptedRefreshToken = decryptToken(account.refresh_token);
+          
+          // Refresh YouTube token
+          const config = {
+            clientId: process.env.YOUTUBE_CLIENT_ID!,
+            clientSecret: process.env.YOUTUBE_CLIENT_SECRET!,
+            redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/api/oauth/youtube/callback`,
+          };
+          
+          const tokenResponse = await refreshYouTubeToken(config, decryptedRefreshToken);
+          
+          // Encrypt new tokens
+          const encryptedAccessToken = encryptToken(tokenResponse.access_token);
+          const encryptedRefreshToken = tokenResponse.refresh_token
+            ? encryptToken(tokenResponse.refresh_token)
+            : account.refresh_token;
+          
+          // Update in database
+          const { error: updateError } = await supabase
+            .from('social_accounts')
+            .update({
+              access_token: encryptedAccessToken,
+              refresh_token: encryptedRefreshToken,
+              token_expires_at: new Date(
+                Date.now() + tokenResponse.expires_in * 1000
+              ).toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', account.id);
+          
+          if (updateError) throw updateError;
+          
+          result = { success: true, platform: 'youtube' };
+        } else {
+          // Platform not yet implemented for token refresh
+          result = { success: false, error: `Token refresh not implemented for ${account.platform}` };
+        }
         
         results.push({
           accountId: account.id,
           accountName: account.account_name,
+          platform: account.platform,
           ...result,
           duration: Date.now() - accountStartTime,
         });
@@ -82,9 +135,23 @@ export const GET = withCronVerification(async (request: NextRequest) => {
         }
       } catch (error: any) {
         console.error(`[Cron: Refresh Tokens] Error refreshing account ${account.id}:`, error);
+        
+        // Mark account as inactive if refresh fails
+        await supabase
+          .from('social_accounts')
+          .update({
+            is_active: false,
+            metadata: {
+              token_refresh_error: error.message,
+              token_refresh_failed_at: new Date().toISOString(),
+            },
+          })
+          .eq('id', account.id);
+        
         results.push({
           accountId: account.id,
           accountName: account.account_name,
+          platform: account.platform,
           success: false,
           error: error.message,
           duration: Date.now() - accountStartTime,

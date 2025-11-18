@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element -- Header avatar falls back to social platform URLs requiring <img> usage */
 
 import * as React from "react";
 import Link from "next/link";
@@ -9,6 +10,7 @@ import { Bell, Search, Settings, LogOut, User } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { WorkspaceSwitcher } from "@/components/shared/workspace-switcher";
 
 interface HeaderProps {
   user?: {
@@ -40,6 +42,7 @@ export function Header({ user }: HeaderProps) {
       <div className="flex h-16 items-center justify-between px-6">
         {/* Search */}
         <div className="flex flex-1 items-center gap-4">
+          <WorkspaceSwitcher />
           <div className="relative max-w-md flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-secondary-500" />
             <input

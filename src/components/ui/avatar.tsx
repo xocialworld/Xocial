@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element -- Avatar component must support arbitrary image URLs and data URIs */
 
 import * as React from "react";
 import { cn } from "@/lib/utils";

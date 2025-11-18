@@ -5,7 +5,14 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+import { generateObject } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
+import { env } from '@/lib/env';
+
+const gatewayOpenAI = createOpenAI({
+  baseURL: `${env.VERCEL_AI_GATEWAY_URL}/v1`,
+  apiKey: env.VERCEL_AI_GATEWAY_API_KEY,
+});
 import { logger } from '../logger';
 
 export interface PerformanceData {
@@ -192,9 +199,7 @@ export async function generateRecommendations(
   performanceData: PerformanceData
 ): Promise<StrategyRecommendation[]> {
   try {
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
+    // Use shared gateway provider
 
     const prompt = `As a social media strategy expert, analyze this performance data and provide 5 actionable recommendations:
 
@@ -225,25 +230,22 @@ Provide recommendations in JSON format:
   ]
 }`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
+    const result = await generateObject({
+      model: gatewayOpenAI('openai/gpt-4o-mini'),
+      schema: {
+        parse(data: any) { return data as { recommendations: StrategyRecommendation[] }; },
+      } as any,
       messages: [
-        {
-          role: 'system',
-          content: 'You are an expert social media strategist. Provide data-driven recommendations based on performance analytics.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
+        { role: 'system', content: 'You are an expert social media strategist. Respond with ONLY valid JSON, no commentary.' },
+        { role: 'user', content: prompt },
       ],
       temperature: 0.7,
-      max_tokens: 2000,
-      response_format: { type: 'json_object' },
+      maxTokens: 2000,
+      providerOptions: { gateway: { order: ['openai'] } },
     });
 
-    const result = JSON.parse(completion.choices[0].message.content || '{}');
-    return result.recommendations || [];
+    const data = result.object as any;
+    return (data?.recommendations ?? []) as StrategyRecommendation[];
   } catch (error) {
     logger.error('AI recommendation generation failed', error as Error);
     
@@ -487,11 +489,6 @@ export async function generateContentIdeas(
     if (!performanceData) {
       return [];
     }
-
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-
     const prompt = `Based on this social media performance data, generate ${count} engaging content ideas:
 
 Top Platform: ${performanceData.topPerformingPlatform}
@@ -509,25 +506,28 @@ Generate diverse content ideas that would perform well. Return as JSON:
   ]
 }`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
+    const result = await generateObject({
+      model: gatewayOpenAI('openai/gpt-4o-mini'),
+      schema: {
+        // Minimal runtime validation; we only need the ideas array
+        parse(data: any) { return data as { ideas: Array<{ title: string; description: string; platforms: string[] }> }; },
+      } as any,
       messages: [
         {
           role: 'system',
-          content: 'You are a creative social media content strategist.',
+          content:
+            'You are a creative social media content strategist. Respond with ONLY valid JSON, no commentary.',
         },
-        {
-          role: 'user',
-          content: prompt,
-        },
+        { role: 'user', content: prompt },
       ],
       temperature: 0.8,
-      max_tokens: 1500,
-      response_format: { type: 'json_object' },
+      maxTokens: 1500,
+      providerOptions: { gateway: { order: ['openai'] } },
     });
 
-    const result = JSON.parse(completion.choices[0].message.content || '{}');
-    return result.ideas || [];
+    const data = result.object as any;
+    const ideas = data?.ideas || [];
+    return ideas;
   } catch (error) {
     logger.error('Content idea generation failed', error as Error);
     return [];

@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element -- Calendar previews surface stored media where Next Image constraints are impractical */
 
 import * as React from "react";
 import { format } from "date-fns";
@@ -44,7 +45,7 @@ export function DayPostsPanel({
   });
 
   return (
-    <div className="flex h-full flex-col bg-white border-l border-secondary-200">
+    <div className="flex h-full flex-col bg-white sm:border-l border-secondary-200">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-secondary-200 px-6 py-4">
         <div>

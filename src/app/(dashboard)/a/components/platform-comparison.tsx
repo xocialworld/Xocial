@@ -33,7 +33,7 @@ export function PlatformComparison({ data }: PlatformComparisonProps) {
   }));
 
   return (
-    <Card className="p-6">
+    <Card className="p-6" role="region" aria-label="Platform comparison chart">
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-gray-900">Platform Comparison</h3>
         <p className="text-sm text-gray-500 mt-1">

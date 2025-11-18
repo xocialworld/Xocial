@@ -49,13 +49,20 @@ export async function getInstagramBusinessAccounts(
 /**
  * Create Instagram media container (for images)
  */
+type InstagramMediaContent =
+  | {
+      image_url: string;
+      caption: string;
+    }
+  | {
+      video_url: string;
+      caption: string;
+    };
+
 export async function createInstagramMediaContainer(
   igAccountId: string,
   accessToken: string,
-  content: {
-    image_url: string;
-    caption: string;
-  }
+  content: InstagramMediaContent
 ): Promise<{ id: string }> {
   const response = await fetch(
     `https://graph.facebook.com/v24.0/${igAccountId}/media`,
@@ -65,8 +72,7 @@ export async function createInstagramMediaContainer(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        image_url: content.image_url,
-        caption: content.caption,
+        ...content,
         access_token: accessToken,
       }),
     }
@@ -86,7 +92,8 @@ export async function createInstagramMediaContainer(
 export async function publishInstagramMedia(
   igAccountId: string,
   accessToken: string,
-  creationId: string
+  creationId: string,
+  publishTime?: Date
 ): Promise<{ id: string }> {
   const response = await fetch(
     `https://graph.facebook.com/v24.0/${igAccountId}/media_publish`,
@@ -98,6 +105,11 @@ export async function publishInstagramMedia(
       body: JSON.stringify({
         creation_id: creationId,
         access_token: accessToken,
+        ...(publishTime
+          ? {
+              publish_time: Math.floor(publishTime.getTime() / 1000),
+            }
+          : {}),
       }),
     }
   );

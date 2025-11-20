@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { logger } from '@/lib/logger';
 import { slugify } from '@/lib/utils';
@@ -116,6 +117,30 @@ export async function requireAuth(request: NextRequest) {
   return { user, supabase };
 }
 
+/**
+ * Create a Supabase client with service role to bypass RLS
+ * Use ONLY for admin operations like workspace creation
+ */
+function createServiceRoleClient(): SupabaseClient {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new APIError(
+      500,
+      'Supabase service role credentials not configured',
+      'SERVICE_ROLE_NOT_CONFIGURED'
+    );
+  }
+
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
 type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'viewer' | 'client';
 
 async function ensureWorkspaceMembership(
@@ -140,10 +165,16 @@ async function ensureWorkspaceMembership(
   }
 }
 
+/**
+ * Create workspace for user using service role to bypass RLS
+ * This prevents infinite recursion in workspace policies
+ */
 async function createWorkspaceForUser(
-  supabase: SupabaseClient,
   profile: { id: string; name: string; email?: string | null }
 ) {
+  // Use service role client to bypass RLS policies
+  const serviceClient = createServiceRoleClient();
+
   const baseName =
     profile.name?.trim() ||
     profile.email?.split('@')[0] ||
@@ -156,7 +187,8 @@ async function createWorkspaceForUser(
   const uniqueSuffix = profile.id.replace(/-/g, '').slice(0, 8);
   const slug = `${slugBase}-${uniqueSuffix}`;
 
-  const { data: newWorkspace, error } = await supabase
+  // Create workspace with service role (bypasses RLS)
+  const { data: newWorkspace, error } = await serviceClient
     .from('workspaces')
     .insert({
       name: workspaceName,
@@ -167,10 +199,22 @@ async function createWorkspaceForUser(
     .single();
 
   if (error || !newWorkspace) {
+    logger.error('Failed to create workspace', error as Error, {
+      userId: profile.id,
+      workspaceName,
+    });
     throw new APIError(500, `Failed to create workspace: ${error?.message}`, 'WORKSPACE_CREATE_FAILED');
   }
 
-  await ensureWorkspaceMembership(supabase, newWorkspace.id, profile.id, 'owner');
+  // Create workspace membership with service role (bypasses RLS)
+  await ensureWorkspaceMembership(serviceClient, newWorkspace.id, profile.id, 'owner');
+
+  logger.info('Workspace created successfully', {
+    workspaceId: newWorkspace.id,
+    userId: profile.id,
+    workspaceName: newWorkspace.name,
+  });
+
   return newWorkspace;
 }
 
@@ -179,7 +223,7 @@ async function createWorkspaceForUser(
  */
 export async function getUserWorkspace(userId: string, existingClient?: SupabaseClient) {
   const supabase = existingClient ?? await createClient();
-  
+
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('id, name, email')
@@ -215,7 +259,9 @@ export async function getUserWorkspace(userId: string, existingClient?: Supabase
     return ownedWorkspace;
   }
 
-  return createWorkspaceForUser(supabase, profile);
+  // No existing workspace found, create a new one
+  // Note: createWorkspaceForUser uses service role client internally
+  return createWorkspaceForUser(profile);
 }
 
 export async function getWorkspaceFromRequest(
@@ -265,7 +311,7 @@ export async function checkWorkspaceAccess(
   workspaceId: string
 ) {
   const supabase = await createClient();
-  
+
   const { data, error } = await supabase
     .from('workspace_members')
     .select('role')
@@ -356,7 +402,7 @@ export function withErrorHandler(
       return await handler(request, context);
     } catch (error) {
       logger.error('API Error', error as Error);
-      
+
       if (error instanceof APIError) {
         return errorResponse(error);
       }
@@ -382,7 +428,7 @@ export async function logAPICall(
   error?: string
 ) {
   const supabase = await createClient();
-  
+
   await supabase.from('api_call_logs').insert({
     workspace_id: workspaceId,
     user_id: userId,
@@ -403,7 +449,7 @@ export function handleAPIError(error: unknown): NextResponse {
   } else {
     logger.error('API Error (unknown)', new Error(String(error)));
   }
-  
+
   if (error instanceof APIError) {
     return errorResponse(error);
   }

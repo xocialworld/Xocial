@@ -6,7 +6,9 @@ import { Plus } from "lucide-react";
 import { CalendarGrid } from "./components/calendar-grid";
 import { DayPostsPanel } from "./components/day-posts-panel";
 import { RescheduleModal } from "./components/reschedule-modal";
+import { EditPostModal } from "./components/edit-post-modal";
 import { usePosts } from "@/hooks/use-posts";
+import { useCalendarShortcuts } from "@/hooks/use-calendar-shortcuts";
 import { Spinner } from "@/components/ui/spinner";
 import type { Post, Platform } from "@/types";
 import { toast } from "sonner";
@@ -16,6 +18,7 @@ import {
   useCalendarFiltersStore,
 } from "@/store/calendarFiltersStore";
 import { useRouter } from "next/navigation";
+import { useCalendarPrefetch } from "@/components/calendar-prefetcher";
 
 export default function OPage() {
   const router = useRouter();
@@ -23,6 +26,7 @@ export default function OPage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [reschedulePost, setReschedulePost] = useState<{ id: string; date: Date } | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [editingPost, setEditingPost] = useState<Post | null>(null);
   const {
     platforms: platformFilters,
     statuses: statusFilters,
@@ -42,13 +46,13 @@ export default function OPage() {
   // Filter posts for selected date
   const selectedDatePosts = selectedDate
     ? filteredPosts.filter((post) => {
-        const postDate = new Date(post.scheduled_at || post.published_at || post.created_at);
-        return (
-          postDate.getFullYear() === selectedDate.getFullYear() &&
-          postDate.getMonth() === selectedDate.getMonth() &&
-          postDate.getDate() === selectedDate.getDate()
-        );
-      })
+      const postDate = new Date(post.scheduled_at || post.published_at || post.created_at);
+      return (
+        postDate.getFullYear() === selectedDate.getFullYear() &&
+        postDate.getMonth() === selectedDate.getMonth() &&
+        postDate.getDate() === selectedDate.getDate()
+      );
+    })
     : [];
 
   const handleReschedule = async (postId: string) => {
@@ -100,12 +104,78 @@ export default function OPage() {
     if (!confirm('Are you sure you want to delete this post?')) return;
 
     try {
+      // Generate restore token
+      const restoreToken = `restore_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Store token in post metadata before deleting
+      await updatePostAsync(postId, {
+        metadata: {
+          restore_token: restoreToken,
+          deleted_at: new Date().toISOString(),
+        },
+      });
+
       await deletePost(postId);
-      toast.success('Post deleted successfully');
+
+      // Show undo toast
+      const undoToast = toast.success('Post deleted', {
+        description: 'You can undo this action',
+        duration: 5000,
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            try {
+              const response = await fetch('/api/posts/scheduled/restore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ post_id: postId, restore_token: restoreToken }),
+              });
+
+              if (response.ok) {
+                toast.success('Post restored');
+                // Trigger a refetch
+                window.location.reload();
+              } else {
+                const error = await response.json();
+                toast.error(error.hint || 'Failed to restore post');
+              }
+            } catch (error) {
+              toast.error('Failed to restore post');
+            }
+          },
+        },
+      });
     } catch (error) {
       toast.error('Failed to delete post');
     }
   };
+
+  // Keyboard shortcuts
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  useCalendarShortcuts({
+    onPrevMonth: () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1)),
+    onNextMonth: () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1)),
+    onToday: () => {
+      setCurrentMonth(new Date());
+      setSelectedDate(new Date());
+    },
+    onNewPost: () => {
+      const date = selectedDate ?? new Date();
+      const prefillDate = new Date(date);
+      prefillDate.setHours(10, 0, 0, 0);
+      router.push(`/c?date=${encodeURIComponent(prefillDate.toISOString())}`);
+    },
+    onClosePanel: () => setSelectedDate(null),
+    onTogglePlatform: (index) => {
+      if (index < platformOptions.length) {
+        togglePlatform(platformOptions[index]);
+      }
+    },
+  });
+
+  // Prefetch adjacent months for better performance
+  useCalendarPrefetch(currentMonth);
 
   if (loading && posts.length === 0) {
     return (
@@ -204,7 +274,7 @@ export default function OPage() {
             date={selectedDate}
             posts={selectedDatePosts}
             onClose={() => setSelectedDate(null)}
-            onEditPost={setSelectedPost}
+            onEditPost={setEditingPost}
             onDeletePost={handleDeletePost}
             onReschedulePost={handleReschedule}
           />
@@ -220,6 +290,17 @@ export default function OPage() {
           onReschedule={handleRescheduleSubmit}
         />
       )}
+
+      {/* Edit Post Modal */}
+      <EditPostModal
+        post={editingPost}
+        isOpen={!!editingPost}
+        onClose={() => setEditingPost(null)}
+        onSave={async (postId, updates) => {
+          await updatePostAsync(postId, updates);
+          setEditingPost(null);
+        }}
+      />
     </div>
   );
 }

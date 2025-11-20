@@ -21,7 +21,7 @@ import { logger } from '@/lib/logger';
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
   const { user, supabase } = await requireAuth(request);
-  
+
   // Basic rate limiting to protect the Analytics API/quota
   const limited = checkRateLimit(`${user.id}:analytics:youtube`, 60, 60_000);
   if (!limited) {
@@ -37,14 +37,14 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   const dimensions = searchParams.get('dimensions') || 'day';
   const maxResults = Math.min(parseInt(searchParams.get('maxResults') || '200', 10) || 200, 200);
   const startIndex = Math.max(parseInt(searchParams.get('startIndex') || '1', 10) || 1, 1);
-  
+
   if (!accountId) {
     throw new APIError(400, 'accountId parameter is required', 'MISSING_ACCOUNT_ID');
   }
-  
+
   // Get user's workspace
   const workspace = await getUserWorkspace(user.id, supabase);
-  
+
   // Get YouTube account
   const { data: account, error: accountError } = await supabase
     .from('social_accounts')
@@ -54,19 +54,19 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     .eq('platform', 'youtube')
     .eq('is_active', true)
     .single();
-  
+
   if (accountError || !account) {
     throw new APIError(404, 'YouTube account not found', 'ACCOUNT_NOT_FOUND');
   }
-  
+
   // Decrypt access token
   const accessToken = decryptToken(account.access_token);
-  
+
   try {
     if (videoId) {
       // Fetch specific video analytics
       const videoStats = await fetchYouTubeVideoAnalytics(accessToken, videoId);
-      
+
       return NextResponse.json({
         success: true,
         data: videoStats,
@@ -81,7 +81,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         endDate,
         { metrics, dimensions, maxResults, startIndex }
       );
-      
+
       return NextResponse.json({
         success: true,
         data: channelStats,
@@ -99,7 +99,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
       userId: user.id,
       accountId,
     });
-    
+
     throw new APIError(500, `Failed to fetch YouTube analytics: ${error.message}`, 'ANALYTICS_FAILED');
   }
 });
@@ -194,7 +194,7 @@ async function fetchYouTubeChannelAnalytics(
     let errorBody: any = {};
     try {
       errorBody = await response.json();
-    } catch {}
+    } catch { }
     // 403 Forbidden is most often missing analytics scope
     if (response.status === 403) {
       throw new APIError(
@@ -307,12 +307,13 @@ async function fetchBasicChannelStats(
   accessToken: string,
   channelId: string
 ): Promise<any> {
-  const params = new URLSearchParams({
+  // First try: Fetch by channel ID
+  let params = new URLSearchParams({
     part: 'statistics,snippet',
     id: channelId,
   });
 
-  const response = await fetch(
+  let response = await fetch(
     `https://www.googleapis.com/youtube/v3/channels?${params.toString()}`,
     {
       headers: {
@@ -321,26 +322,69 @@ async function fetchBasicChannelStats(
     }
   );
 
-  if (!response.ok) {
-    throw new Error('Failed to fetch basic channel stats');
+  let data: any = null;
+  let channel: any = null;
+
+  if (response.ok) {
+    data = await response.json();
+    channel = data.items?.[0];
   }
 
-  const data = await response.json();
-  const channel = data.items?.[0];
+  // Fallback: If channel not found by ID, try using mine=true
+  if (!channel) {
+    logger.warn('Channel not found by ID, trying mine=true fallback', { channelId });
+
+    params = new URLSearchParams({
+      part: 'statistics,snippet',
+      mine: 'true',
+    });
+
+    response = await fetch(
+      `https://www.googleapis.com/youtube/v3/channels?${params.toString()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      logger.error('Failed to fetch basic channel stats with mine=true', new Error(response.statusText), {
+        status: response.status,
+        statusText: response.statusText,
+        errorBody,
+        channelId,
+      });
+      throw new Error(`Failed to fetch basic channel stats: ${response.status} ${response.statusText}`);
+    }
+
+    data = await response.json();
+    channel = data.items?.[0];
+  }
 
   if (!channel) {
-    throw new Error('Channel not found');
+    logger.error('No channel data returned from YouTube API', new Error('Channel not found'), {
+      channelId,
+      responseData: data,
+    });
+    throw new Error('Channel not found - no channel data returned from YouTube API');
   }
 
+  logger.info('Successfully fetched basic channel stats', {
+    channelId: channel.id,
+    channelTitle: channel.snippet?.title,
+  });
+
   return {
-    channelId,
+    channelId: channel.id,
     metrics: {
-      totalViews: parseInt(channel.statistics.viewCount || '0'),
+      totalViews: parseInt(channel.statistics?.viewCount || '0'),
       totalWatchTimeMinutes: 0,
       averageViewDurationSeconds: 0,
       subscribersGained: 0,
       subscribersLost: 0,
-      netSubscribers: parseInt(channel.statistics.subscriberCount || '0'),
+      netSubscribers: parseInt(channel.statistics?.subscriberCount || '0'),
       likes: 0,
       comments: 0,
       shares: 0,

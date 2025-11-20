@@ -18,7 +18,7 @@ const config: Config = {
       // Import all design tokens (with normalized z-index)
       ...tailwindThemeWithoutZIndex,
       ...(normalizedZIndex ? { zIndex: normalizedZIndex } : {}),
-      
+
       // Additional custom values
       colors: {
         ...tailwindTheme.colors,
@@ -29,7 +29,7 @@ const config: Config = {
           foreground: tailwindTheme.colors.gray[400],
         },
       },
-      
+
       // Container with responsive padding
       container: {
         center: true,
@@ -48,6 +48,15 @@ const config: Config = {
           xl: '1280px',
           '2xl': '1536px',
         },
+      },
+
+      // SRS-specified shadow utilities (Section 2.1.2)
+      boxShadow: {
+        ...tailwindTheme.boxShadow,
+        'soft': '0 2px 8px rgba(0, 0, 0, 0.04)',
+        'medium': '0 4px 16px rgba(0, 0, 0, 0.08)',
+        'strong': '0 8px 32px rgba(0, 0, 0, 0.12)',
+        'glow': '0 0 20px rgba(20, 184, 166, 0.3)',
       },
 
       // Animation keyframes
@@ -76,6 +85,10 @@ const config: Config = {
           '0%': { transform: 'translateX(100%)' },
           '100%': { transform: 'translateX(0)' },
         },
+        'slide-up': {
+          '0%': { transform: 'translateY(20px)', opacity: '0' },
+          '100%': { transform: 'translateY(0)', opacity: '1' },
+        },
         'scale-in': {
           '0%': { transform: 'scale(0.95)', opacity: '0' },
           '100%': { transform: 'scale(1)', opacity: '1' },
@@ -89,15 +102,16 @@ const config: Config = {
           '50%': { opacity: '0.5' },
         },
       },
-      
+
       animation: {
-        'fade-in': 'fade-in 150ms ease-out',
+        'fade-in': 'fade-in 0.3s ease-in-out',
         'fade-out': 'fade-out 150ms ease-in',
         'slide-in-from-top': 'slide-in-from-top 250ms ease-out',
         'slide-in-from-bottom': 'slide-in-from-bottom 250ms ease-out',
         'slide-in-from-left': 'slide-in-from-left 250ms ease-out',
         'slide-in-from-right': 'slide-in-from-right 250ms ease-out',
-        'scale-in': 'scale-in 200ms ease-out',
+        'slide-up': 'slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+        'scale-in': 'scale-in 0.2s ease-out',
         'spin': 'spin 1s linear infinite',
         'pulse': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
       },

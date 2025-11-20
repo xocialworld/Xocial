@@ -4,9 +4,10 @@ import {
 	getUserWorkspace,
 	APIError,
 } from '@/lib/api-middleware';
+import { logger } from '@/lib/logger';
 import {
-  exchangeYouTubeCode,
-  getYouTubeChannels,
+	exchangeYouTubeCode,
+	getYouTubeChannels,
 } from '@/lib/oauth/youtube';
 import { verifyOAuthState } from '@/lib/oauth/state-manager';
 import { encryptToken } from '@/lib/encryption';
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
 		const error = searchParams.get('error');
 
 		if (error) {
-			throw new APIError(400, `YouTube OAuth error: ${error}`, 'OAUTH_ERROR');
+			throw new APIError(400, `YouTube OAuth error: ${error} `, 'OAUTH_ERROR');
 		}
 
 		if (!code) {
@@ -41,17 +42,17 @@ export async function GET(request: NextRequest) {
 		if (!stateVerification.valid) {
 			throw new APIError(
 				403,
-				`OAuth state verification failed: ${stateVerification.error}`,
+				`OAuth state verification failed: ${stateVerification.error} `,
 				'INVALID_STATE'
 			);
 		}
 
-    const origin = request.nextUrl.origin || (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
-    const config = {
-      clientId: process.env.YOUTUBE_CLIENT_ID!,
-      clientSecret: process.env.YOUTUBE_CLIENT_SECRET!,
-      redirectUri: `${origin}/api/oauth/youtube/callback`,
-    };
+		const origin = request.nextUrl.origin || (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+		const config = {
+			clientId: process.env.YOUTUBE_CLIENT_ID!,
+			clientSecret: process.env.YOUTUBE_CLIENT_SECRET!,
+			redirectUri: `${origin} /api/oauth / youtube / callback`,
+		};
 
 		const tokenResponse = await exchangeYouTubeCode(config, code);
 
@@ -62,8 +63,8 @@ export async function GET(request: NextRequest) {
 			throw new APIError(404, 'No YouTube channels found for this account', 'NO_CHANNELS');
 		}
 
-		// Get user's workspace
-		const workspace = await getUserWorkspace(user.id);
+		// Get user's workspace (pass authenticated client)
+		const workspace = await getUserWorkspace(user.id, supabase);
 
 		// Store each channel as a separate social account with encrypted tokens
 		const accounts = await Promise.all(
@@ -115,7 +116,7 @@ export async function GET(request: NextRequest) {
 		);
 
 		// Redirect back to the UI with success message
-    const appUrl = request.nextUrl.origin || (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+		const appUrl = request.nextUrl.origin || (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
 		const redirectPath = stateVerification.redirectUrl || '/x';
 		const redirectUrl = new URL(redirectPath, appUrl);
 		redirectUrl.searchParams.set(
@@ -124,8 +125,10 @@ export async function GET(request: NextRequest) {
 		);
 		return NextResponse.redirect(redirectUrl);
 	} catch (error) {
+		logger.error('YouTube OAuth Callback Error', error as Error);
+
 		// Redirect back to the UI with error message
-    const appUrl = request.nextUrl.origin || (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+		const appUrl = request.nextUrl.origin || (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
 		const redirectUrl = new URL('/x', appUrl);
 		redirectUrl.searchParams.set(
 			'error',

@@ -33,6 +33,8 @@ import {
 import { logger } from '@/lib/logger';
 import type { Platform } from '@/types';
 import { AI_MODELS } from '@/lib/ai/models';
+import { useAIShortcuts } from '@/hooks/use-ai-shortcuts';
+import { PlatformPreviewCard } from './platform-preview-card';
 
 type SchedulePayload = {
   content: string;
@@ -198,6 +200,26 @@ export function AIContentClient({ onSchedule }: AIContentClientProps = {}) {
     },
     [onSchedule, router]
   );
+
+  // Keyboard shortcuts
+  useAIShortcuts({
+    onGenerate: handleGenerate,
+    onRefine: handleRefine,
+    onVariations: handleVariations,
+    onCopy: () => {
+      const platform = activePlatform ?? options.platforms[0];
+      const content = platform ? platformContent?.[platform]?.text : '';
+      if (content) {
+        handleCopy(content);
+      }
+    },
+    onSwitchPlatform: (index) => {
+      const platform = options.platforms[index];
+      if (platform) {
+        useAIContentStore.getState().setActivePlatform(platform);
+      }
+    },
+  });
 
   return (
     <div className="grid gap-6 xl:grid-cols-[2fr_3fr]">

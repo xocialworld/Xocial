@@ -90,6 +90,14 @@ export interface Post {
   created_at: string;
   updated_at: string;
   metadata?: Record<string, unknown> | null;
+  metrics?: {
+    likes?: number;
+    comments?: number;
+    shares?: number;
+    saves?: number;
+    views?: number;
+    engagement_rate?: number;
+  };
 }
 
 export interface PostContentEntry {

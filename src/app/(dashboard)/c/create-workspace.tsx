@@ -48,13 +48,13 @@ export function CreateWorkspace() {
       const state = useAIContentStore.getState();
       const aiContext = state.generation
         ? {
-            generationId: state.generation.generationId,
-            prompt: state.prompt,
-            model: state.options.model,
-            tone: state.options.tone,
-            style: state.options.style,
-            length: state.options.length,
-          }
+          generationId: state.generation.generationId,
+          prompt: state.prompt,
+          model: state.options.model,
+          tone: state.options.tone,
+          style: state.options.style,
+          length: state.options.length,
+        }
         : undefined;
 
       setPrefill({

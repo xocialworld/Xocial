@@ -85,7 +85,7 @@ export function PostComposer({ prefill }: PostComposerProps = {}) {
       if (Object.keys(valid).length > 0) {
         setSelectedAccounts(valid);
       }
-    } catch {}
+    } catch { }
   }, [activeWorkspaceId, accounts, platformPrefill, selectedAccounts]);
 
   // Apply query param prefills
@@ -220,7 +220,7 @@ export function PostComposer({ prefill }: PostComposerProps = {}) {
         .eq('is_active', true);
 
       setAccounts((data as SocialAccount[]) || []);
-      
+
       logger.debug('Fetched social accounts', {
         workspaceId: targetWorkspaceId,
         count: data?.length || 0,
@@ -286,7 +286,7 @@ export function PostComposer({ prefill }: PostComposerProps = {}) {
 
     try {
       setIsPublishing(true);
-      
+
       // Log publish attempt
       logger.info('Post publish initiated', {
         workspaceId: activeWorkspaceId,
@@ -348,7 +348,7 @@ export function PostComposer({ prefill }: PostComposerProps = {}) {
       }
 
       const duration = Date.now() - startTime;
-      
+
       // Log success
       logger.info('Post published successfully', {
         workspaceId: activeWorkspaceId,
@@ -367,8 +367,8 @@ export function PostComposer({ prefill }: PostComposerProps = {}) {
         isDraft
           ? 'Draft saved'
           : scheduledAt
-          ? 'Post scheduled successfully'
-          : 'Post published successfully'
+            ? 'Post scheduled successfully'
+            : 'Post published successfully'
       );
 
       setContent('');
@@ -392,7 +392,7 @@ export function PostComposer({ prefill }: PostComposerProps = {}) {
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : 'Failed to publish post';
-      
+
       // Log error with full context
       logger.error('Post publish failed', error instanceof Error ? error : undefined, {
         workspaceId: activeWorkspaceId,
@@ -407,7 +407,7 @@ export function PostComposer({ prefill }: PostComposerProps = {}) {
           errorMessage,
         },
       });
-      
+
       toast.error(errorMessage);
     } finally {
       setIsPublishing(false);
@@ -435,7 +435,7 @@ export function PostComposer({ prefill }: PostComposerProps = {}) {
           const key = `xocial:lastSelectedAccounts:${activeWorkspaceId}`;
           window.localStorage.setItem(key, JSON.stringify(next));
         }
-      } catch {}
+      } catch { }
       return next;
     });
   };
@@ -498,7 +498,7 @@ export function PostComposer({ prefill }: PostComposerProps = {}) {
           >
             Save Draft
           </Button>
-          
+
           <Button
             onClick={() => handlePublish(false)}
             disabled={isPublishing || validateInputs().length > 0}
@@ -530,9 +530,9 @@ export function PostComposer({ prefill }: PostComposerProps = {}) {
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Preview
           </h3>
-          
+
           {selectedPlatforms.length > 0 ? (
-            <Tabs value={activeTab} onValueChange={(value) => {}}>
+            <Tabs value={activeTab} onValueChange={(value) => { }}>
               <TabsList>
                 {selectedPlatforms.map(p => (
                   <TabsTrigger key={p} value={p}>

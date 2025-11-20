@@ -61,6 +61,11 @@ export interface YouTubeVideo {
     likeCount: string;
     commentCount: string;
   };
+  contentDetails?: {
+    duration: string; // ISO 8601 duration (e.g. PT1M)
+    dimension?: string;
+    definition?: string;
+  };
 }
 
 /**
@@ -118,7 +123,7 @@ export async function exchangeYouTubeCode(
     try {
       const error = await response.json();
       description = error.error_description || error.error || description;
-    } catch {}
+    } catch { }
     // Use APIError so our handler preserves the message
     const { APIError } = await import('@/lib/api-middleware');
     throw new APIError(400, description, 'OAUTH_TOKEN_EXCHANGE_FAILED');
@@ -304,7 +309,7 @@ export async function updateYouTubeVideo(
     try {
       const error = await response.json();
       message = error.error?.message || message;
-    } catch {}
+    } catch { }
     const { APIError } = await import('@/lib/api-middleware');
     throw new APIError(response.status || 400, message, 'YOUTUBE_API_ERROR');
   }
@@ -350,7 +355,7 @@ export async function getYouTubeVideoStats(
   videoId: string
 ): Promise<YouTubeVideo> {
   const params = new URLSearchParams({
-    part: 'statistics,snippet',
+    part: 'statistics,snippet,contentDetails',
     id: videoId,
   });
 
@@ -484,12 +489,12 @@ export async function setYouTubeVideoThumbnail(
     const { APIError } = await import('@/lib/api-middleware');
     throw new APIError(imageResponse.status || 400, 'Failed to fetch thumbnail image', 'THUMBNAIL_FETCH_FAILED');
   }
-  
+
   const imageBlob = await imageResponse.blob();
-  
+
   // Upload thumbnail to YouTube
   const params = new URLSearchParams({ videoId });
-  
+
   const response = await fetch(
     `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?${params.toString()}`,
     {
@@ -501,13 +506,13 @@ export async function setYouTubeVideoThumbnail(
       body: imageBlob,
     }
   );
-  
+
   if (!response.ok) {
     let message = 'Failed to set YouTube video thumbnail';
     try {
       const error = await response.json();
       message = error.error?.message || message;
-    } catch {}
+    } catch { }
     const { APIError } = await import('@/lib/api-middleware');
     throw new APIError(response.status || 400, message, 'YOUTUBE_API_ERROR');
   }
@@ -537,13 +542,13 @@ export async function replyToYouTubeComment(
       }),
     }
   );
-  
+
   if (!response.ok) {
     let message = 'Failed to reply to comment';
     try {
       const error = await response.json();
       message = error.error?.message || message;
-    } catch {}
+    } catch { }
     const { APIError } = await import('@/lib/api-middleware');
     throw new APIError(response.status || 400, message, 'YOUTUBE_API_ERROR');
   }

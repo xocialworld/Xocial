@@ -214,7 +214,7 @@ export async function generateContent(
   try {
     // Prepare model string with provider prefix for gateway
     const modelString = resolvedModel.includes('/') ? resolvedModel : `openai/${resolvedModel}`;
-    
+
     // Get fallback models if available
     const fallbackModels = MODEL_FALLBACKS[resolvedModel] || [];
 
@@ -238,7 +238,7 @@ export async function generateContent(
         temperature: 0.7,
         providerOptions: {
           gateway: {
-          order: providerOrder.length ? providerOrder : ['openai'],
+            order: providerOrder.length ? providerOrder : ['openai'],
           },
         },
       });
@@ -250,7 +250,7 @@ export async function generateContent(
         try {
           result = await execGenerateObject(fbModel);
           if (result?.object) break;
-        } catch {}
+        } catch { }
       }
     }
 
@@ -325,7 +325,7 @@ export async function generateContent(
     const totalCharCount = analyticsEntries.reduce((sum, entry) => sum + entry.charCount, 0);
 
     // Extract model info from provider metadata if available
-    const modelUsed = (result as any).experimental_providerMetadata?.gateway?.routing?.finalProvider 
+    const modelUsed = (result as any).experimental_providerMetadata?.gateway?.routing?.finalProvider
       ? `${(result as any).experimental_providerMetadata.gateway.routing.finalProvider}/${resolvedModel}`
       : modelString;
 

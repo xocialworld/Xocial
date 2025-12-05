@@ -5,26 +5,35 @@ import { createServerClient } from '@supabase/ssr'
 import { env } from './src/lib/env'
 
 export async function middleware(request: NextRequest) {
-  const res = await updateSession(request)
+  let res: NextResponse
+  try {
+    res = await updateSession(request)
+  } catch {
+    res = NextResponse.next()
+  }
 
-  const supabase = createServerClient(
-    env.NEXT_PUBLIC_SUPABASE_URL!,
-    env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
+  let user: any
+  try {
+    const supabase = createServerClient(
+      env.NEXT_PUBLIC_SUPABASE_URL!,
+      env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          },
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
-        },
-      },
-    }
-  )
+      }
+    )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    const result = await supabase.auth.getUser()
+    user = result.data.user
+  } catch {
+    return res
+  }
 
   const url = new URL(request.url)
   const pathname = url.pathname

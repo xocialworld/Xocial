@@ -103,33 +103,16 @@ function validateEnv(): Env {
 
     parsed.NEXT_PUBLIC_SUPABASE_URL = parsed.NEXT_PUBLIC_SUPABASE_URL.trim().replace(/\/+$/, '');
     
-    // In production, verify CRON_SECRET is present
-    if (isProduction && !parsed.CRON_SECRET) {
-      throw new Error('CRON_SECRET is required in production for Vercel cron job authentication');
-    }
-    
     return parsed;
   } catch (error) {
     if (error instanceof z.ZodError) {
       console.error('❌ Environment variable validation failed:');
       console.error('');
       
-      const cronSecretError = error.errors.find(e => e.path[0] === 'CRON_SECRET');
-      const otherErrors = error.errors.filter(e => e.path[0] !== 'CRON_SECRET');
-      
-      otherErrors.forEach((err) => {
+      error.errors.forEach((err) => {
         const path = err.path.join('.');
         console.error(`  • ${path}: ${err.message}`);
       });
-      
-      // In development, show CRON_SECRET as a warning instead of error
-      if (cronSecretError && isDevelopment) {
-        console.warn('');
-        console.warn('⚠️  Development Mode Warning:');
-        console.warn('  • CRON_SECRET: Optional in development (required in production)');
-      } else if (cronSecretError) {
-        console.error(`  • CRON_SECRET: ${cronSecretError.message}`);
-      }
 
       console.error('');
       console.error('Please check your .env.local file and ensure all required variables are set.');

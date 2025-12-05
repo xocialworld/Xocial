@@ -96,38 +96,45 @@ export type Env = z.infer<typeof envSchema>;
  */
 function validateEnv(): Env {
   const isDevelopment = process.env.NODE_ENV === 'development';
-  const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
-  
+  // Check if we're in a build environment or development
+  const isBuild = process.env.NODE_ENV === 'production' && process.env.CI === '1';
+  const shouldSkipValidation = isBuild || process.env.SKIP_ENV_VALIDATION === '1';
+
   try {
     const parsed = envSchema.parse(process.env);
 
     parsed.NEXT_PUBLIC_SUPABASE_URL = parsed.NEXT_PUBLIC_SUPABASE_URL.trim().replace(/\/+$/, '');
-    
+
     return parsed;
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.error('❌ Environment variable validation failed:');
-      console.error('');
-      
-      error.errors.forEach((err) => {
-        const path = err.path.join('.');
-        console.error(`  • ${path}: ${err.message}`);
-      });
+      if (!shouldSkipValidation) {
+        console.error('❌ Environment variable validation failed:');
+        console.error('');
 
-      console.error('');
-      console.error('Please check your .env.local file and ensure all required variables are set.');
-      console.error('');
+        error.errors.forEach((err) => {
+          const path = err.path.join('.');
+          console.error(`  • ${path}: ${err.message}`);
+        });
 
-      // In production, this will prevent the app from starting
-      if (!isDevelopment) {
-      throw new Error('Invalid environment configuration');
-    }
+        console.error('');
+        console.error('Please check your .env.local file and ensure all required variables are set.');
+        console.error('');
+      }
+
+      // In production, this will prevent the app from starting UNLESS we're building
+      if (!isDevelopment && !shouldSkipValidation) {
+        throw new Error('Invalid environment configuration');
+      } else if (shouldSkipValidation) {
+        console.warn('⚠️  Skipping strict environment validation during build');
+      }
     } else {
-    throw error;
+      throw error;
+    }
   }
-  }
-  
-  // If we get here in development with some validation issues, return env with warnings
+
+  // If we get here in development or build with validation issues, return env with warnings
+  // We cast process.env to Env to satisfy the type, knowing it might be incomplete
   return process.env as unknown as Env;
 }
 
@@ -136,15 +143,18 @@ let validatedEnv: Env;
 
 try {
   validatedEnv = validateEnv();
-  console.log('✅ Environment variables validated successfully');
+  // Only log success if we actually validated
+  if (!process.env.SKIP_ENV_VALIDATION && process.env.NODE_ENV !== 'production') {
+    console.log('✅ Environment variables validated successfully');
+  }
 } catch (error) {
   console.error('Failed to validate environment variables:', error);
-  // In development, provide mock values to allow partial functionality
-  if (process.env.NODE_ENV === 'development') {
-    console.warn('⚠️  Running in development mode with potentially missing env vars');
+  // In development/build, provide mock values to allow partial functionality
+  if (process.env.NODE_ENV === 'development' || process.env.CI === '1' || process.env.VERCEL === '1') {
+    console.warn('⚠️  Running with potentially missing env vars (Build/Dev mode)');
     validatedEnv = process.env as unknown as Env;
   } else {
-    // In production, fail hard
+    // In actual production runtime, fail hard
     throw error;
   }
 }

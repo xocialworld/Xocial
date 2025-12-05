@@ -33,6 +33,12 @@ export interface FacebookPage {
   category: string;
   tasks: string[];
   category_list?: Array<{ id: string; name: string }>;
+  picture?: {
+    data: {
+      url: string;
+    };
+  };
+  fan_count?: number;
 }
 
 /**
@@ -123,6 +129,21 @@ export async function getFacebookLongLivedToken(
 }
 
 /**
+ * Exchange for long-lived token (alias for convenience)
+ */
+export async function exchangeForLongLivedToken(
+  clientId: string,
+  clientSecret: string,
+  shortLivedToken: string
+): Promise<FacebookTokenResponse> {
+  return getFacebookLongLivedToken(
+    { clientId, clientSecret, redirectUri: '' },
+    shortLivedToken
+  );
+}
+
+
+/**
  * Get user profile information
  */
 export async function getFacebookProfile(
@@ -151,6 +172,97 @@ export async function getFacebookPages(
 
   if (!response.ok) {
     throw new Error('Failed to fetch Facebook pages');
+  }
+
+  const data = await response.json();
+  return data.data || [];
+}
+
+/**
+ * Get Facebook page posts
+ */
+export async function getFacebookPagePosts(
+  accessToken: string,
+  pageId: string,
+  limit: number = 25
+): Promise<any[]> {
+  const fields = [
+    'id',
+    'message',
+    'story',
+    'created_time',
+    'full_picture',
+    'permalink_url',
+    'shares',
+    'likes.summary(true)',
+    'comments.summary(true)',
+    'type',
+    'status_type',
+    'link',
+  ];
+
+  const response = await fetch(
+    `https://graph.facebook.com/v24.0/${pageId}/posts?fields=${fields.join(',')}&limit=${limit}&access_token=${accessToken}`
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch Facebook page posts');
+  }
+
+  const data = await response.json();
+  return data.data || [];
+}
+
+/**
+ * Get comments for a post
+ */
+export async function getFacebookPostComments(
+  accessToken: string,
+  postId: string
+): Promise<any[]> {
+  const fields = [
+    'id',
+    'message',
+    'created_time',
+    'from',
+    'like_count',
+    'comment_count',
+    'parent',
+  ];
+
+  const response = await fetch(
+    `https://graph.facebook.com/v24.0/${postId}/comments?fields=${fields.join(',')}&access_token=${accessToken}`
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch Facebook post comments');
+  }
+
+  const data = await response.json();
+  return data.data || [];
+}
+
+/**
+ * Get page insights
+ */
+export async function getFacebookPageInsights(
+  accessToken: string,
+  pageId: string,
+  period: string = 'day'
+): Promise<any[]> {
+  const metrics = [
+    'page_fans',
+    'page_impressions',
+    'page_engaged_users',
+    'page_actions_post_reactions_like_total',
+  ];
+
+  const response = await fetch(
+    `https://graph.facebook.com/v24.0/${pageId}/insights?metric=${metrics.join(',')}&period=${period}&access_token=${accessToken}`
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch Facebook page insights');
   }
 
   const data = await response.json();

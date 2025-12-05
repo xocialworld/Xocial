@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { getAppURL } from "@/lib/url";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,10 +43,16 @@ export default function LoginPage() {
 
   const handleGoogleLogin = async () => {
     try {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+      const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+      if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url) || key.length < 20) {
+        toast.error('Auth is not configured correctly. Please set Supabase URL and Anon key.');
+        return;
+      }
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${getAppURL()}auth/callback`,
         },
       });
 
@@ -165,4 +172,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

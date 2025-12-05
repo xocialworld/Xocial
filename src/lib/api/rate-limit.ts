@@ -77,11 +77,7 @@ export function checkRateLimit(
     // Check if limit exceeded
     if (record.count >= maxRequests) {
         const retryAfter = Math.ceil((record.resetAt - now) / 1000);
-        throw APIError.rateLimit('Too many requests. Please try again later.', {
-            retryAfter,
-            limit: maxRequests,
-            windowMs,
-        });
+        throw APIError.rateLimit(retryAfter);
     }
 
     // Increment counter

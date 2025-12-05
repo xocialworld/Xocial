@@ -22,7 +22,7 @@ import { logger } from '@/lib/logger';
 const inviteSchema = z.object({
   workspaceId: z.string().uuid(),
   email: z.string().email(),
-  role: z.enum(['admin', 'editor', 'viewer']),
+  role: z.enum(['admin', 'manager', 'creator', 'analyst']),
   message: z.string().optional(),
 });
 
@@ -32,7 +32,7 @@ const inviteSchema = z.object({
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
   const { user, supabase } = await requireAuth(request);
-  
+
   // Validate request body
   const { workspaceId, email, role, message } = await validateRequest(request, inviteSchema);
 
@@ -51,7 +51,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     .eq('user_id', user.id)
     .single();
 
-  if (memberError || !member || !['owner', 'admin'].includes(member.role)) {
+  if (memberError || !member || !['owner', 'admin', 'manager'].includes(member.role)) {
     logger.warn('Unauthorized invitation attempt', {
       userId: user.id,
       workspaceId,
@@ -136,7 +136,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 
   // Store invitation (you'll need to create this table)
   // For now, we'll use metadata in workspace_members or a separate invitations table
-  
+
   // Create invitation record (pseudo-code - adapt to your schema)
   const invitationData = {
     workspace_id: workspaceId,
@@ -159,7 +159,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 
   // TODO: Store invitation in database (create invitations table if needed)
   // TODO: Send invitation email with token link
-  
+
   const invitationLink = `${process.env.NEXT_PUBLIC_APP_URL}/team/accept?token=${token}`;
 
   // Mock email sending (replace with actual email service)

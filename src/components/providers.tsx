@@ -5,7 +5,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { createQueryClient } from "@/lib/react-query";
 import { SessionProvider } from "@/components/session-context";
-import { Analytics } from "@/components/analytics";
 
 /**
  * Providers Component
@@ -21,7 +20,6 @@ export function Providers({ children }: { children: ReactNode }) {
       <SessionProvider>
         {children}
       </SessionProvider>
-      <Analytics />
       {process.env.NODE_ENV === 'development' && (
         <ReactQueryDevtools initialIsOpen={false} />
       )}

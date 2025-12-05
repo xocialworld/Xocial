@@ -1,4 +1,5 @@
 import { UnifiedPostComposer } from "@/components/features/create/unified-post-composer";
+import { ErrorBoundary } from "@/components/shared/error-boundary";
 
 export default async function CPage() {
   return (
@@ -11,7 +12,9 @@ export default async function CPage() {
         </div>
       </div>
 
-      <UnifiedPostComposer />
+      <ErrorBoundary>
+        <UnifiedPostComposer />
+      </ErrorBoundary>
     </div>
   );
 }

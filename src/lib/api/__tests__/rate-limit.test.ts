@@ -10,8 +10,8 @@ import {
     resetRateLimit,
     getRateLimitHeaders,
     RATE_LIMITS,
-} from '../api/rate-limit';
-import { APIError } from '../api-error';
+} from '../rate-limit';
+import { APIError } from '../../api-error';
 
 describe('Rate Limiting Utility', () => {
     beforeEach(() => {
@@ -41,7 +41,7 @@ describe('Rate Limiting Utility', () => {
             checkRateLimit(identifier, maxRequests, 60000);
 
             // Next request should throw
-            expect(() => checkRateLimit(identifier, maxRequests, 60000)).toThrow('Too many requests');
+            expect(() => checkRateLimit(identifier, maxRequests, 60000)).toThrow('Rate limit exceeded');
         });
 
         it('should reset after window expires', async () => {
@@ -79,8 +79,8 @@ describe('Rate Limiting Utility', () => {
                 checkRateLimit(identifier, maxRequests, 60000);
                 fail('Should have thrown');
             } catch (error) {
-                expect(error).toBeInstanceOf(Error);
-                expect((error as Error).message).toContain('Too many requests');
+                expect(error).toBeInstanceOf(APIError);
+                expect((error as Error).message).toContain('Rate limit exceeded');
             }
         });
     });

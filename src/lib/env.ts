@@ -26,11 +26,12 @@ const envSchema = z.object({
   }),
 
   // Vercel AI Gateway Configuration
-  VERCEL_AI_GATEWAY_API_KEY: z.string().min(1, {
-    message: 'VERCEL_AI_GATEWAY_API_KEY is required for AI features',
-  }),
+  VERCEL_AI_GATEWAY_API_KEY: z.string().optional(),
   VERCEL_AI_GATEWAY_URL: z.string().url().optional().default('https://ai-gateway.vercel.sh'),
   VERCEL_AI_GATEWAY_ORDER: z.string().optional(),
+
+  // Direct OpenAI Configuration (Alternative to Gateway)
+  OPENAI_API_KEY: z.string().optional(),
 
   // Encryption & Security
   ENCRYPTION_KEY: z.string().length(64, {
@@ -81,6 +82,7 @@ const envSchema = z.object({
   // Optional Features
   IP_HASH_SALT: z.string().optional(),
   VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
+  DEMO_PUBLISH: z.string().optional(),
 });
 
 /**
@@ -98,6 +100,8 @@ function validateEnv(): Env {
   
   try {
     const parsed = envSchema.parse(process.env);
+
+    parsed.NEXT_PUBLIC_SUPABASE_URL = parsed.NEXT_PUBLIC_SUPABASE_URL.trim().replace(/\/+$/, '');
     
     // In production, verify CRON_SECRET is present
     if (isProduction && !parsed.CRON_SECRET) {
@@ -177,7 +181,7 @@ export const isFeatureEnabled = {
   linkedin: () => !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET),
   youtube: () => !!(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET),
   tiktok: () => !!(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET),
-  ai: () => !!env.VERCEL_AI_GATEWAY_API_KEY,
+  ai: () => !!(env.VERCEL_AI_GATEWAY_API_KEY || env.OPENAI_API_KEY),
 };
 
 /**
@@ -185,7 +189,7 @@ export const isFeatureEnabled = {
  */
 export function getOAuthRedirectURL(platform: string): string {
   const baseURL = env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  return `${baseURL}/api/oauth/${platform}`;
+  return `${baseURL}/api/oauth/${platform}/callback`;
 }
 
 /**
@@ -237,4 +241,3 @@ if (isDevelopment()) {
 }
 
 export default env;
-

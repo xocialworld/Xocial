@@ -295,19 +295,23 @@ async function fetchInstagramMetrics(postId: string, accessToken: string) {
 
 async function fetchTwitterMetrics(postId: string, accessToken: string) {
   try {
-    const client = await createTwitterClient(accessToken);
-    const metrics = await (client as any).getTweetMetrics?.(postId) || {};
+    const { TwitterClient } = await import('@/lib/platforms/twitter');
+    const client = new TwitterClient(accessToken);
+    
+    const tweet = await client.getTweet(postId);
+    const metrics = tweet.public_metrics || {};
+    const nonPublic = tweet.non_public_metrics || {};
     
     return {
-      impressions: metrics.impressions || 0,
-      reach: metrics.impressions || 0,
-      engagement: metrics.engagement || 0,
-      likes: metrics.likes || 0,
-      comments: metrics.replies || 0,
-      shares: metrics.retweets || 0,
-      saves: metrics.bookmarks || 0,
-      clicks: metrics.url_clicks || 0,
-      video_views: metrics.video_views || 0,
+      impressions: (metrics.impression_count || 0) + (nonPublic.impression_count || 0),
+      reach: (metrics.impression_count || 0) + (nonPublic.impression_count || 0), // Approx
+      engagement: (metrics.like_count + metrics.reply_count + metrics.retweet_count + metrics.quote_count) || 0,
+      likes: metrics.like_count || 0,
+      comments: metrics.reply_count || 0,
+      shares: metrics.retweet_count || 0,
+      saves: metrics.bookmark_count || 0,
+      clicks: nonPublic.url_link_clicks || 0,
+      video_views: 0, // Not easily available in standard v2 tweet lookup
     };
   } catch (error) {
     console.error('[Metrics] Twitter fetch error:', error);
@@ -457,4 +461,3 @@ async function fetchTikTokMetrics(postId: string, accessToken: string) {
 // Prevent caching of cron responses
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-

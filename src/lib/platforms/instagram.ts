@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server';
+import { decryptToken } from '@/lib/encryption';
 
 export interface InstagramConfig {
   accessToken: string;
@@ -144,7 +145,7 @@ export class InstagramClient {
     }
 
     const data = await response.json();
-    
+
     // Parse insights into simple object
     const insights: any = {};
     data.data?.forEach((item: any) => {
@@ -279,7 +280,7 @@ export class InstagramClient {
  */
 export async function createInstagramClient(accountId: string): Promise<InstagramClient> {
   const supabase = await createClient();
-  
+
   const { data: account, error } = await supabase
     .from('social_accounts')
     .select('account_id, access_token, is_active')
@@ -295,8 +296,11 @@ export async function createInstagramClient(accountId: string): Promise<Instagra
     throw new Error('Instagram access token missing from account record');
   }
 
+  // Decrypt token
+  const accessToken = decryptToken(account.access_token);
+
   return new InstagramClient({
-    accessToken: account.access_token,
+    accessToken,
     instagramAccountId: account.account_id,
   });
 }

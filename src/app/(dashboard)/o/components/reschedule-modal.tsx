@@ -1,24 +1,16 @@
-'use client';
-
-import * as React from "react";
-import {
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalTitle,
-  ModalBody,
-  ModalFooter,
-} from "@/components/ui/modal";
+import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { DatePicker } from "@/components/ui/datepicker";
+import { Calendar } from "@/components/ui/calendar"; // Assuming this exists from shadcn
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { format } from "date-fns";
 
 interface RescheduleModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentDate: Date;
-  onReschedule: (newDate: Date, newTime: string) => void;
+  onReschedule: (date: Date, time: string) => void;
 }
 
 export function RescheduleModal({
@@ -27,67 +19,51 @@ export function RescheduleModal({
   currentDate,
   onReschedule,
 }: RescheduleModalProps) {
-  const [selectedDate, setSelectedDate] = React.useState<Date>(currentDate);
-  const [selectedTime, setSelectedTime] = React.useState(
-    format(currentDate, 'HH:mm')
-  );
+  const [date, setDate] = useState<Date | undefined>(currentDate);
+  const [time, setTime] = useState(format(currentDate, "HH:mm"));
 
-  const handleReschedule = () => {
-    onReschedule(selectedDate, selectedTime);
-    onOpenChange(false);
+  const handleSave = () => {
+    if (date && time) {
+      onReschedule(date, time);
+      onOpenChange(false);
+    }
   };
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent size="md">
-        <ModalHeader onClose={() => onOpenChange(false)}>
-          <ModalTitle>Reschedule Post</ModalTitle>
-        </ModalHeader>
-
-        <ModalBody>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-secondary-900 mb-2">
-                New Date
-              </label>
-              <DatePicker
-                value={selectedDate}
-                onChange={(date) => date && setSelectedDate(date)}
-                minDate={new Date()}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Reschedule Post</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <Label>Date</Label>
+            <div className="border rounded-md p-2 flex justify-center">
+              <Calendar
+                mode="single"
+                selected={date}
+                onSelect={setDate}
+                initialFocus
               />
-            </div>
-
-            <div>
-              <label htmlFor="time" className="block text-sm font-medium text-secondary-900 mb-2">
-                Time
-              </label>
-              <Input
-                id="time"
-                type="time"
-                value={selectedTime}
-                onChange={(e) => setSelectedTime(e.target.value)}
-              />
-            </div>
-
-            <div className="rounded-lg bg-secondary-50 p-4">
-              <p className="text-sm text-secondary-700">
-                <strong>New schedule:</strong>{' '}
-                {format(selectedDate, 'MMMM d, yyyy')} at {selectedTime}
-              </p>
             </div>
           </div>
-        </ModalBody>
-
-        <ModalFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+          <div className="grid gap-2">
+            <Label htmlFor="time">Time</Label>
+            <Input
+              id="time"
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleReschedule}>
-            Reschedule
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+          <Button onClick={handleSave}>Save Changes</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
-

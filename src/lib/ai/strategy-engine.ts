@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 import { generateObject } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { env } from '@/lib/env';
+import { StrategyRecommendation } from '@/types';
 
 const gatewayOpenAI = createOpenAI({
   baseURL: `${env.VERCEL_AI_GATEWAY_URL}/v1`,
@@ -25,7 +26,7 @@ export interface PerformanceData {
   weeklyGrowth: number;
 }
 
-export interface StrategyRecommendation {
+export interface AIStrategyRecommendation {
   type: 'content' | 'timing' | 'engagement' | 'growth' | 'hashtag' | 'topic';
   title: string;
   description: string;
@@ -195,9 +196,8 @@ export async function analyzePerformance(
  * Generate AI-powered strategy recommendations
  */
 export async function generateRecommendations(
-  workspaceId: string,
   performanceData: PerformanceData
-): Promise<StrategyRecommendation[]> {
+): Promise<AIStrategyRecommendation[]> {
   try {
     // Use shared gateway provider
 
@@ -233,7 +233,7 @@ Provide recommendations in JSON format:
     const result = await generateObject({
       model: gatewayOpenAI('openai/gpt-4o-mini'),
       schema: {
-        parse(data: any) { return data as { recommendations: StrategyRecommendation[] }; },
+        parse(data: any) { return data as { recommendations: AIStrategyRecommendation[] }; },
       } as any,
       messages: [
         { role: 'system', content: 'You are an expert social media strategist. Respond with ONLY valid JSON, no commentary.' },
@@ -245,7 +245,7 @@ Provide recommendations in JSON format:
     });
 
     const data = result.object as any;
-    return (data?.recommendations ?? []) as StrategyRecommendation[];
+    return (data?.recommendations ?? []) as AIStrategyRecommendation[];
   } catch (error) {
     logger.error('AI recommendation generation failed', error as Error);
     
@@ -259,8 +259,8 @@ Provide recommendations in JSON format:
  */
 function generateRuleBasedRecommendations(
   data: PerformanceData
-): StrategyRecommendation[] {
-  const recommendations: StrategyRecommendation[] = [];
+): AIStrategyRecommendation[] {
+  const recommendations: AIStrategyRecommendation[] = [];
 
   // Recommendation 1: Posting frequency
   if (data.totalPosts < 20) {
@@ -357,8 +357,8 @@ function generateRuleBasedRecommendations(
  */
 export async function saveRecommendations(
   workspaceId: string,
-  recommendations: StrategyRecommendation[]
-): Promise<void> {
+  recommendations: AIStrategyRecommendation[]
+): Promise<StrategyRecommendation[]> {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -373,21 +373,26 @@ export async function saveRecommendations(
       priority: rec.priority,
       confidence_score: rec.confidenceScore,
       action_items: rec.actionItems,
-      metrics: rec.metrics || {},
+      metrics: { ...(rec.metrics || {}), expected_impact: rec.expectedImpact },
       status: 'pending',
       valid_from: new Date().toISOString(),
       valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
     }));
 
-    const { error: insertError } = await supabase
+    const { data: savedRecords, error: insertError } = await supabase
       .from('strategy_recommendations')
-      .insert(records);
+      .insert(records)
+      .select();
 
     if (insertError) {
       logger.error('Failed to save recommendations', insertError as any);
+      return [];
     }
+    
+    return (savedRecords as StrategyRecommendation[]) || [];
   } catch (error) {
     logger.error('Error saving recommendations', error as Error);
+    return [];
   }
 }
 
@@ -554,19 +559,19 @@ export async function runStrategyAnalysis(
     };
   }
 
-  const recommendations = await generateRecommendations(workspaceId, performanceData);
+  const aiRecommendations = await generateRecommendations(performanceData);
 
   // Save recommendations to database
-  await saveRecommendations(workspaceId, recommendations);
+  const savedRecommendations = await saveRecommendations(workspaceId, aiRecommendations);
 
   logger.info('Strategy analysis completed', {
     workspaceId,
-    recommendationCount: recommendations.length,
+    recommendationCount: savedRecommendations.length,
   });
 
   return {
     performanceData,
-    recommendations,
+    recommendations: savedRecommendations,
   };
 }
 

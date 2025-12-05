@@ -5,6 +5,15 @@ import { useQueries } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/react-query';
 import { useSelectedWorkspace } from '@/store/workspaceStore';
 
+export interface SparklinePoint {
+  date: string;
+  impressions: number;
+  engagement: number;
+  followers: number;
+  posts: number;
+  engagementRate: number;
+}
+
 export interface OverviewMetrics {
   totalFollowers: number;
   followersChange: number;
@@ -14,6 +23,7 @@ export interface OverviewMetrics {
   engagementRateChange: number;
   totalPosts: number;
   postsChange: number;
+  sparklineData: SparklinePoint[];
 }
 
 export interface EngagementDataPoint {
@@ -35,13 +45,18 @@ export interface PlatformStat {
 export interface TopPost {
   id: string;
   content: string;
-  platform: string;
+  platform: "facebook" | "instagram" | "twitter" | "linkedin" | "youtube" | "tiktok";
   publishedAt: string;
   likes: number;
   comments: number;
   shares: number;
   engagement: number;
   engagementRate: number;
+  impressions: number;
+  reach: number;
+  saves: number;
+  clicks: number;
+  type: "image" | "video" | "carousel" | "text";
 }
 
 async function fetchAnalytics<T>(url: string, init?: RequestInit): Promise<T> {
@@ -55,7 +70,7 @@ async function fetchAnalytics<T>(url: string, init?: RequestInit): Promise<T> {
   return payload.data as T;
 }
 
-export function useAnalytics(dateRange: { from: Date; to: Date }) {
+export function useAnalytics(dateRange: { from: Date; to: Date }, refetchInterval: number | false = false) {
   const fromTime = dateRange.from.getTime();
   const toTime = dateRange.to.getTime();
 
@@ -99,9 +114,10 @@ export function useAnalytics(dateRange: { from: Date; to: Date }) {
         enabled,
         queryFn: ({ signal }) =>
           fetchAnalytics<OverviewMetrics>(`/api/analytics/overview?${buildSearch()}`, { signal }),
-        staleTime: 60 * 1000,
+        staleTime: refetchInterval ? 0 : 60 * 1000,
         gcTime: 5 * 60 * 1000,
         refetchOnWindowFocus: false,
+        refetchInterval,
         retry: 1,
       },
       {
@@ -109,9 +125,10 @@ export function useAnalytics(dateRange: { from: Date; to: Date }) {
         enabled,
         queryFn: ({ signal }) =>
           fetchAnalytics<EngagementDataPoint[]>(`/api/analytics/engagement?${buildSearch()}`, { signal }),
-        staleTime: 60 * 1000,
+        staleTime: refetchInterval ? 0 : 60 * 1000,
         gcTime: 5 * 60 * 1000,
         refetchOnWindowFocus: false,
+        refetchInterval,
         retry: 1,
       },
       {
@@ -119,22 +136,24 @@ export function useAnalytics(dateRange: { from: Date; to: Date }) {
         enabled,
         queryFn: ({ signal }) =>
           fetchAnalytics<PlatformStat[]>(`/api/analytics/platform-stats?${buildSearch()}`, { signal }),
-        staleTime: 60 * 1000,
+        staleTime: refetchInterval ? 0 : 60 * 1000,
         gcTime: 5 * 60 * 1000,
         refetchOnWindowFocus: false,
+        refetchInterval,
         retry: 1,
       },
       {
-        queryKey: queryKeys.analytics.topPosts({ ...workspaceParams, limit: 10 }),
+        queryKey: queryKeys.analytics.topPosts({ ...workspaceParams, limit: 50 }), // Increased limit for advanced table
         enabled,
         queryFn: ({ signal }) =>
           fetchAnalytics<TopPost[]>(
-            `/api/analytics/top-posts?${buildSearch({ limit: '10' })}`,
+            `/api/analytics/top-posts?${buildSearch({ limit: '50' })}`,
             { signal }
           ),
-        staleTime: 60 * 1000,
+        staleTime: refetchInterval ? 0 : 60 * 1000,
         gcTime: 5 * 60 * 1000,
         refetchOnWindowFocus: false,
+        refetchInterval,
         retry: 1,
       },
     ],

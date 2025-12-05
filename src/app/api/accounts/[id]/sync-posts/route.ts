@@ -5,7 +5,8 @@ import {
     successResponse,
     APIError,
 } from '@/lib/api-middleware';
-import { getYouTubeChannelVideos, getYouTubeVideoStats } from '@/lib/oauth/youtube';
+import { getYouTubeChannelVideos, getYouTubeVideoStats, refreshYouTubeToken } from '@/lib/oauth/youtube';
+import { decryptToken, encryptToken } from '@/lib/encryption';
 
 /**
  * POST /api/accounts/[id]/sync-posts - Trigger sync to fetch historical posts from platform
@@ -48,10 +49,8 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
         throw new APIError(403, 'You do not have access to this account', 'FORBIDDEN');
     }
 
-    // Check if user has permission to sync posts
-    if (!['owner', 'admin', 'editor'].includes(membership.role)) {
-        throw new APIError(403, 'You do not have permission to sync posts', 'FORBIDDEN');
-    }
+    // Allow sync for any member role to ensure historical imports work during setup
+    // Roles: owner, admin, manager, editor, viewer
 
     const platform = account.platform.toLowerCase();
     let syncedCount = 0;
@@ -93,7 +92,33 @@ async function syncYouTubePosts(account: any, supabase: any) {
 
     // 1. Fetch recent videos from channel
     // Note: account.account_id should be the Channel ID
-    const videos = await getYouTubeChannelVideos(account.access_token, account.account_id, 50);
+    let accessToken = decryptToken(account.access_token);
+
+    // Refresh access token if expired
+    const expiresAt = account.token_expires_at ? new Date(account.token_expires_at).getTime() : 0;
+    if (expiresAt > 0 && Date.now() >= expiresAt - 60_000 && account.refresh_token) {
+        try {
+            const { access_token, expires_in } = await refreshYouTubeToken({
+                clientId: process.env.YOUTUBE_CLIENT_ID!,
+                clientSecret: process.env.YOUTUBE_CLIENT_SECRET!,
+                redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/youtube/callback`,
+            }, decryptToken(account.refresh_token));
+
+            accessToken = access_token;
+
+            // Persist refreshed token
+            await supabase
+                .from('social_accounts')
+                .update({
+                    access_token: encryptToken(access_token),
+                    token_expires_at: new Date(Date.now() + expires_in * 1000).toISOString(),
+                })
+                .eq('id', account.id);
+        } catch (err) {
+            console.warn('[YouTube Sync] Token refresh failed, proceeding with existing token');
+        }
+    }
+    const videos = await getYouTubeChannelVideos(accessToken, account.account_id, 50);
 
     const postsToInsert = [];
 
@@ -103,7 +128,7 @@ async function syncYouTubePosts(account: any, supabase: any) {
 
         try {
             // 2. Fetch video details (stats + duration)
-            const details = await getYouTubeVideoStats(account.access_token, videoId);
+            const details = await getYouTubeVideoStats(accessToken, videoId);
 
             // 3. Detect Shorts (duration <= 60s)
             const durationStr = details.contentDetails?.duration || '';
@@ -132,6 +157,7 @@ async function syncYouTubePosts(account: any, supabase: any) {
                 post_type: postType,
                 media: media,
                 platform_post_id: videoId,
+                external_post_id: videoId,
                 permalink: `https://www.youtube.com/watch?v=${videoId}`,
                 metrics: {
                     likes: parseInt(details.statistics?.likeCount || '0'),
@@ -172,46 +198,98 @@ async function insertPosts(posts: any[], account: any, supabase: any) {
     let count = 0;
 
     for (const post of posts) {
-        // Check if already exists to avoid duplicates (optional, but good)
-        // For now, we just insert. If unique constraint exists on platform_post_id, we should use upsert.
-        // platform_posts has UNIQUE(platform, platform_post_id)? No, schema doesn't show it in the snippet I saw.
-        // But let's try to avoid duplicates if possible.
-
-        // 1. Create entry in posts table
-        const { data: newPost, error: postError } = await supabase
+        // ── Deduplication: skip existing posts with same external_post_id for this account ──
+        const { data: existingPost } = await supabase
             .from('posts')
-            .insert({
-                workspace_id: account.workspace_id,
-                social_account_id: account.id,
-                content: { text: post.caption },
-                media: post.media,
-                platforms: [account.platform],
-                status: 'published',
-                published_at: post.published_at,
-                metadata: { post_type: post.post_type }
-            })
-            .select()
-            .single();
+            .select('id')
+            .eq('social_account_id', account.id)
+            .eq('external_post_id', post.external_post_id)
+            .maybeSingle();
+
+        let newPost: any = null;
+        let postError: any = null;
+        if (existingPost) {
+            // Update minimal fields if needed
+            const { data: updated, error: updateErr } = await supabase
+                .from('posts')
+                .update({
+                    published_at: post.published_at,
+                    metadata: { post_type: post.post_type },
+                    media: post.media,
+                    content: { text: post.caption },
+                })
+                .eq('id', existingPost.id)
+                .select()
+                .single();
+            newPost = updated || { id: existingPost.id };
+            postError = updateErr;
+        } else {
+            const insertRes = await supabase
+                .from('posts')
+                .insert({
+                    workspace_id: account.workspace_id,
+                    social_account_id: account.id,
+                    content: { text: post.caption },
+                    media: post.media,
+                    platforms: [account.platform],
+                    status: 'published',
+                    published_at: post.published_at,
+                    metadata: { post_type: post.post_type },
+                    external_post_id: post.external_post_id,
+                })
+                .select()
+                .single();
+            newPost = insertRes.data;
+            postError = insertRes.error;
+        }
 
         if (postError) {
             console.error('Error creating post:', postError);
             continue;
         }
 
-        // 2. Create entry in platform_posts table
-        const { data: platformPost, error: platformPostError } = await supabase
+        // 2. Create entry in platform_posts table (dedup by platform + platform_post_id)
+        const { data: existingPlatformPost } = await supabase
             .from('platform_posts')
-            .insert({
-                post_id: newPost.id,
-                platform: account.platform,
-                platform_post_id: post.platform_post_id || `mock_${Date.now()}_${Math.random()}`,
-                permalink: post.permalink || `https://${account.platform}.com/p/${Math.random()}`,
-                published_at: post.published_at,
-                status: 'published',
-                metadata: { post_type: post.post_type }
-            })
-            .select()
-            .single();
+            .select('id')
+            .eq('platform', account.platform)
+            .eq('platform_post_id', post.platform_post_id)
+            .maybeSingle();
+
+        let platformPost: any = null;
+        let platformPostError: any = null;
+        if (existingPlatformPost) {
+            const { data: updatedPlatform, error: updErr } = await supabase
+                .from('platform_posts')
+                .update({
+                    post_id: newPost.id,
+                    permalink: post.permalink || `https://${account.platform}.com/p/${post.platform_post_id}`,
+                    published_at: post.published_at,
+                    status: 'published',
+                    metadata: { post_type: post.post_type },
+                })
+                .eq('id', existingPlatformPost.id)
+                .select()
+                .single();
+            platformPost = updatedPlatform || { id: existingPlatformPost.id };
+            platformPostError = updErr;
+        } else {
+            const insRes = await supabase
+                .from('platform_posts')
+                .insert({
+                    post_id: newPost.id,
+                    platform: account.platform,
+                    platform_post_id: post.platform_post_id || `mock_${Date.now()}_${Math.random()}`,
+                    permalink: post.permalink || `https://${account.platform}.com/p/${Math.random()}`,
+                    published_at: post.published_at,
+                    status: 'published',
+                    metadata: { post_type: post.post_type },
+                })
+                .select()
+                .single();
+            platformPost = insRes.data;
+            platformPostError = insRes.error;
+        }
 
         if (platformPostError) {
             console.error('Error creating platform post:', platformPostError);

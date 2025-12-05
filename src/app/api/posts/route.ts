@@ -110,7 +110,7 @@ async function ensurePlatformAccounts(
     .eq('workspace_id', workspaceId);
 
   if (error) {
-    throw new APIError(500, error.message, 'DATABASE_ERROR');
+    throw new APIError(500, error.message, 'DATABASE_ERROR', error);
   }
 
   if (!accounts || accounts.length !== uniqueAccountIds.length) {
@@ -130,7 +130,7 @@ async function ensurePlatformAccounts(
         'INVALID_PLATFORM_ACCOUNT'
       );
     }
-    if (match.platform !== platform) {
+    if (match.platform?.toLowerCase() !== platform.toLowerCase()) {
       throw new APIError(
         400,
         `Account ${accountId} does not belong to ${platform}`,
@@ -408,14 +408,15 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       media: normalizedData.media || [],
       tags: normalizedData.tags || [],
       created_by: user.id,
-      // AI metadata fields
-      ai_generated: normalizedData.ai_generated ?? false,
-      ai_generation_id: normalizedData.ai_generation_id,
-      ai_prompt: normalizedData.ai_prompt,
-      ai_metadata: normalizedData.ai_metadata,
       metadata: {
         accountIds: normalizedAccounts,
         mediaIds: normalizedData.mediaIds || [],
+        ai: {
+          ...(normalizedData.ai_metadata || {}),
+          prompt: normalizedData.ai_prompt,
+          generation_id: normalizedData.ai_generation_id,
+          generated: normalizedData.ai_generated ?? false,
+        },
       },
     })
     .select()
@@ -423,6 +424,55 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 
   if (error) {
     throw new APIError(500, error.message, 'DATABASE_ERROR');
+  }
+
+  // SRS Optimization: Dual Write to content_items and content_variants
+  // This ensures we are populating the new schema structure defined in the Blueprint
+  try {
+    // 1. Create content_item
+    const { data: contentItem, error: itemError } = await supabase
+      .from('content_items')
+      .insert({
+        workspace_id: workspace.id,
+        title: normalizedData.ai_prompt?.slice(0, 50) || 'Untitled Post',
+        brief: normalizedData.ai_prompt,
+        status: normalizedData.status === 'pending_approval' ? 'in_review' : normalizedData.status,
+        scheduled_at: normalizedData.scheduled_at,
+        created_by: user.id,
+      })
+      .select()
+      .single();
+
+    if (itemError) {
+      console.warn('[SRS Sync] Failed to create content_item:', itemError);
+    } else if (contentItem) {
+      // 2. Create content_variants for each platform
+      const variants = normalizedData.platforms.map(platform => {
+        const platformContent = normalizedData.content[platform] || normalizedData.content.default;
+        return {
+          content_item_id: contentItem.id,
+          social_account_id: normalizedAccounts[platform], // Might be undefined for draft
+          platform: platform,
+          caption: platformContent?.text || '',
+          media_ids: normalizedData.mediaIds || [],
+          status: normalizedData.status === 'published' ? 'published' : 
+                 normalizedData.status === 'scheduled' ? 'scheduled' : 'draft',
+          scheduled_at: normalizedData.scheduled_at,
+          published_at: normalizedData.status === 'published' ? new Date().toISOString() : null,
+        };
+      });
+
+      const { error: variantError } = await supabase
+        .from('content_variants')
+        .insert(variants);
+      
+      if (variantError) {
+        console.warn('[SRS Sync] Failed to create content_variants:', variantError);
+      }
+    }
+  } catch (srsError) {
+    // Non-blocking error - tables might not exist yet if migration wasn't run
+    console.warn('[SRS Sync] SRS tables not ready or sync failed:', srsError);
   }
 
   if (shouldPublishImmediately(normalizedData)) {

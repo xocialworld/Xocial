@@ -8,7 +8,8 @@ import { CommentsPanel } from "./components/comments-panel";
 import { PlatformSelectionDialog } from "./components/platform-selection-dialog";
 import { MultiSelect, type MultiSelectOption } from "./components/multi-select";
 import { AccountGridSkeleton } from "./components/account-grid-skeleton";
-import { AccountsErrorBoundary } from "./components/accounts-error-boundary";
+import { ErrorBoundary } from "@/components/shared/error-boundary";
+import { ErrorState } from "@/components/shared/error-state";
 import { useAccounts } from "./hooks/useAccounts";
 import { useAccountSync } from "@/hooks/use-account-sync";
 import { useAccountsStore } from "@/store/accounts-store";
@@ -52,7 +53,14 @@ export default function XPage() {
   } = useAccountsStore();
 
   // Fetch accounts with filters
-  const { accounts, loading: accountsLoading, syncAccount, disconnectAccount } = useAccounts(undefined, {
+  const { 
+    accounts, 
+    loading: accountsLoading, 
+    error: accountsError,
+    refetch: refetchAccounts,
+    syncAccount, 
+    disconnectAccount 
+  } = useAccounts(undefined, {
     platform: filterPlatform.length > 0 ? filterPlatform.join(',') : undefined,
     status: filterStatus.length > 0 ? (filterStatus[0] as any) : undefined,
   });
@@ -99,7 +107,7 @@ export default function XPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-primary-600 to-primary-400 bg-clip-text text-transparent">
-              X – Accounts
+              X &ndash; Accounts
             </h1>
             <p className="mt-2 text-base sm:text-lg text-muted-foreground">
               Command center for all connected social accounts
@@ -168,9 +176,14 @@ export default function XPage() {
       </header>
 
       {/* Accounts Grid with Error Boundary */}
-      <AccountsErrorBoundary>
+      <ErrorBoundary onReset={refetchAccounts}>
         <section aria-label="Connected social media accounts">
-          {accountsLoading ? (
+          {accountsError ? (
+            <ErrorState 
+              message={accountsError} 
+              onRetry={refetchAccounts}
+            />
+          ) : accountsLoading ? (
             <div role="status" aria-label="Loading accounts">
               <AccountGridSkeleton count={6} />
             </div>
@@ -216,7 +229,7 @@ export default function XPage() {
             </div>
           )}
         </section>
-      </AccountsErrorBoundary>
+      </ErrorBoundary>
 
       {/* Platform Selection Dialog */}
       <PlatformSelectionDialog

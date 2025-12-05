@@ -197,6 +197,7 @@ export function usePosts(filters?: Record<string, any>) {
     onSettled: () => {
       // Always refetch after error or success
       queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
+      queryClient.invalidateQueries({ queryKey: ['calendar-posts'] });
     },
   });
 
@@ -205,9 +206,10 @@ export function usePosts(filters?: Record<string, any>) {
     mutationFn: updatePost,
     onMutate: async ({ id, updates }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.posts.all });
+      await queryClient.cancelQueries({ queryKey: ['calendar-posts'] });
 
       const previousPosts = queryClient.getQueryData(queryKeys.posts.list(filters || {}));
-
+      
       // Optimistically update
       if (previousPosts) {
         queryClient.setQueryData(queryKeys.posts.list(filters || {}), (old: Post[] = []) =>
@@ -228,6 +230,7 @@ export function usePosts(filters?: Record<string, any>) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
+      queryClient.invalidateQueries({ queryKey: ['calendar-posts'] });
     },
   });
 
@@ -236,6 +239,7 @@ export function usePosts(filters?: Record<string, any>) {
     mutationFn: deletePost,
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.posts.all });
+      await queryClient.cancelQueries({ queryKey: ['calendar-posts'] });
 
       const previousPosts = queryClient.getQueryData(queryKeys.posts.list(filters || {}));
 
@@ -259,6 +263,7 @@ export function usePosts(filters?: Record<string, any>) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
+      queryClient.invalidateQueries({ queryKey: ['calendar-posts'] });
     },
   });
 

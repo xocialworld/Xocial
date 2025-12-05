@@ -20,8 +20,8 @@ export const DELETE = withErrorHandler(async (request: NextRequest, { params }: 
 
   // Require at least admin
   const role = await checkWorkspaceAccess(user.id, workspace.id);
-  if (!['owner', 'admin'].includes(role)) {
-    throw new APIError(403, 'Only admins can remove members', 'FORBIDDEN');
+  if (!['owner', 'admin', 'manager'].includes(role)) {
+    throw new APIError(403, 'Only admins and managers can remove members', 'FORBIDDEN');
   }
 
   const memberId = params.id;

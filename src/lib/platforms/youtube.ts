@@ -247,7 +247,7 @@ export class YouTubeClient {
  */
 export async function createYouTubeClient(accountId: string): Promise<YouTubeClient> {
   const supabase = await createClient();
-  
+
   const { data: account, error } = await supabase
     .from('social_accounts')
     .select('account_id, access_token, refresh_token, is_active, token_expires_at')
@@ -272,16 +272,16 @@ export async function createYouTubeClient(accountId: string): Promise<YouTubeCli
         clientSecret: process.env.YOUTUBE_CLIENT_SECRET!,
         redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/api/oauth/youtube/callback`,
       };
-      
+
       const decryptedRefreshToken = decryptToken(account.refresh_token);
       const newTokens = await refreshYouTubeToken(config, decryptedRefreshToken);
-      
+
       // Encrypt and update tokens in database
       const encryptedAccessToken = encryptToken(newTokens.access_token);
-      const encryptedRefreshToken = newTokens.refresh_token 
-        ? encryptToken(newTokens.refresh_token) 
+      const encryptedRefreshToken = newTokens.refresh_token
+        ? encryptToken(newTokens.refresh_token)
         : account.refresh_token;
-      
+
       await supabase
         .from('social_accounts')
         .update({
@@ -291,7 +291,7 @@ export async function createYouTubeClient(accountId: string): Promise<YouTubeCli
           updated_at: new Date().toISOString(),
         })
         .eq('id', accountId);
-      
+
       // Use the new token
       const accessToken = newTokens.access_token;
       return new YouTubeClient({
@@ -326,28 +326,26 @@ export async function publishToYouTube(config: {
   thumbnailUrl?: string;
 }): Promise<{ id: string; url: string }> {
   const client = await createYouTubeClient(config.accountId);
-  
+
   // Fetch video file
   const videoResponse = await fetch(config.videoUrl);
   if (!videoResponse.ok) {
     throw new Error(`Failed to fetch video file from ${config.videoUrl}`);
   }
-  
+
   const videoBlob = await videoResponse.blob();
-  
+
   // Upload video
-  const result = await uploadYouTubeVideo(
-    client['accessToken'],
-    videoBlob,
-    {
-      title: config.title,
-      description: config.description,
-      tags: config.tags,
-      categoryId: config.categoryId,
-      privacyStatus: config.privacyStatus || 'public',
-    }
-  );
-  
+  // client.uploadVideo expects a YouTubeVideo object
+  const result = await client.uploadVideo({
+    title: config.title,
+    description: config.description,
+    videoUrl: config.videoUrl, // Pass the URL instead of the blob
+    tags: config.tags,
+    categoryId: config.categoryId,
+    privacyStatus: config.privacyStatus || 'public',
+  });
+
   // Upload thumbnail if provided
   if (config.thumbnailUrl && result.id) {
     try {
@@ -357,7 +355,7 @@ export async function publishToYouTube(config: {
       console.warn('Failed to upload thumbnail:', error);
     }
   }
-  
+
   return {
     id: result.id,
     url: `https://www.youtube.com/watch?v=${result.id}`,

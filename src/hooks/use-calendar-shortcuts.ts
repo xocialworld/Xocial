@@ -1,23 +1,12 @@
-/**
- * Calendar Keyboard Shortcuts Hook
- * Based on Xocial SRS Section 3.2.4
- * Implements keyboard navigation for the calendar
- */
-
-'use client';
-
 import { useEffect } from 'react';
-import { addMonths, subMonths } from 'date-fns';
-import { useRouter } from 'next/navigation';
 
-interface UseCalendarShortcutsOptions {
-    onPrevMonth?: () => void;
-    onNextMonth?: () => void;
-    onToday?: () => void;
-    onNewPost?: () => void;
-    onClosePanel?: () => void;
-    onTogglePlatform?: (platformIndex: number) => void;
-    enabled?: boolean;
+interface CalendarShortcutsProps {
+    onPrevMonth: () => void;
+    onNextMonth: () => void;
+    onToday: () => void;
+    onNewPost: () => void;
+    onClosePanel: () => void;
+    onTogglePlatform: (index: number) => void;
 }
 
 export function useCalendarShortcuts({
@@ -27,101 +16,50 @@ export function useCalendarShortcuts({
     onNewPost,
     onClosePanel,
     onTogglePlatform,
-    enabled = true,
-}: UseCalendarShortcutsOptions = {}) {
-    const router = useRouter();
-
+}: CalendarShortcutsProps) {
     useEffect(() => {
-        if (!enabled) return;
-
-        const handleKeyDown = (event: KeyboardEvent) => {
-            // Ignore if user is typing in an input/textarea
-            const target = event.target as HTMLElement;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Ignore if typing in an input
+            const active = document.activeElement as (HTMLElement | null);
             if (
-                target.tagName === 'INPUT' ||
-                target.tagName === 'TEXTAREA' ||
-                target.isContentEditable
+                active?.tagName === 'INPUT' ||
+                active?.tagName === 'TEXTAREA' ||
+                active?.isContentEditable
             ) {
                 return;
             }
 
-            // Arrow keys for month navigation
-            if (event.key === 'ArrowLeft' && !event.shiftKey) {
-                event.preventDefault();
-                onPrevMonth?.();
-            } else if (event.key === 'ArrowRight' && !event.shiftKey) {
-                event.preventDefault();
-                onNextMonth?.();
-            }
-
-            // 'n' for new post
-            else if (event.key === 'n' || event.key === 'N') {
-                event.preventDefault();
-                if (onNewPost) {
-                    onNewPost();
-                } else {
-                    router.push('/c');
-                }
-            }
-
-            // 't' for today
-            else if (event.key === 't' || event.key === 'T') {
-                event.preventDefault();
-                onToday?.();
-            }
-
-            // 'Escape' to close panel
-            else if (event.key === 'Escape') {
-                event.preventDefault();
-                onClosePanel?.();
-            }
-
-            // Number keys 1-6 for platform filters
-            else if (event.key >= '1' && event.key <= '6') {
-                event.preventDefault();
-                const platformIndex = parseInt(event.key) - 1;
-                onTogglePlatform?.(platformIndex);
-            }
-
-            // '?' for help (optional - could show keyboard shortcuts modal)
-            else if (event.key === '?' && event.shiftKey) {
-                event.preventDefault();
-                console.log('Keyboard shortcuts:', {
-                    'Arrow Left/Right': 'Navigate months',
-                    'n': 'New post',
-                    't': 'Go to today',
-                    'Esc': 'Close panel',
-                    '1-6': 'Toggle platform filters',
-                });
+            switch (e.key.toLowerCase()) {
+                case 'arrowleft':
+                    onPrevMonth();
+                    break;
+                case 'arrowright':
+                    onNextMonth();
+                    break;
+                case 't':
+                    onToday();
+                    break;
+                case 'c':
+                    if (!e.metaKey && !e.ctrlKey) {
+                        e.preventDefault();
+                        onNewPost();
+                    }
+                    break;
+                case 'escape':
+                    onClosePanel();
+                    break;
+                case '1':
+                case '2':
+                case '3':
+                case '4':
+                case '5':
+                case '6':
+                    onTogglePlatform(parseInt(e.key) - 1);
+                    break;
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
-
-        return () => {
-            window.removeEventListener('keydown', handleKeyDown);
-        };
-    }, [
-        enabled,
-        onPrevMonth,
-        onNextMonth,
-        onToday,
-        onNewPost,
-        onClosePanel,
-        onTogglePlatform,
-        router,
-    ]);
-}
-
-/**
- * Get keyboard shortcut hints for UI display
- */
-export function getCalendarShortcuts() {
-    return [
-        { key: '←/→', description: 'Navigate months' },
-        { key: 'N', description: 'New post' },
-        { key: 'T', description: 'Go to today' },
-        { key: 'Esc', description: 'Close panel' },
-        { key: '1-6', description: 'Toggle platforms' },
-    ];
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [onPrevMonth, onNextMonth, onToday, onNewPost, onClosePanel, onTogglePlatform]);
 }

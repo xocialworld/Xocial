@@ -119,49 +119,94 @@ export async function DELETE(
 
     const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
 
-    // Get media record to get storage path
-    const { data: media, error: fetchError } = await supabase
-      .from('media')
+    // 1. Try to find in media_assets (new table)
+    const { data: asset, error: assetError } = await supabase
+      .from('media_assets')
       .select('storage_path')
       .eq('id', id)
       .eq('workspace_id', workspace.id)
       .single();
 
-    if (fetchError || !media) {
-      return NextResponse.json(
-        { error: 'Media not found' },
-        { status: 404 }
-      );
+    if (asset) {
+      // Delete from storage
+      const { error: storageError } = await supabase.storage
+        .from('media')
+        .remove([asset.storage_path]);
+
+      if (storageError) {
+        console.error('Storage delete error:', storageError);
+      }
+
+      // Delete from database
+      const { error: dbError } = await supabase
+        .from('media_assets')
+        .delete()
+        .eq('id', id)
+        .eq('workspace_id', workspace.id);
+
+      if (dbError) {
+        return NextResponse.json(
+          { error: 'Failed to delete media asset' },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Media deleted successfully',
+      });
     }
 
-    // Delete from storage
-    const { error: storageError } = await supabase.storage
+    // 2. If not found, try to find in media (legacy table)
+    const { data: legacyMedia, error: legacyError } = await supabase
       .from('media')
-      .remove([media.storage_path]);
-
-    if (storageError) {
-      console.error('Storage delete error:', storageError);
-    }
-
-    // Delete from database
-    const { error: dbError } = await supabase
-      .from('media')
-      .delete()
+      .select('*')
       .eq('id', id)
       .eq('workspace_id', workspace.id)
-      .eq('uploaded_by', user.id);
+      .single();
 
-    if (dbError) {
-      return NextResponse.json(
-        { error: 'Failed to delete media' },
-        { status: 500 }
-      );
+    if (legacyMedia) {
+      // Try to extract storage path from URL if possible
+      // This is best-effort for legacy items
+      try {
+        if (legacyMedia.url && legacyMedia.url.includes('/storage/v1/object/public/media/')) {
+          const storagePath = legacyMedia.url.split('/storage/v1/object/public/media/')[1];
+          if (storagePath) {
+            await supabase.storage
+              .from('media')
+              .remove([storagePath]);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to cleanup legacy storage file:', e);
+      }
+
+      // Delete from database
+      const { error: dbError } = await supabase
+        .from('media')
+        .delete()
+        .eq('id', id)
+        .eq('workspace_id', workspace.id);
+
+      if (dbError) {
+        return NextResponse.json(
+          { error: 'Failed to delete legacy media' },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Legacy media deleted successfully',
+      });
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Media deleted successfully',
-    });
+    // If reached here, media was not found in either table
+    return NextResponse.json(
+      { error: 'Media not found' },
+      { status: 404 }
+    );
+
   } catch (error) {
     console.error('Media delete error:', error);
     return NextResponse.json(

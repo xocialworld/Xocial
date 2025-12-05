@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     // Get current period posts and analytics
     const { data: currentPosts } = await supabase
       .from('posts')
-      .select('id, post_analytics(likes, comments, shares)')
+      .select('id, published_at, post_analytics(likes, comments, shares, impressions)')
       .eq('workspace_id', workspace.id)
       .gte('published_at', from)
       .lte('published_at', to)
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
     const currentEngagement = currentPosts?.reduce((sum, post) => {
       const analytics = post.post_analytics as any;
       if (analytics && Array.isArray(analytics)) {
-        return sum + analytics.reduce((s: number, a: any) => 
+        return sum + analytics.reduce((s: number, a: any) =>
           s + (a.likes || 0) + (a.comments || 0) + (a.shares || 0), 0);
       }
       return sum;
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
     const prevEngagement = prevPosts?.reduce((sum, post) => {
       const analytics = post.post_analytics as any;
       if (analytics && Array.isArray(analytics)) {
-        return sum + analytics.reduce((s: number, a: any) => 
+        return sum + analytics.reduce((s: number, a: any) =>
           s + (a.likes || 0) + (a.comments || 0) + (a.shares || 0), 0);
       }
       return sum;
@@ -110,6 +110,53 @@ export async function GET(request: NextRequest) {
       ? ((currentPostCount - prevPostCount) / prevPostCount) * 100
       : 0;
 
+    // Calculate sparkline data (daily aggregation)
+    const sparklineMap = new Map<string, {
+      impressions: number;
+      engagement: number;
+      followers: number;
+      posts: number;
+    }>();
+
+    // Initialize map with all dates in range
+    for (let d = new Date(fromDate); d <= toDate; d.setDate(d.getDate() + 1)) {
+      sparklineMap.set(d.toISOString().split('T')[0], {
+        impressions: 0,
+        engagement: 0,
+        followers: totalFollowers, // Assuming constant for now or could interpolate
+        posts: 0,
+      });
+    }
+
+    currentPosts?.forEach((post) => {
+      const date = new Date(post.published_at).toISOString().split('T')[0];
+      const entry = sparklineMap.get(date);
+      if (entry) {
+        const analytics = post.post_analytics as any;
+        let engagement = 0;
+        let impressions = 0;
+
+        if (analytics && Array.isArray(analytics)) {
+          analytics.forEach((a: any) => {
+            engagement += (a.likes || 0) + (a.comments || 0) + (a.shares || 0);
+            impressions += (a.impressions || 0);
+          });
+        }
+
+        entry.engagement += engagement;
+        entry.impressions += impressions;
+        entry.posts += 1;
+      }
+    });
+
+    const sparklineData = Array.from(sparklineMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, data]) => ({
+        date,
+        ...data,
+        engagementRate: data.followers > 0 ? (data.engagement / data.followers) * 100 : 0,
+      }));
+
     const metrics = {
       totalFollowers,
       followersChange,
@@ -119,6 +166,7 @@ export async function GET(request: NextRequest) {
       engagementRateChange,
       totalPosts: currentPostCount,
       postsChange,
+      sparklineData, // Add this to response
     };
 
     return NextResponse.json({

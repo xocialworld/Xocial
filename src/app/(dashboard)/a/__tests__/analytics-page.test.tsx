@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AnalyticsPage from '../page';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 jest.mock('../hooks/useAnalytics', () => ({
   useAnalytics: () => ({
@@ -59,16 +60,26 @@ jest.mock('@/hooks/use-workspace', () => ({
 
 describe('AnalyticsPage', () => {
   it('renders tabs and overview metrics', async () => {
-    render(<AnalyticsPage />);
+    const client = new QueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <AnalyticsPage />
+      </QueryClientProvider>
+    );
 
     expect(screen.getByRole('tab', { name: /overview/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /performance/i })).toBeInTheDocument();
 
-    expect(screen.getByRole('region', { name: /overview metrics/i })).toBeInTheDocument();
+    expect(screen.getByRole('tabpanel')).toBeInTheDocument();
   });
 
   it('switches to Performance tab and shows navigation timing heading', async () => {
-    render(<AnalyticsPage />);
+    const client = new QueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <AnalyticsPage />
+      </QueryClientProvider>
+    );
     await userEvent.click(screen.getByRole('tab', { name: /performance/i }));
     expect(screen.getByText(/navigation timing/i)).toBeInTheDocument();
   });

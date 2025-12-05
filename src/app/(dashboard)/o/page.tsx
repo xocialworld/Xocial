@@ -8,8 +8,11 @@ import { DayPostsPanel } from "./components/day-posts-panel";
 import { RescheduleModal } from "./components/reschedule-modal";
 import { EditPostModal } from "./components/edit-post-modal";
 import { usePosts } from "@/hooks/use-posts";
+import { useCalendarPosts } from "@/hooks/use-calendar-posts";
 import { useCalendarShortcuts } from "@/hooks/use-calendar-shortcuts";
 import { Spinner } from "@/components/ui/spinner";
+import { ErrorBoundary } from "@/components/shared/error-boundary";
+import { ErrorState } from "@/components/shared/error-state";
 import type { Post, Platform } from "@/types";
 import { toast } from "sonner";
 import {
@@ -18,12 +21,28 @@ import {
   useCalendarFiltersStore,
 } from "@/store/calendarFiltersStore";
 import { useRouter } from "next/navigation";
-import { useCalendarPrefetch } from "@/components/calendar-prefetcher";
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
 
 export default function OPage() {
   const router = useRouter();
-  const { posts, isLoading: loading, updatePostAsync, deletePost } = usePosts();
+  const { updatePostAsync, deletePost } = usePosts();
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  
+  // Calculate date range for the calendar view (including surrounding weeks)
+  const monthStart = startOfMonth(currentMonth);
+  const monthEnd = endOfMonth(currentMonth);
+  const calendarStart = startOfWeek(monthStart);
+  const calendarEnd = endOfWeek(monthEnd);
+
+  // Fetch posts for the current calendar view
+  const { 
+    data: posts = [], 
+    isLoading: loading, 
+    error, 
+    refetch 
+  } = useCalendarPosts(calendarStart, calendarEnd);
+
   const [reschedulePost, setReschedulePost] = useState<{ id: string; date: Date } | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
@@ -39,7 +58,7 @@ export default function OPage() {
     const matchesPlatform =
       platformFilters.length === 0 ||
       post.platforms.some((platform: Platform) => platformFilters.includes(platform));
-    const matchesStatus = statusFilters.length === 0 || statusFilters.includes(post.status);
+    const matchesStatus = statusFilters.length === 0 || statusFilters.includes(post.status as any);
     return matchesPlatform && matchesStatus;
   });
 
@@ -151,8 +170,6 @@ export default function OPage() {
   };
 
   // Keyboard shortcuts
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-
   useCalendarShortcuts({
     onPrevMonth: () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1)),
     onNextMonth: () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1)),
@@ -174,9 +191,6 @@ export default function OPage() {
     },
   });
 
-  // Prefetch adjacent months for better performance
-  useCalendarPrefetch(currentMonth);
-
   if (loading && posts.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -185,10 +199,21 @@ export default function OPage() {
     );
   }
 
+  if (error) {
+    return (
+      <ErrorState 
+        title="Failed to load calendar" 
+        message={error instanceof Error ? error.message : "Could not load posts"}
+        onRetry={refetch}
+      />
+    );
+  }
+
   return (
-    <div className="flex h-full">
-      {/* Main Calendar Area */}
-      <div className="flex-1 p-8 overflow-auto">
+    <ErrorBoundary>
+      <div className="flex h-full">
+        {/* Main Calendar Area */}
+        <div className="flex-1 p-8 overflow-auto">
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
@@ -264,6 +289,8 @@ export default function OPage() {
           onDateSelect={setSelectedDate}
           onPostClick={setSelectedPost}
           onPostDrop={handlePostDrop}
+          currentMonth={currentMonth}
+          onMonthChange={setCurrentMonth}
         />
       </div>
 
@@ -302,5 +329,6 @@ export default function OPage() {
         }}
       />
     </div>
+    </ErrorBoundary>
   );
 }

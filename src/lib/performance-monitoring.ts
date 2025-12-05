@@ -80,20 +80,18 @@ function sendToAnalytics(metric: Metric): void {
 
   const url = '/api/analytics/vitals';
 
-  // Use `navigator.sendBeacon()` if available (more reliable)
-  if (navigator.sendBeacon) {
-    navigator.sendBeacon(url, body);
-  } else {
-    // Fallback to fetch with keepalive
-    fetch(url, {
-      body,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      keepalive: true,
-    }).catch((error) => {
-      console.error('[Web Vitals] Failed to send metric:', error);
-    });
-  }
+  try {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(url, body);
+    } else {
+      fetch(url, {
+        body,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+      }).catch(() => {});
+    }
+  } catch {}
 }
 
 /**
@@ -464,4 +462,3 @@ export const PerformanceMonitor = {
 };
 
 export default PerformanceMonitor;
-

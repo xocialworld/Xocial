@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import {
     withErrorHandler,
     requireAuth,
@@ -6,6 +6,8 @@ import {
     APIError,
 } from '@/lib/api-middleware';
 import { createClient } from '@/lib/supabase/server';
+import { decryptToken } from '@/lib/encryption';
+import { getYouTubeChannelVideos, getYouTubeVideoStats } from '@/lib/oauth/youtube';
 
 /**
  * GET /api/accounts/[id]/posts - Fetch all posts for a specific social account
@@ -36,7 +38,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     // Verify account belongs to user's workspace
     const { data: account, error: accountError } = await supabase
         .from('social_accounts')
-        .select('id, platform, workspace_id, account_id')
+        .select('id, platform, workspace_id, account_id, access_token')
         .eq('id', accountId)
         .single();
 
@@ -59,91 +61,168 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     // Build query to fetch platform posts
     const platform = account.platform.toLowerCase();
 
-    // We need to fetch posts that were published to this specific account
-    // The relationship is: platform_posts -> posts -> workspace_id (matches account's workspace)
-    // And we filter by platform to match the account's platform
+    // Fetch posts published for this specific social account
     let query = supabase
-        .from('platform_posts')
+        .from('posts')
         .select(`
       id,
-      platform,
-      platform_post_id,
-      permalink,
-      published_at,
-      status,
+      content,
+      media,
+      platforms,
+      workspace_id,
       metadata,
-      posts!inner (
-        id,
-        content,
-        media,
-        platforms,
-        workspace_id,
-        metadata
-      )
+      status,
+      published_at,
+      scheduled_at,
+      created_at,
+      external_post_id
     `)
-        .eq('platform', platform)
-        .eq('posts.workspace_id', account.workspace_id)
+        .eq('social_account_id', account.id)
         .eq('status', 'published')
+        .contains('platforms', [platform])
         .order('published_at', { ascending: false })
-        .limit(limit * 2); // Fetch more to account for filtering
+        .limit(limit + 1);
+
+    if (postType && postType !== 'all') {
+        query = query.contains('metadata', { post_type: postType });
+    }
 
     // Apply cursor-based pagination
     if (cursor) {
         query = query.lt('published_at', cursor);
     }
 
-    const { data: platformPosts, error: postsError, count } = await query;
+    const { data: postsRows, error: postsError } = await query;
 
     if (postsError) {
         throw new APIError(500, postsError.message, 'DATABASE_ERROR');
     }
 
-    // Fetch latest engagement metrics for each post and transform data
-    let postsWithMetrics = await Promise.all(
-        (platformPosts || []).map(async (platformPost: any) => {
-            const { data: latestEngagement } = await supabase
-                .from('engagement_history')
-                .select('likes, comments, shares, views, saves')
-                .eq('platform_post_id', platformPost.id)
-                .order('recorded_at', { ascending: false })
-                .limit(1)
-                .single();
+    // Fallback: If no stored posts yet and platform supports external fetch, hydrate from API for display
+    let hydratedRows = postsRows || [];
+    if ((!hydratedRows || hydratedRows.length === 0) && platform === 'youtube') {
+        // Attempt lightweight hydration from YouTube for all-time view
+        try {
+            const accessToken = decryptToken(account.access_token);
+            const videos = await getYouTubeChannelVideos(accessToken, account.account_id, limit);
+            const enriched = [] as any[];
+            for (const item of videos) {
+                const vid = (item.id as any)?.videoId;
+                if (!vid) continue;
+                try {
+                    const details = await getYouTubeVideoStats(accessToken, vid);
+                    const durationStr = details.contentDetails?.duration || '';
+                    const durationSec = (() => {
+                        const m = durationStr.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+                        if (!m) return 0;
+                        const h = parseInt((m[1] || '').replace('H', '')) || 0;
+                        const mi = parseInt((m[2] || '').replace('M', '')) || 0;
+                        const s = parseInt((m[3] || '').replace('S', '')) || 0;
+                        return h * 3600 + mi * 60 + s;
+                    })();
+                    const isShort = durationSec > 0 && durationSec <= 60;
+                    enriched.push({
+                        id: vid,
+                        content: { caption: details.snippet.title },
+                        media: [{ type: 'video', url: details.snippet.thumbnails?.high?.url || details.snippet.thumbnails?.default?.url }],
+                        platforms: ['youtube'],
+                        workspace_id: account.workspace_id,
+                        metadata: { post_type: isShort ? 'short' : 'video' },
+                        status: 'published',
+                        published_at: details.snippet.publishedAt,
+                        scheduled_at: null,
+                        created_at: details.snippet.publishedAt,
+                        external_post_id: vid,
+                    });
+                } catch {}
+            }
+            hydratedRows = enriched;
+        } catch {}
+    }
 
-            const post = Array.isArray(platformPost.posts)
-                ? platformPost.posts[0]
-                : platformPost.posts;
+    const postIds = (hydratedRows || []).map((p: any) => p.id).filter(Boolean);
 
-            // Extract post type from metadata or infer from platform
-            const extractedPostType = post?.metadata?.post_type ||
-                platformPost.metadata?.post_type ||
-                inferPostTypeFromPlatform(platform, post?.media);
+    const { data: analyticsRows } = await supabase
+        .from('post_analytics')
+        .select('post_id, platform, likes, comments, shares, impressions, saves, video_views')
+        .in('post_id', postIds)
+        .eq('platform', platform);
 
-            return {
-                id: platformPost.id,
-                platform: platformPost.platform,
-                platform_post_id: platformPost.platform_post_id,
-                post_type: extractedPostType,
-                content: post?.content || {},
-                media: post?.media || [],
-                metrics: latestEngagement || {
-                    likes: 0,
-                    comments: 0,
-                    shares: 0,
-                    views: 0,
-                    saves: 0,
-                },
-                published_at: platformPost.published_at,
-                permalink: platformPost.permalink,
-                metadata: platformPost.metadata,
-            };
-        })
-    );
+    const analyticsMap = new Map<string, any>();
+    (analyticsRows || []).forEach((row: any) => {
+        analyticsMap.set(`${row.post_id}:${row.platform}`, row);
+    });
 
-    // Apply post type filter in memory
+    let postsWithMetrics = await Promise.all((hydratedRows || []).map(async (post: any) => {
+        const extractedPostType = post?.metadata?.post_type ||
+            inferPostTypeFromPlatform(platform, post?.media);
+
+        const key = `${post?.id}:${platform}`;
+        let analytics = analyticsMap.get(key);
+
+        let metrics = analytics ? {
+            likes: analytics.likes || 0,
+            comments: analytics.comments || 0,
+            shares: analytics.shares || 0,
+            views: analytics.video_views ?? analytics.impressions ?? 0,
+            saves: analytics.saves || 0,
+        } : undefined;
+
+        if (!metrics && platform === 'youtube') {
+            const vid = post.external_post_id || (Array.isArray(post.media) ? (post.media[0]?.videoId || post.media[0]?.id) : undefined);
+            if (vid && account.access_token) {
+                try {
+                    const accessToken = decryptToken(account.access_token);
+                    const details = await getYouTubeVideoStats(accessToken, vid);
+                    metrics = {
+                        likes: parseInt(details.statistics?.likeCount || '0'),
+                        comments: parseInt(details.statistics?.commentCount || '0'),
+                        shares: 0,
+                        saves: 0,
+                        views: parseInt(details.statistics?.viewCount || '0'),
+                    };
+                    if (!post.media || post.media.length === 0) {
+                        post.media = [{ type: 'video', url: details.snippet.thumbnails?.high?.url || details.snippet.thumbnails?.default?.url }];
+                    }
+                } catch {}
+            }
+        }
+
+        metrics = metrics || {
+            likes: 0,
+            comments: 0,
+            shares: 0,
+            views: 0,
+            saves: 0,
+        };
+
+        return {
+            id: post.id,
+            platform,
+            post_type: extractedPostType,
+            content: post?.content || {},
+            media: post?.media || [],
+            metrics,
+            published_at: post.published_at,
+            scheduled_at: post.scheduled_at,
+            created_at: post.created_at,
+            metadata: post.metadata,
+            external_post_id: post.external_post_id,
+        };
+    }));
+
+    // Deduplicate by external_post_id when present, otherwise by id
+    const uniqueMap = new Map<string, any>();
+    for (const p of postsWithMetrics) {
+        const key = p.external_post_id || p.id;
+        if (!uniqueMap.has(key)) {
+            uniqueMap.set(key, p);
+        }
+    }
+    postsWithMetrics = Array.from(uniqueMap.values());
+
     if (postType && postType !== 'all') {
-        postsWithMetrics = postsWithMetrics.filter(
-            (post) => post.post_type === postType
-        );
+        postsWithMetrics = postsWithMetrics.filter((post) => post.post_type === postType);
     }
 
     // Apply pagination after filtering
@@ -155,7 +234,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         ? paginatedPosts[paginatedPosts.length - 1].published_at
         : null;
 
-    return successResponse({
+    return NextResponse.json({
         posts: paginatedPosts,
         has_more: hasMore,
         next_cursor: nextCursor,

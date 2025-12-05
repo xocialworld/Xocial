@@ -42,14 +42,11 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
 
   const { data: memberships, error: membershipError } = await supabase
     .from('workspace_members')
-    .select(
-      includeMembers
-        ? 'workspace:workspace_id (*, workspace_members(role, user_id, profiles(id, name, email))) , role'
-        : 'workspace:workspace_id (*), role'
-    )
+    .select('workspace_id, role')
     .eq('user_id', user.id);
 
   if (membershipError) {
+    console.error('Membership Error:', membershipError);
     throw new APIError(500, membershipError.message, 'DATABASE_ERROR');
   }
 
@@ -59,6 +56,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     .eq('owner_id', user.id);
 
   if (ownedError) {
+    console.error('Owned Workspaces Error:', ownedError);
     throw new APIError(500, ownedError.message, 'DATABASE_ERROR');
   }
 
@@ -73,13 +71,23 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     }
   });
 
+  // Fetch workspace details for memberships
+  const membershipWorkspaceIds = (memberships ?? []).map((m: any) => m.workspace_id).filter(Boolean);
+  const { data: membershipWorkspaces } = await supabase
+    .from('workspaces')
+    .select('*')
+    .in('id', membershipWorkspaceIds);
+  const membershipMap = new Map<string, WorkspaceRow>();
+  (membershipWorkspaces ?? []).forEach((ws: WorkspaceRow) => {
+    membershipMap.set(ws.id, ws);
+  });
   const membershipList = (memberships ?? []).map((membership: any) => ({
-    workspace: membership.workspace as WorkspaceRow | null,
+    workspace: membershipMap.get(membership.workspace_id) || null,
     role: membership.role as string,
   }));
 
   membershipList.forEach((membership: { workspace: WorkspaceRow | null; role: string }) => {
-      const workspace = membership.workspace as WorkspaceRow | null;
+    const workspace = membership.workspace as WorkspaceRow | null;
     if (!workspace || seen.has(workspace.id)) {
       return;
     }

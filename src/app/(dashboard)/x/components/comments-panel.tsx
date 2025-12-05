@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react';
 import { X, Send, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Image from 'next/image';
 import { Textarea } from '@/components/ui/textarea';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -118,11 +119,14 @@ export function CommentsPanel({ post, isOpen, onClose, platform }: CommentsPanel
                         <div className="p-4 border-b border-gray-200 bg-gray-50">
                             <div className="flex gap-3">
                                 {mediaUrl && (
-                                    <img
-                                        src={mediaUrl}
-                                        alt="Post"
-                                        className="w-16 h-16 rounded object-cover flex-shrink-0"
-                                    />
+                                    <div className="relative w-16 h-16 flex-shrink-0">
+                                        <Image
+                                            src={mediaUrl}
+                                            alt="Post"
+                                            fill
+                                            className="rounded object-cover"
+                                        />
+                                    </div>
                                 )}
                                 <p className="text-sm text-gray-900 line-clamp-3 flex-1">
                                     {caption}
@@ -148,7 +152,6 @@ export function CommentsPanel({ post, isOpen, onClose, platform }: CommentsPanel
                                 <ErrorState
                                     message={error}
                                     onRetry={() => window.location.reload()}
-                                    variant="minimal"
                                 />
                             ) : comments.length === 0 ? (
                                 <EmptyState
@@ -267,10 +270,12 @@ function CommentItem({
             {/* Avatar */}
             <div className="flex-shrink-0">
                 {comment.author_avatar ? (
-                    <img
+                    <Image
                         src={comment.author_avatar}
                         alt={comment.author_name}
-                        className="w-10 h-10 rounded-full"
+                        width={40}
+                        height={40}
+                        className="rounded-full"
                     />
                 ) : (
                     <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-medium">

@@ -3,17 +3,20 @@
  * Tests for workspace access verification and role hierarchy
  */
 
-import { verifyWorkspaceAccess, verifyResourceAccess, isWorkspaceOwner, getUserWorkspaces, getWorkspaceIdFromResource } from '../api/workspace-access';
-import { APIError } from '../api-error';
+import { verifyWorkspaceAccess, verifyResourceAccess, isWorkspaceOwner, getUserWorkspaces, getWorkspaceIdFromResource } from '../workspace-access';
+import { APIError } from '../../api-error';
 
 // Mock Supabase client
 const createMockSupabaseClient = () => {
+    const builder = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+        insert: jest.fn().mockReturnThis(),
+        upsert: jest.fn().mockReturnThis(),
+    };
     return {
-        from: jest.fn(() => ({
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            single: jest.fn(),
-        })),
+        from: jest.fn(() => builder),
     } as any;
 };
 
@@ -94,7 +97,7 @@ describe('Workspace Access Utility', () => {
 
             await expect(
                 getWorkspaceIdFromResource(supabase, 'posts', 'post-123')
-            ).rejects.toThrow('Resource not found in posts');
+            ).rejects.toThrow('posts not found');
         });
     });
 

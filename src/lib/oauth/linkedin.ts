@@ -29,6 +29,8 @@ export interface LinkedInProfile {
     country: string;
     language: string;
   };
+  followersCount?: number;
+  connectionsCount?: number;
 }
 
 export interface LinkedInOrganization {
@@ -39,6 +41,35 @@ export interface LinkedInOrganization {
   logoV2?: {
     original?: string;
   };
+}
+
+/**
+ * Get user posts (shares/UGC)
+ */
+export async function getLinkedInUserPosts(
+  accessToken: string,
+  personId: string,
+  limit: number = 25
+): Promise<any[]> {
+  const author = `urn:li:person:${personId}`;
+  const response = await fetch(
+    `https://api.linkedin.com/v2/ugcPosts?q=authors&authors=List(${encodeURIComponent(
+      author
+    )})&count=${limit}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'LinkedIn-Version': '202401',
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch LinkedIn user posts');
+  }
+
+  const data = await response.json();
+  return data.elements || [];
 }
 
 /**

@@ -12,6 +12,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface TemplateFiltersProps {
   selectedCategory: string;
@@ -97,9 +103,18 @@ export function TemplateFilters({
         <div className="space-y-2">
           <Label htmlFor="category">Category</Label>
           <Select value={selectedCategory} onValueChange={onCategoryChange}>
-            <SelectTrigger id="category">
-              <SelectValue />
-            </SelectTrigger>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SelectTrigger id="category">
+                    <span>Category</span>
+                  </SelectTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{CATEGORIES.find(c => c.value === selectedCategory)?.label || 'All Categories'}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <SelectContent>
               {CATEGORIES.map((category) => (
                 <SelectItem key={category.value} value={category.value}>

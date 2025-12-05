@@ -12,23 +12,39 @@ import {
   __setSupabaseClientFactory,
 } from '../oauth/state-manager';
 
-// Mock Supabase
-const mockSupabase = {
-  from: jest.fn(() => mockSupabase),
-  update: jest.fn(() => mockSupabase),
-  select: jest.fn(() => mockSupabase),
-  eq: jest.fn(() => mockSupabase),
+// Mock Query Builder
+const mockQueryBuilder: any = {
+  update: jest.fn().mockReturnThis(),
+  select: jest.fn().mockReturnThis(),
+  eq: jest.fn().mockReturnThis(),
   single: jest.fn(),
+  // Add then to make it awaitable for update() calls that don't end in single()
+  then: jest.fn((resolve: any) => resolve({ data: null, error: null })),
 };
 
-const mockCreateClient = jest.fn(() => Promise.resolve(mockSupabase as any));
+// Mock Supabase Client
+const mockSupabase: any = {
+  from: jest.fn().mockReturnValue(mockQueryBuilder),
+};
+
+const mockCreateClient = jest.fn(() => Promise.resolve(mockSupabase));
 
 describe('OAuth State Manager', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCreateClient.mockReset();
-    mockCreateClient.mockResolvedValue(mockSupabase as any);
+    mockCreateClient.mockResolvedValue(mockSupabase);
     __setSupabaseClientFactory(mockCreateClient);
+
+    // Reset the then implementation to default success
+    mockQueryBuilder.then.mockImplementation((resolve: any) => resolve({ data: null, error: null }));
+    mockQueryBuilder.single.mockResolvedValue({ data: null, error: null });
+    
+    // Ensure methods return the mock object
+    mockSupabase.from.mockReturnValue(mockQueryBuilder);
+    mockQueryBuilder.update.mockReturnValue(mockQueryBuilder);
+    mockQueryBuilder.select.mockReturnValue(mockQueryBuilder);
+    mockQueryBuilder.eq.mockReturnValue(mockQueryBuilder);
 
     const globalWithStore = globalThis as typeof globalThis & {
       __oauthStateFallbackStore?: Map<string, any>;
@@ -60,15 +76,16 @@ describe('OAuth State Manager', () => {
 
   describe('storeOAuthState', () => {
     it('should store state in database', async () => {
-      mockSupabase.single.mockResolvedValueOnce({
+      // Mock the update chain resolution
+      mockQueryBuilder.then.mockImplementationOnce((resolve: any) => resolve({
         data: { id: 'user-123' },
         error: null,
-      });
+      }));
       
       await storeOAuthState('user-123', 'facebook', 'state-abc', '/redirect');
       
       expect(mockSupabase.from).toHaveBeenCalledWith('profiles');
-      expect(mockSupabase.update).toHaveBeenCalledWith({
+      expect(mockQueryBuilder.update).toHaveBeenCalledWith({
         oauth_state: expect.objectContaining({
           state: 'state-abc',
           userId: 'user-123',
@@ -76,14 +93,15 @@ describe('OAuth State Manager', () => {
           redirectUrl: '/redirect',
         }),
       });
-      expect(mockSupabase.eq).toHaveBeenCalledWith('id', 'user-123');
+      expect(mockQueryBuilder.eq).toHaveBeenCalledWith('id', 'user-123');
     });
 
     it('should throw error on database failure', async () => {
-      mockSupabase.single.mockResolvedValueOnce({
+      // Mock the update chain resolution with error
+      mockQueryBuilder.then.mockImplementationOnce((resolve: any) => resolve({
         data: null,
         error: { message: 'Database error', details: '', hint: '', code: 'P0001' },
-      });
+      }));
       
       await expect(
         storeOAuthState('user-123', 'facebook', 'state-abc')
@@ -91,7 +109,8 @@ describe('OAuth State Manager', () => {
     });
 
     it('should fall back to in-memory cache when column missing', async () => {
-      mockSupabase.single.mockResolvedValueOnce({
+      // Mock the update chain resolution with missing column error
+      mockQueryBuilder.then.mockImplementationOnce((resolve: any) => resolve({
         data: null,
         error: {
           message: "Could not find the 'oauth_state' column of 'profiles' in the schema cache",
@@ -99,7 +118,7 @@ describe('OAuth State Manager', () => {
           hint: '',
           code: 'PGRST202',
         },
-      });
+      }));
 
       await expect(
         storeOAuthState('user-123', 'facebook', 'state-abc')
@@ -132,7 +151,7 @@ describe('OAuth State Manager', () => {
     });
 
     it('should return invalid if no stored state found', async () => {
-      mockSupabase.single.mockResolvedValueOnce({
+      mockQueryBuilder.single.mockResolvedValueOnce({
         data: { oauth_state: null },
         error: null,
       });
@@ -144,7 +163,7 @@ describe('OAuth State Manager', () => {
     });
 
     it('should return invalid for state mismatch', async () => {
-      mockSupabase.single.mockResolvedValueOnce({
+      mockQueryBuilder.single.mockResolvedValueOnce({
         data: {
           oauth_state: {
             state: 'state-xyz',
@@ -163,7 +182,7 @@ describe('OAuth State Manager', () => {
     });
 
     it('should return invalid for platform mismatch', async () => {
-      mockSupabase.single.mockResolvedValueOnce({
+      mockQueryBuilder.single.mockResolvedValueOnce({
         data: {
           oauth_state: {
             state: 'state-abc',
@@ -184,7 +203,7 @@ describe('OAuth State Manager', () => {
     it('should return invalid for expired state', async () => {
       const elevenMinutesAgo = Date.now() - (11 * 60 * 1000);
       
-      mockSupabase.single.mockResolvedValueOnce({
+      mockQueryBuilder.single.mockResolvedValueOnce({
         data: {
           oauth_state: {
             state: 'state-abc',
@@ -203,7 +222,8 @@ describe('OAuth State Manager', () => {
     });
 
     it('should return valid for correct state', async () => {
-      mockSupabase.single.mockResolvedValueOnce({
+      // Mock single() response for fetching profile
+      mockQueryBuilder.single.mockResolvedValueOnce({
         data: {
           oauth_state: {
             state: 'state-abc',
@@ -215,10 +235,9 @@ describe('OAuth State Manager', () => {
         },
         error: null,
       });
-      mockSupabase.single.mockResolvedValueOnce({
-        data: { id: 'user-123' },
-        error: null,
-      });
+      
+      // Use default mock for update() response (clearing state)
+      // It returns { data: null, error: null } which is sufficient
       
       const result = await verifyOAuthState('user-123', 'facebook', 'state-abc');
       
@@ -226,7 +245,7 @@ describe('OAuth State Manager', () => {
       expect(result.redirectUrl).toBe('/dashboard');
       
       // Should clear the state after verification
-      expect(mockSupabase.update).toHaveBeenCalledWith({ oauth_state: null });
+      expect(mockQueryBuilder.update).toHaveBeenCalledWith({ oauth_state: null });
     });
 
     it('should use fallback state when column missing', async () => {
@@ -242,7 +261,7 @@ describe('OAuth State Manager', () => {
         createdAt: Date.now(),
       });
 
-      mockSupabase.single.mockResolvedValueOnce({
+      mockQueryBuilder.single.mockResolvedValueOnce({
         data: null,
         error: {
           message: "Could not find the 'oauth_state' column of 'profiles' in the schema cache",

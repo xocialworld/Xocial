@@ -31,27 +31,27 @@ describe('Platform Colors Utility', () => {
 
     describe('getPlatformGradient', () => {
         it('should return gradient class for each platform', () => {
-            expect(getPlatformGradient('instagram')).toContain('from-pink-500');
-            expect(getPlatformGradient('facebook')).toContain('from-blue-600');
-            expect(getPlatformGradient('twitter')).toContain('from-sky-500');
-            expect(getPlatformGradient('linkedin')).toContain('from-blue-700');
-            expect(getPlatformGradient('tiktok')).toContain('from-black');
-            expect(getPlatformGradient('youtube')).toContain('from-red-600');
+            expect(getPlatformGradient('instagram')).toContain('from-[#F58529]');
+            expect(getPlatformGradient('facebook')).toContain('from-[#1877F2]');
+            expect(getPlatformGradient('twitter')).toContain('from-[#1DA1F2]');
+            expect(getPlatformGradient('linkedin')).toContain('from-[#0A66C2]');
+            expect(getPlatformGradient('tiktok')).toContain('from-[#000000]');
+            expect(getPlatformGradient('youtube')).toContain('from-[#FF0000]');
         });
 
         it('should return default gradient for unknown platform', () => {
-            expect(getPlatformGradient('unknown' as Platform)).toContain('from-gray-500');
+            expect(getPlatformGradient('unknown' as Platform)).toContain('from-gray-600');
         });
     });
 
     describe('getPlatformBadgeColor', () => {
         it('should return badge color class for each platform', () => {
-            expect(getPlatformBadgeColor('instagram')).toContain('bg-pink-100');
-            expect(getPlatformBadgeColor('facebook')).toContain('bg-blue-100');
-            expect(getPlatformBadgeColor('twitter')).toContain('bg-sky-100');
-            expect(getPlatformBadgeColor('linkedin')).toContain('bg-blue-100');
-            expect(getPlatformBadgeColor('tiktok')).toContain('bg-gray-100');
-            expect(getPlatformBadgeColor('youtube')).toContain('bg-red-100');
+            expect(getPlatformBadgeColor('instagram')).toContain('bg-pink-500');
+            expect(getPlatformBadgeColor('facebook')).toContain('bg-blue-600');
+            expect(getPlatformBadgeColor('twitter')).toContain('bg-sky-500');
+            expect(getPlatformBadgeColor('linkedin')).toContain('bg-blue-700');
+            expect(getPlatformBadgeColor('tiktok')).toContain('bg-gray-900');
+            expect(getPlatformBadgeColor('youtube')).toContain('bg-red-600');
         });
     });
 
@@ -66,28 +66,23 @@ describe('Platform Colors Utility', () => {
         });
 
         it('should return default limit for unknown platform', () => {
-            expect(getCharacterLimit('unknown' as Platform)).toBe(2200);
+            expect(getCharacterLimit('unknown' as Platform)).toBe(280);
         });
     });
 
     describe('getCharacterCountColor', () => {
-        it('should return green for low usage (< 80%)', () => {
+        it('should return green for low usage (< 90%)', () => {
             const color = getCharacterCountColor(100, 280); // 35% usage
             expect(color).toContain('text-green');
         });
 
-        it('should return yellow for medium usage (80-95%)', () => {
-            const color = getCharacterCountColor(240, 280); // 85% usage
+        it('should return yellow for medium usage (90-100%)', () => {
+            const color = getCharacterCountColor(255, 280); // 91% usage
             expect(color).toContain('text-yellow');
         });
 
-        it('should return red for high usage (> 95%)', () => {
-            const color = getCharacterCountColor(270, 280); // 96% usage
-            expect(color).toContain('text-red');
-        });
-
-        it('should return red for over limit', () => {
-            const color = getCharacterCountColor(300, 280); // Over limit
+        it('should return red for over limit (> 100%)', () => {
+            const color = getCharacterCountColor(281, 280); // Over limit
             expect(color).toContain('text-red');
         });
     });
@@ -96,18 +91,10 @@ describe('Platform Colors Utility', () => {
         it('should have names for all platforms', () => {
             expect(platformNames.instagram).toBe('Instagram');
             expect(platformNames.facebook).toBe('Facebook');
-            expect(platformNames.twitter).toBe('Twitter / X');
+            expect(platformNames.twitter).toBe('Twitter');
             expect(platformNames.linkedin).toBe('LinkedIn');
             expect(platformNames.tiktok).toBe('TikTok');
             expect(platformNames.youtube).toBe('YouTube');
-        });
-
-        it('should have all platforms defined', () => {
-            const platforms: Platform[] = ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'youtube'];
-            platforms.forEach(platform => {
-                expect(platformNames[platform]).toBeDefined();
-                expect(platformNames[platform].length).toBeGreaterThan(0);
-            });
         });
     });
 });

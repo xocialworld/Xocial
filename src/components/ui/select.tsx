@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,10 +18,12 @@ const SelectContext = React.createContext<{
   open: boolean;
   setOpen: (open: boolean) => void;
   listId?: string;
+  triggerRef: React.RefObject<HTMLButtonElement>;
 }>({
   open: false,
   setOpen: () => {},
   listId: undefined,
+  triggerRef: { current: null },
 });
 
 // Main Select component (for the old API)
@@ -54,6 +57,7 @@ const SelectNew: React.FC<SelectProps> = ({
   const [internalValue, setInternalValue] = React.useState(defaultValue);
   const [open, setOpen] = React.useState(false);
   const listId = React.useId();
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
 
   const currentValue = value !== undefined ? value : internalValue;
 
@@ -65,7 +69,7 @@ const SelectNew: React.FC<SelectProps> = ({
 
   return (
     <SelectContext.Provider
-      value={{ value: currentValue, onValueChange: handleValueChange, open, setOpen, listId }}
+      value={{ value: currentValue, onValueChange: handleValueChange, open, setOpen, listId, triggerRef }}
     >
       <div className="relative">{children}</div>
     </SelectContext.Provider>
@@ -189,11 +193,20 @@ const SelectTrigger = React.forwardRef<
   HTMLButtonElement,
   React.ButtonHTMLAttributes<HTMLButtonElement> & { className?: string }
 >(({ className, children, ...props }, ref) => {
-  const { open, setOpen, listId } = React.useContext(SelectContext);
+  const { open, setOpen, listId, triggerRef } = React.useContext(SelectContext);
+
+  // Merge refs
+  const mergedRef = (node: HTMLButtonElement) => {
+    // Update context ref
+    if (triggerRef) (triggerRef as any).current = node;
+    // Update forwarded ref
+    if (typeof ref === 'function') ref(node);
+    else if (ref) (ref as any).current = node;
+  };
 
   return (
     <button
-      ref={ref}
+      ref={mergedRef}
       type="button"
       role="combobox"
       aria-expanded={open}
@@ -220,39 +233,69 @@ const SelectValue: React.FC<{ placeholder?: string; className?: string }> = ({ p
 };
 
 const SelectContent: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => {
-  const { open, setOpen, listId } = React.useContext(SelectContext);
+  const { open, setOpen, listId, triggerRef } = React.useContext(SelectContext);
   const ref = React.useRef<HTMLDivElement>(null);
+  const [position, setPosition] = React.useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
+
+  React.useLayoutEffect(() => {
+    if (open && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPosition({
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      });
+    }
+  }, [open, triggerRef]);
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
+      if (
+        ref.current &&
+        !ref.current.contains(event.target as Node) &&
+        triggerRef.current &&
+        !triggerRef.current.contains(event.target as Node)
+      ) {
         setOpen(false);
       }
     };
 
     if (open) {
       document.addEventListener("mousedown", handleClickOutside);
-    }
+      // Handle window resize/scroll to close or reposition (simple: close)
+      const handleResize = () => setOpen(false);
+      window.addEventListener('resize', handleResize);
+      window.addEventListener('scroll', handleResize, true);
 
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [open, setOpen]);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+        window.removeEventListener('resize', handleResize);
+        window.removeEventListener('scroll', handleResize, true);
+      };
+    }
+  }, [open, setOpen, triggerRef]);
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       ref={ref}
       id={listId}
       role="listbox"
+      style={{
+        position: 'absolute',
+        top: position.top,
+        left: position.left,
+        width: position.width,
+      }}
       className={cn(
-        "absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border bg-white shadow-lg",
+        "z-[9999] mt-1 max-h-60 overflow-auto rounded-md border bg-white shadow-lg",
         className
       )}
     >
       <div className="p-1">{children}</div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

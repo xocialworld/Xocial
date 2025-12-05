@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server';
+import { decryptToken } from '@/lib/encryption';
 
 export interface LinkedInConfig {
   accessToken: string;
@@ -220,10 +221,10 @@ export class LinkedInClient {
  */
 export async function createLinkedInClient(accountId: string): Promise<LinkedInClient> {
   const supabase = await createClient();
-  
+
   const { data: account, error } = await supabase
     .from('social_accounts')
-    .select('platform_user_id, metadata')
+    .select('account_id, access_token, metadata, is_active')
     .eq('id', accountId)
     .eq('platform', 'linkedin')
     .single();
@@ -232,19 +233,15 @@ export async function createLinkedInClient(accountId: string): Promise<LinkedInC
     throw new Error('LinkedIn account not found');
   }
 
-  // Get OAuth token
-  const { data: token, error: tokenError } = await supabase
-    .from('oauth_tokens')
-    .select('access_token, token_secret')
-    .eq('account_id', accountId)
-    .single();
-
-  if (tokenError || !token) {
-    throw new Error('LinkedIn access token not found');
+  if (!account.is_active) {
+    throw new Error('LinkedIn account is inactive');
   }
 
+  // Decrypt token
+  const accessToken = decryptToken(account.access_token);
+
   return new LinkedInClient({
-    accessToken: token.access_token,
+    accessToken,
     personUrn: account.metadata?.personUrn,
     organizationUrn: account.metadata?.organizationUrn,
   });

@@ -182,9 +182,11 @@ export function DayCell({
                 </span>
               )}
               <span className="truncate flex-1 text-[11px]">
-                {typeof post.content === 'string'
-                  ? post.content.slice(0, 20)
-                  : (post.content as any)?.caption?.slice(0, 20) || 'Post'}
+                {(() => {
+                  const entries = Object.values(post.content || {});
+                  const text = entries.length > 0 ? (entries[0] as any)?.text : '';
+                  return (text || 'Post').slice(0, 20);
+                })()}
               </span>
             </div>
           </div>

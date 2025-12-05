@@ -1,9 +1,21 @@
-import { UserRole, WorkspaceMembership, Permission } from '@/types/auth';
+export type UserRole = 'owner' | 'admin' | 'manager' | 'creator' | 'analyst' | 'client' | 'viewer' | 'editor';
+export type PermissionAction = 'create' | 'read' | 'update' | 'delete';
+export interface Permission {
+  resource: string;
+  actions: PermissionAction[];
+}
+export interface WorkspaceMembership {
+  workspace_id: string;
+  role: UserRole;
+}
 
 /**
  * Role hierarchy (higher index = more permissions)
  */
-const ROLE_HIERARCHY: UserRole[] = ['client', 'viewer', 'editor', 'admin', 'owner'];
+/**
+ * Role hierarchy (higher index = more permissions)
+ */
+export const ROLE_HIERARCHY: UserRole[] = ['analyst', 'creator', 'manager', 'admin', 'owner'];
 
 /**
  * Permission definitions for each role
@@ -20,26 +32,37 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     { resource: 'members', actions: ['create', 'read', 'update', 'delete'] },
     { resource: 'ai', actions: ['create', 'read'] },
     { resource: 'strategy', actions: ['read'] },
+    { resource: 'workflows', actions: ['create', 'read', 'update', 'delete'] },
   ],
-  editor: [
+  manager: [
     { resource: 'posts', actions: ['create', 'read', 'update', 'delete'] },
     { resource: 'accounts', actions: ['read'] },
     { resource: 'campaigns', actions: ['create', 'read', 'update'] },
     { resource: 'analytics', actions: ['read'] },
     { resource: 'ai', actions: ['create', 'read'] },
     { resource: 'strategy', actions: ['read'] },
+    { resource: 'workflows', actions: ['read'] },
+    { resource: 'approvals', actions: ['create', 'read', 'update'] }, // Can approve/reject
   ],
-  viewer: [
+  creator: [
+    { resource: 'posts', actions: ['create', 'read', 'update'] }, // Cannot delete approved posts usually, but basic CRUD for drafts
+    { resource: 'accounts', actions: ['read'] },
+    { resource: 'campaigns', actions: ['read'] },
+    { resource: 'analytics', actions: ['read'] },
+    { resource: 'ai', actions: ['create', 'read'] },
+    { resource: 'approvals', actions: ['create', 'read'] }, // Can request approval
+  ],
+  analyst: [
     { resource: 'posts', actions: ['read'] },
     { resource: 'accounts', actions: ['read'] },
     { resource: 'campaigns', actions: ['read'] },
     { resource: 'analytics', actions: ['read'] },
     { resource: 'strategy', actions: ['read'] },
   ],
-  client: [
-    { resource: 'posts', actions: ['read'] },
-    { resource: 'analytics', actions: ['read'] },
-  ],
+  // Legacy roles mapping (optional, or remove if we fully migrate)
+  client: [{ resource: 'posts', actions: ['read'] }],
+  viewer: [{ resource: 'posts', actions: ['read'] }],
+  editor: [{ resource: 'posts', actions: ['create', 'read', 'update'] }],
 };
 
 /**

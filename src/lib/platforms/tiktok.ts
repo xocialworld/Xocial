@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server';
+import { decryptToken } from '@/lib/encryption';
 
 export interface TikTokConfig {
   accessToken: string;
@@ -97,7 +98,7 @@ export class TikTokClient {
    */
   async getVideoInfo(videoId: string): Promise<any> {
     const url = `${this.baseUrl}/video/query/`;
-    
+
     const body = {
       filters: {
         video_ids: [videoId],
@@ -205,10 +206,10 @@ export class TikTokClient {
  */
 export async function createTikTokClient(accountId: string): Promise<TikTokClient> {
   const supabase = await createClient();
-  
+
   const { data: account, error } = await supabase
     .from('social_accounts')
-    .select('platform_user_id')
+    .select('account_id, access_token, is_active')
     .eq('id', accountId)
     .eq('platform', 'tiktok')
     .single();
@@ -217,20 +218,16 @@ export async function createTikTokClient(accountId: string): Promise<TikTokClien
     throw new Error('TikTok account not found');
   }
 
-  // Get OAuth token
-  const { data: token, error: tokenError } = await supabase
-    .from('oauth_tokens')
-    .select('access_token')
-    .eq('account_id', accountId)
-    .single();
-
-  if (tokenError || !token) {
-    throw new Error('TikTok access token not found');
+  if (!account.is_active) {
+    throw new Error('TikTok account is inactive');
   }
 
+  // Decrypt token
+  const accessToken = decryptToken(account.access_token);
+
   return new TikTokClient({
-    accessToken: token.access_token,
-    openId: account.platform_user_id,
+    accessToken,
+    openId: account.account_id,
   });
 }
 

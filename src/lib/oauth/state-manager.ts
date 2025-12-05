@@ -134,7 +134,7 @@ export async function storeOAuthState(
   }
 ): Promise<void> {
   const supabase = await getSupabaseClient();
-  
+
   const stateData: OAuthState = {
     state,
     userId,
@@ -152,8 +152,6 @@ export async function storeOAuthState(
       oauth_state: stateData,
     })
     .eq('id', userId)
-    .select('id')
-    .single();
 
   if (error) {
     if (isMissingOAuthColumn(error)) {

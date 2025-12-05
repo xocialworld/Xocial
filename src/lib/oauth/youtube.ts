@@ -23,6 +23,7 @@ export interface YouTubeChannel {
     title: string;
     description: string;
     customUrl?: string;
+    publishedAt?: string;
     thumbnails: {
       default?: { url: string };
       medium?: { url: string };
@@ -89,6 +90,7 @@ export function getYouTubeAuthUrl(
     ].join(' '),
     access_type: 'offline', // To get refresh token
     prompt: 'consent', // Force consent screen to get refresh token
+    include_granted_scopes: 'true', // Enable incremental auth
     state,
   });
 
@@ -109,27 +111,47 @@ export async function exchangeYouTubeCode(
     redirect_uri: config.redirectUri,
     grant_type: 'authorization_code',
   });
-
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: params.toString(),
-  });
-
-  if (!response.ok) {
-    let description = 'Failed to exchange YouTube authorization code';
+  let lastError: any;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let response: Response | null = null;
     try {
-      const error = await response.json();
-      description = error.error_description || error.error || description;
-    } catch { }
-    // Use APIError so our handler preserves the message
+      response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      });
+    } catch (e: any) {
+      lastError = e;
+    }
+    if (response && response.ok) {
+      return response.json();
+    }
+    let status = response ? response.status : 0;
+    let description = 'Failed to exchange YouTube authorization code';
+    if (response) {
+      try {
+        const errorText = await response.text();
+        console.error('[YouTube Token Exchange Error]', { status, body: errorText });
+        const error = JSON.parse(errorText);
+        description = error.error_description || error.error || description;
+      } catch {
+        console.error('[YouTube Token Exchange Error] Failed to parse error response');
+      }
+    } else if (lastError) {
+      description = lastError.message || description;
+    }
+    if (status === 429 || status >= 500 || !response) {
+      const delay = 500 * Math.pow(2, attempt);
+      await new Promise((r) => setTimeout(r, delay));
+      continue;
+    }
     const { APIError } = await import('@/lib/api-middleware');
     throw new APIError(400, description, 'OAUTH_TOKEN_EXCHANGE_FAILED');
   }
-
-  return response.json();
+  const { APIError } = await import('@/lib/api-middleware');
+  throw new APIError(400, 'Failed to exchange YouTube authorization code', 'OAUTH_TOKEN_EXCHANGE_FAILED');
 }
 
 /**
@@ -172,24 +194,36 @@ export async function getYouTubeChannels(
     part: 'snippet,statistics,brandingSettings',
     mine: 'true',
   });
-
-  const response = await fetch(
-    `https://www.googleapis.com/youtube/v3/channels?${params.toString()}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+  let lastError: any;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let response: Response | null = null;
+    try {
+      response = await fetch(
+        `https://www.googleapis.com/youtube/v3/channels?${params.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+    } catch (e: any) {
+      lastError = e;
     }
-  );
-
-  if (!response.ok) {
-    const description = 'Failed to fetch YouTube channels';
+    if (response && response.ok) {
+      const data = await response.json();
+      return data.items || [];
+    }
+    let status = response ? response.status : 0;
+    if (status === 429 || status >= 500 || !response) {
+      const delay = 500 * Math.pow(2, attempt);
+      await new Promise((r) => setTimeout(r, delay));
+      continue;
+    }
     const { APIError } = await import('@/lib/api-middleware');
-    throw new APIError(response.status || 400, description, 'YOUTUBE_API_ERROR');
+    throw new APIError(status || 400, 'Failed to fetch YouTube channels', 'YOUTUBE_API_ERROR');
   }
-
-  const data = await response.json();
-  return data.items || [];
+  const { APIError } = await import('@/lib/api-middleware');
+  throw new APIError(400, 'Failed to fetch YouTube channels', 'YOUTUBE_API_ERROR');
 }
 
 /**

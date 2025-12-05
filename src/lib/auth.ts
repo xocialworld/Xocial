@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/client';
+import { getAppURL } from '@/lib/url';
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import { 
   AuthUser, 
@@ -33,7 +34,7 @@ export class AuthService {
           data: {
             name: data.name,
           },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: `${getAppURL()}auth/callback`,
         },
       });
 
@@ -99,7 +100,7 @@ export class AuthService {
       const { error } = await this.supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${getAppURL()}auth/callback`,
         },
       });
 
@@ -196,7 +197,7 @@ export class AuthService {
   async resetPassword(email: string): Promise<AuthResponse> {
     try {
       const { error } = await this.supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/reset-password`,
+        redirectTo: `${getAppURL()}auth/reset-password`,
       });
 
       if (error) {
@@ -258,7 +259,7 @@ export class AuthService {
         type: 'signup',
         email,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: `${getAppURL()}auth/callback`,
         },
       });
 
@@ -365,4 +366,3 @@ export async function requireAuth() {
  * Singleton instance for client-side usage
  */
 export const authService = new AuthService();
-

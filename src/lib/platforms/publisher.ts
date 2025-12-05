@@ -5,11 +5,16 @@
 
 import { FacebookClient, createFacebookClient } from './facebook';
 import { InstagramClient, createInstagramClient } from './instagram';
-import { TwitterClient, createTwitterClient } from './twitter';
+import { TwitterClient, createTwitterClient } from '@/lib/platforms/twitter';
 import { LinkedInClient, createLinkedInClient } from './linkedin';
 import { YouTubeClient, createYouTubeClient, publishToYouTube } from './youtube';
 import { TikTokClient, createTikTokClient } from './tiktok';
 import { retryWithBackoff, apiCircuitBreaker } from '@/lib/errors';
+import { refreshMetaToken } from '@/lib/oauth/token-refresh';
+import { refreshYouTubeToken } from '@/lib/oauth/youtube';
+import { encryptToken, decryptToken } from '@/lib/encryption';
+import { createClient } from '@/lib/supabase/server';
+import { logger } from '@/lib/logger';
 
 export type Platform = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'youtube' | 'tiktok';
 
@@ -42,6 +47,17 @@ export class PlatformPublisher {
    */
   async publishToAll(request: PublishRequest): Promise<PublishResult[]> {
     const results: PublishResult[] = [];
+
+    const demoMode = process.env.DEMO_PUBLISH === 'true';
+    if (demoMode) {
+      return request.platforms.map((platform) => ({
+        platform,
+        accountId: request.accountIds[platform],
+        success: true,
+        platformPostId: `demo_${platform}_${Date.now()}`,
+        permalink: `https://demo.local/${platform}/${Date.now()}`,
+      }));
+    }
 
     // Publish to each platform in parallel
     const publishPromises = request.platforms.map(async (platform) => {
@@ -108,6 +124,30 @@ export class PlatformPublisher {
     content: PlatformContent,
     scheduledFor?: Date
   ): Promise<{ id: string; permalink?: string }> {
+    try {
+      return await this._executePublish(platform, accountId, content, scheduledFor);
+    } catch (error: any) {
+      // Attempt token refresh on auth errors
+      if (this.shouldRefreshToken(error)) {
+        logger.info(`[Publisher] Attempting token refresh for ${platform} account ${accountId}`, { error: error.message });
+        const refreshed = await this.refreshAccountToken(platform, accountId);
+        
+        if (refreshed) {
+           logger.info(`[Publisher] Token refreshed, retrying publish...`);
+           // Retry once
+           return await this._executePublish(platform, accountId, content, scheduledFor);
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async _executePublish(
+    platform: Platform,
+    accountId: string,
+    content: PlatformContent,
+    scheduledFor?: Date
+  ): Promise<{ id: string; permalink?: string }> {
     switch (platform) {
       case 'facebook':
         return await this.publishToFacebook(accountId, content, scheduledFor);
@@ -129,6 +169,70 @@ export class PlatformPublisher {
       
       default:
         throw new Error(`Unsupported platform: ${platform}`);
+    }
+  }
+
+  private shouldRefreshToken(error: any): boolean {
+    const msg = (error.message || '').toLowerCase();
+    // Facebook: code 190
+    // YouTube: 401 or "token expired"
+    // General: "unauthorized", "authentication failed"
+    if (error.code === 190) return true;
+    if (error.status === 401) return true;
+    if (msg.includes('token') && (msg.includes('expired') || msg.includes('invalid'))) return true;
+    if (msg.includes('unauthorized')) return true;
+    if (msg.includes('auth')) return true;
+    return false;
+  }
+
+  private async refreshAccountToken(platform: Platform, accountId: string): Promise<boolean> {
+    try {
+      if (platform === 'facebook' || platform === 'instagram') {
+        const result = await refreshMetaToken(accountId);
+        return result.success;
+      }
+      
+      if (platform === 'youtube') {
+        const supabase = await createClient();
+        const { data: account } = await supabase
+          .from('social_accounts')
+          .select('refresh_token')
+          .eq('id', accountId)
+          .single();
+          
+        if (!account?.refresh_token) return false;
+        
+        const decryptedRefreshToken = decryptToken(account.refresh_token);
+        const config = {
+            clientId: process.env.YOUTUBE_CLIENT_ID!,
+            clientSecret: process.env.YOUTUBE_CLIENT_SECRET!,
+            redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/api/oauth/youtube/callback`,
+        };
+        
+        const tokenResponse = await refreshYouTubeToken(config, decryptedRefreshToken);
+        
+        const encryptedAccessToken = encryptToken(tokenResponse.access_token);
+        const encryptedRefreshToken = tokenResponse.refresh_token
+            ? encryptToken(tokenResponse.refresh_token)
+            : account.refresh_token;
+
+        await supabase
+            .from('social_accounts')
+            .update({
+              access_token: encryptedAccessToken,
+              refresh_token: encryptedRefreshToken,
+              token_expires_at: new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', accountId);
+            
+        return true;
+      }
+      
+      return false;
+    } catch (e) {
+      logger.error(`[Publisher] Token refresh failed for ${platform}`, e as Error);
+      return false;
     }
   }
 
@@ -359,4 +463,3 @@ export class PlatformPublisher {
  * Singleton instance
  */
 export const platformPublisher = new PlatformPublisher();
-

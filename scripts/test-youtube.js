@@ -160,7 +160,7 @@ async function testOAuthConnect() {
   logSection('OAuth Connect Endpoint');
 
   try {
-    const response = await makeRequest(`${BASE_URL}/api/oauth/connect?platform=youtube`);
+    const response = await makeRequest(`${BASE_URL}/api/auth/connect?platform=youtube`);
     
     // OAuth connect should redirect (302/307) or require authentication (401)
     if ([301, 302, 307, 401].includes(response.status)) {
@@ -294,7 +294,7 @@ async function testFileStructure() {
     'src/lib/platforms/youtube.ts',
     'src/lib/platforms/youtube-analytics.ts',
     'src/lib/platforms/publisher.ts',
-    'src/app/api/oauth/youtube/callback/route.ts',
+    'src/app/api/auth/youtube/callback/route.ts',
     'src/app/api/youtube/publish/route.ts',
     'src/app/api/youtube/analytics/route.ts',
     'src/app/api/cron/sync-youtube-analytics/route.ts',
@@ -390,4 +390,3 @@ runTests().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-

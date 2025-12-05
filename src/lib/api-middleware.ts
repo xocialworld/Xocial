@@ -114,6 +114,13 @@ export async function requireAuth(request: NextRequest) {
     throw new APIError(401, 'Unauthorized', 'UNAUTHORIZED');
   }
 
+  // Bootstrap: ensure profile exists
+  try {
+    await ensureUserProfile(user, supabase);
+  } catch (e) {
+    // Allow downstream routes to handle if needed
+  }
+
   return { user, supabase };
 }
 
@@ -148,7 +155,7 @@ async function ensureWorkspaceMembership(
   workspaceId: string,
   userId: string,
   role: WorkspaceRole = 'owner'
-) {
+): Promise<boolean> {
   const { error } = await supabase
     .from('workspace_members')
     .upsert(
@@ -159,9 +166,34 @@ async function ensureWorkspaceMembership(
       },
       { onConflict: 'workspace_id,user_id' }
     );
+  return !error;
+}
+
+export async function ensureUserProfile(
+  user: { id: string; email?: string | null; user_metadata?: any },
+  existingClient?: SupabaseClient
+) {
+  const supabase = existingClient ?? (await createClient());
+  const { data: existing } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (existing) return existing;
+
+  const nameCandidate = (user.user_metadata && (user.user_metadata.name || user.user_metadata.full_name))
+    || (user.email ? String(user.email).split('@')[0] : 'User');
+  const email = user.email ?? `${user.id}@local.invalid`;
+
+  const { error } = await supabase
+    .from('profiles')
+    .insert({ id: user.id, email, name: nameCandidate })
+    .select()
+    .single();
 
   if (error) {
-    throw new APIError(500, `Failed to link user to workspace: ${error.message}`, 'WORKSPACE_MEMBERSHIP_FAILED');
+    throw new APIError(500, `Failed to create profile: ${error.message}`, 'PROFILE_CREATE_ERROR');
   }
 }
 
@@ -170,9 +202,9 @@ async function ensureWorkspaceMembership(
  * This prevents infinite recursion in workspace policies
  */
 async function createWorkspaceForUser(
-  profile: { id: string; name: string; email?: string | null }
+  profile: { id: string; name: string; email?: string | null },
+  userClient?: SupabaseClient
 ) {
-  // Use service role client to bypass RLS policies
   const serviceClient = createServiceRoleClient();
 
   const baseName =
@@ -186,9 +218,26 @@ async function createWorkspaceForUser(
   const slugBase = slugify(baseName || 'workspace') || 'workspace';
   const uniqueSuffix = profile.id.replace(/-/g, '').slice(0, 8);
   const slug = `${slugBase}-${uniqueSuffix}`;
+  // If a workspace already exists for this owner, return it to avoid duplicates
+  const { data: existingOwned, error: existingOwnedError } = await serviceClient
+    .from('workspaces')
+    .select('*')
+    .eq('owner_id', profile.id)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
-  // Create workspace with service role (bypasses RLS)
-  const { data: newWorkspace, error } = await serviceClient
+  if (existingOwnedError) {
+    logger.warn?.('Workspace lookup failed, will attempt creation', existingOwnedError as any);
+  }
+
+  if (existingOwned) {
+    await ensureWorkspaceMembership(serviceClient, existingOwned.id, profile.id, 'owner');
+    return existingOwned;
+  }
+
+  const insertClient = userClient ?? serviceClient;
+  const { data: newWorkspace, error } = await insertClient
     .from('workspaces')
     .insert({
       name: workspaceName,
@@ -199,6 +248,24 @@ async function createWorkspaceForUser(
     .single();
 
   if (error || !newWorkspace) {
+    // Handle unique slug conflicts by fetching existing owned workspace
+    const isUniqueViolation = (error as any)?.code === '23505' || String((error as any)?.message || '').includes('workspaces_slug_key');
+    if (isUniqueViolation) {
+      const { data: owned, error: ownedErr } = await serviceClient
+        .from('workspaces')
+        .select('*')
+        .eq('owner_id', profile.id)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (owned) {
+        await ensureWorkspaceMembership(serviceClient, owned.id, profile.id, 'owner');
+        return owned;
+      }
+      if (ownedErr) {
+        logger.error('Workspace create conflict and lookup failed', ownedErr as any);
+      }
+    }
     logger.error('Failed to create workspace', error as Error, {
       userId: profile.id,
       workspaceName,
@@ -206,7 +273,6 @@ async function createWorkspaceForUser(
     throw new APIError(500, `Failed to create workspace: ${error?.message}`, 'WORKSPACE_CREATE_FAILED');
   }
 
-  // Create workspace membership with service role (bypasses RLS)
   await ensureWorkspaceMembership(serviceClient, newWorkspace.id, profile.id, 'owner');
 
   logger.info('Workspace created successfully', {
@@ -222,31 +288,55 @@ async function createWorkspaceForUser(
  * Get user's workspace (creates one if it doesn't exist)
  */
 export async function getUserWorkspace(userId: string, existingClient?: SupabaseClient) {
-  const supabase = existingClient ?? await createClient();
+  const userClient = existingClient ?? (await createClient());
+  const serviceClient = createServiceRoleClient();
 
-  const { data: profile, error: profileError } = await supabase
+  // Read profile using user client to satisfy RLS
+  let { data: profile } = await userClient
     .from('profiles')
     .select('id, name, email')
     .eq('id', userId)
-    .single();
+    .maybeSingle();
 
-  if (profileError || !profile) {
-    throw new APIError(404, 'User profile not found. Please complete registration.', 'PROFILE_NOT_FOUND');
+  // If profile missing, attempt to create it using user session
+  if (!profile) {
+    const { data: authUser } = await userClient.auth.getUser();
+    if (!authUser?.user) {
+      throw new APIError(401, 'Unauthorized', 'UNAUTHORIZED');
+    }
+    await ensureUserProfile(authUser.user, userClient);
+    const { data: reloaded } = await userClient
+      .from('profiles')
+      .select('id, name, email')
+      .eq('id', userId)
+      .maybeSingle();
+    if (!reloaded) {
+      throw new APIError(404, 'User profile not found. Please complete registration.', 'PROFILE_NOT_FOUND');
+    }
+    profile = reloaded;
   }
 
-  const { data: membership } = await supabase
+  const { data: membership } = await serviceClient
     .from('workspace_members')
-    .select('role, workspace:workspace_id (*)')
+    .select('workspace_id, role')
     .eq('user_id', userId)
     .order('joined_at', { ascending: true })
     .limit(1)
     .maybeSingle();
 
-  if (membership?.workspace) {
-    return membership.workspace;
+  if (membership?.workspace_id) {
+    const { data: workspace, error: wsError } = await serviceClient
+      .from('workspaces')
+      .select('*')
+      .eq('id', membership.workspace_id)
+      .single();
+    if (wsError || !workspace) {
+      throw new APIError(404, 'Workspace not found', 'WORKSPACE_NOT_FOUND');
+    }
+    return workspace;
   }
 
-  const { data: ownedWorkspace } = await supabase
+  const { data: ownedWorkspace } = await serviceClient
     .from('workspaces')
     .select('*')
     .eq('owner_id', userId)
@@ -255,13 +345,11 @@ export async function getUserWorkspace(userId: string, existingClient?: Supabase
     .maybeSingle();
 
   if (ownedWorkspace) {
-    await ensureWorkspaceMembership(supabase, ownedWorkspace.id, userId, 'owner');
+    await ensureWorkspaceMembership(serviceClient, ownedWorkspace.id, userId, 'owner');
     return ownedWorkspace;
   }
 
-  // No existing workspace found, create a new one
-  // Note: createWorkspaceForUser uses service role client internally
-  return createWorkspaceForUser(profile);
+  return createWorkspaceForUser(profile, userClient);
 }
 
 export async function getWorkspaceFromRequest(
@@ -279,17 +367,6 @@ export async function getWorkspaceFromRequest(
     return getUserWorkspace(userId, supabase);
   }
 
-  const { data: membership, error: membershipError } = await supabase
-    .from('workspace_members')
-    .select('workspace_id')
-    .eq('workspace_id', workspaceId)
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (membershipError || !membership) {
-    throw new APIError(403, 'Access denied to workspace', 'ACCESS_DENIED');
-  }
-
   const { data: workspace, error: workspaceError } = await supabase
     .from('workspaces')
     .select('*')
@@ -298,6 +375,21 @@ export async function getWorkspaceFromRequest(
 
   if (workspaceError || !workspace) {
     throw new APIError(404, 'Workspace not found', 'WORKSPACE_NOT_FOUND');
+  }
+
+  if (workspace.owner_id === userId) {
+    return workspace;
+  }
+
+  const { data: membership } = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!membership) {
+    throw new APIError(403, 'Access denied to workspace', 'ACCESS_DENIED');
   }
 
   return workspace;
@@ -309,9 +401,21 @@ export async function getWorkspaceFromRequest(
 export async function checkWorkspaceAccess(
   userId: string,
   workspaceId: string
-) {
+): Promise<WorkspaceRole> {
   const supabase = await createClient();
 
+  // First check if user is the workspace owner
+  const { data: workspace } = await supabase
+    .from('workspaces')
+    .select('owner_id')
+    .eq('id', workspaceId)
+    .single();
+
+  if (workspace?.owner_id === userId) {
+    return 'owner';
+  }
+
+  // Then check workspace_members table
   const { data, error } = await supabase
     .from('workspace_members')
     .select('role')
@@ -463,4 +567,3 @@ export function handleAPIError(error: unknown): NextResponse {
     500
   );
 }
-

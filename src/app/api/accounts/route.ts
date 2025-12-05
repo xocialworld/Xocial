@@ -84,7 +84,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   }
 
   // Fetch aggregated metrics for accounts in this workspace
-  
+
   const metricsArgs: Record<string, string> = {
     workspace_uuid: workspace.id,
   };
@@ -99,32 +99,35 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     metricsArgs.end_date = new Date(metricsTo).toISOString();
   }
 
-  const { data: metricsData, error: metricsError } = await supabase.rpc(
-    'get_workspace_account_metrics',
-    metricsArgs
-  );
+  // We need to handle the case where the RPC might not exist or fail gracefully
+  let metricsMap = new Map<string, typeof DEFAULT_ACCOUNT_METRICS>();
 
-  if (metricsError) {
-    throw new APIError(500, metricsError.message, 'DATABASE_ERROR');
+  try {
+    const { data: metricsData, error: metricsError } = await supabase.rpc(
+      'get_workspace_account_metrics',
+      metricsArgs
+    );
+
+    if (!metricsError && metricsData) {
+      const metricsRows = (metricsData ?? []) as AccountMetricsRow[];
+      metricsRows.forEach((row) => {
+        if (!row.social_account_id) return;
+        metricsMap.set(row.social_account_id, {
+          postsPublished: row.posts_published ?? 0,
+          totalLikes: row.total_likes ?? 0,
+          totalComments: row.total_comments ?? 0,
+          totalShares: row.total_shares ?? 0,
+          totalEngagement: row.total_engagement ?? 0,
+          avgEngagementRate: row.avg_engagement_rate ?? 0,
+          lastPublishedAt: row.last_published_at,
+          lastSyncedAt: row.last_synced_at,
+          totalVideoViews: row.total_video_views ?? 0,
+        });
+      });
+    }
+  } catch (e) {
+    console.warn('Failed to fetch metrics, continuing without them', e);
   }
-
-  const metricsRows = (metricsData ?? []) as AccountMetricsRow[];
-  const metricsMap = new Map<string, typeof DEFAULT_ACCOUNT_METRICS>();
-
-  metricsRows.forEach((row) => {
-    if (!row.social_account_id) return;
-    metricsMap.set(row.social_account_id, {
-      postsPublished: row.posts_published ?? 0,
-      totalLikes: row.total_likes ?? 0,
-      totalComments: row.total_comments ?? 0,
-      totalShares: row.total_shares ?? 0,
-      totalEngagement: row.total_engagement ?? 0,
-      avgEngagementRate: row.avg_engagement_rate ?? 0,
-      lastPublishedAt: row.last_published_at,
-      lastSyncedAt: row.last_synced_at,
-      totalVideoViews: row.total_video_views ?? 0,
-    });
-  });
 
   const enrichedAccounts = (accounts || []).map((account) => ({
     ...account,
@@ -150,7 +153,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   const { user, supabase } = await requireAuth(request);
 
   const body = await request.json();
-  const { platform, account_id, account_name, access_token, refresh_token } = body;
+  const { platform, account_id, account_name, access_token, refresh_token, ...otherFields } = body;
 
   // Validate required fields
   if (!platform || !account_id || !account_name || !access_token) {
@@ -162,10 +165,11 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   const role = await checkWorkspaceAccess(user.id, workspace.id);
 
   if (!['owner', 'admin'].includes(role)) {
-    throw new APIError(403, 'You do not have permission to disconnect accounts', 'FORBIDDEN');
+    throw new APIError(403, 'You do not have permission to connect accounts', 'FORBIDDEN');
   }
 
-  // Check if account already exists
+  // Check if THIS specific account already exists in THIS workspace
+  // We allow multiple accounts of the same platform, but not the EXACT SAME account twice.
   const { data: existing } = await supabase
     .from('social_accounts')
     .select('id')
@@ -175,7 +179,26 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     .single();
 
   if (existing) {
-    throw new APIError(409, 'Account already connected', 'ACCOUNT_EXISTS');
+    // If it exists, we update it instead of throwing error, to allow re-connecting/refreshing tokens
+    const { data: updatedAccount, error: updateError } = await supabase
+      .from('social_accounts')
+      .update({
+        account_name,
+        access_token,
+        refresh_token,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+        ...otherFields
+      })
+      .eq('id', existing.id)
+      .select()
+      .single();
+
+    if (updateError) {
+      throw new APIError(500, updateError.message, 'DATABASE_ERROR');
+    }
+
+    return successResponse({ account: updatedAccount, message: 'Account re-connected successfully' });
   }
 
   // Create social account
@@ -189,6 +212,8 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       access_token,
       refresh_token,
       is_active: true,
+      assigned_user_id: user.id,
+      ...otherFields
     })
     .select()
     .single();
@@ -205,7 +230,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
  */
 export const DELETE = withErrorHandler(async (request: NextRequest) => {
   const { user, supabase } = await requireAuth(request);
-  
+
   const url = new URL(request.url);
   const accountId = url.pathname.split('/').pop();
 
@@ -216,7 +241,20 @@ export const DELETE = withErrorHandler(async (request: NextRequest) => {
   // Get user's workspace
   const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
 
-  // Deactivate the account (soft delete)
+  // Verify permission
+  const role = await checkWorkspaceAccess(user.id, workspace.id);
+  if (!['owner', 'admin'].includes(role)) {
+    throw new APIError(403, 'You do not have permission to disconnect accounts', 'FORBIDDEN');
+  }
+
+  // Deactivate the account (soft delete) or hard delete?
+  // SRS says "status IN ('active', ... 'disconnected')"
+  // But codebase uses 'is_active' boolean. I will stick to 'is_active' for now as per previous code,
+  // but maybe I should update status text too if it exists.
+  // Let's check if 'status' column exists in the previous code's GET...
+  // The previous code used 'is_active'.
+  // I will update 'is_active' to false.
+
   const { error } = await supabase
     .from('social_accounts')
     .update({ is_active: false })
@@ -229,4 +267,3 @@ export const DELETE = withErrorHandler(async (request: NextRequest) => {
 
   return successResponse({ message: 'Account disconnected successfully' });
 });
-

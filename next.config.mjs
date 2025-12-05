@@ -55,7 +55,19 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
+  async redirects() {
+    return [
+      { source: '/features/ai-assistant', destination: '/product/create', permanent: true },
+      { source: '/features/content-calendar', destination: '/product/plan', permanent: true },
+      { source: '/features/analytics', destination: '/product/analyze', permanent: true },
+      { source: '/features/accounts', destination: '/product/collaborate', permanent: true },
+      { source: '/features/templates', destination: '/product/create', permanent: true },
+      { source: '/features/media', destination: '/product/create', permanent: true },
+      { source: '/features/campaigns', destination: '/product/plan', permanent: true },
+      { source: '/features/compose', destination: '/product/create', permanent: true },
+      { source: '/features/integrations', destination: '/product/schedule', permanent: true },
+    ]
+  },
 };
 
 export default nextConfig;
-

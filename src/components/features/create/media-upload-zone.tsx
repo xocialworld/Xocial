@@ -1,18 +1,20 @@
 "use client";
 
 import { useCallback, useState } from 'react';
+import Image from 'next/image';
 import { Upload, X, Image as ImageIcon, Video } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { MediaFile } from './unified-post-composer';
+import type { MediaFile } from '@/types';
 
 type MediaUploadZoneProps = {
     media: MediaFile[];
     onUpload: (files: File[]) => void;
     onRemove: (mediaId: string) => void;
+    onBrowseLibrary?: () => void;
 };
 
-export function MediaUploadZone({ media, onUpload, onRemove }: MediaUploadZoneProps) {
+export function MediaUploadZone({ media, onUpload, onRemove, onBrowseLibrary }: MediaUploadZoneProps) {
     const [isDragging, setIsDragging] = useState(false);
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -103,6 +105,23 @@ export function MediaUploadZone({ media, onUpload, onRemove }: MediaUploadZonePr
                         PNG, JPG, GIF, MP4, MOV up to 100MB
                     </p>
                 </label>
+
+                {onBrowseLibrary && (
+                    <div className="mt-4 pt-4 border-t border-secondary-200">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                onBrowseLibrary();
+                            }}
+                        >
+                            <ImageIcon className="mr-2 h-4 w-4" />
+                            Browse Library
+                        </Button>
+                    </div>
+                )}
             </div>
 
             {/* Uploaded Media Grid */}
@@ -114,10 +133,11 @@ export function MediaUploadZone({ media, onUpload, onRemove }: MediaUploadZonePr
                             className="group relative aspect-square overflow-hidden rounded-lg bg-secondary-100"
                         >
                             {file.type === 'image' ? (
-                                <img
+                                <Image
                                     src={file.url}
                                     alt={file.name}
-                                    className="h-full w-full object-cover"
+                                    fill
+                                    className="object-cover"
                                 />
                             ) : (
                                 <div className="flex h-full flex-col items-center justify-center gap-2 p-3">

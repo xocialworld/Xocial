@@ -205,7 +205,7 @@ async function syncTwitterPost(platformPost: any) {
   if (!account) throw new Error('Twitter account not found');
 
   const client = await createTwitterClient(account.id);
-  return await client.getTweetMetrics(platformPost.platform_post_id);
+  return await client.getTweet(platformPost.platform_post_id);
 }
 
 async function syncLinkedInPost(platformPost: any) {
@@ -253,4 +253,3 @@ async function syncYouTubePost(platformPost: any) {
   const client = await createYouTubeClient(account.id);
   return await client.getVideoStats(platformPost.platform_post_id);
 }
-

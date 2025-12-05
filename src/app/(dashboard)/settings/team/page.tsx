@@ -31,7 +31,7 @@ import { useSelectedWorkspace } from '@/store/workspaceStore';
 interface Member {
   id: string;
   user_id: string;
-  role: 'owner' | 'admin' | 'editor' | 'viewer';
+  role: 'owner' | 'admin' | 'manager' | 'creator' | 'analyst';
   joined_at: string;
   profile: {
     id: string;
@@ -83,7 +83,7 @@ export default function TeamManagementPage() {
   const queryClient = useQueryClient();
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState('viewer');
+  const [inviteRole, setInviteRole] = useState('creator');
   const [inviteMessage, setInviteMessage] = useState('');
   const selectedWorkspace = useSelectedWorkspace();
   const activeWorkspaceId = selectedWorkspace?.id;
@@ -126,7 +126,7 @@ export default function TeamManagementPage() {
 
   const handleInvite = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!inviteEmail) {
       toast.error('Please enter an email address');
       return;
@@ -150,9 +150,11 @@ export default function TeamManagementPage() {
         return <Crown className="h-4 w-4" />;
       case 'admin':
         return <Shield className="h-4 w-4" />;
-      case 'editor':
+      case 'manager':
+        return <Shield className="h-4 w-4" />;
+      case 'creator':
         return <Edit3 className="h-4 w-4" />;
-      case 'viewer':
+      case 'analyst':
         return <Eye className="h-4 w-4" />;
       default:
         return null;
@@ -165,9 +167,11 @@ export default function TeamManagementPage() {
         return 'bg-primary-500 text-white';
       case 'admin':
         return 'bg-purple-500 text-white';
-      case 'editor':
+      case 'manager':
+        return 'bg-purple-500 text-white';
+      case 'creator':
         return 'bg-success-500 text-white';
-      case 'viewer':
+      case 'analyst':
         return 'bg-gray-500 text-white';
       default:
         return 'bg-gray-500 text-white';
@@ -218,8 +222,9 @@ export default function TeamManagementPage() {
                     onChange={(e) => setInviteRole(e.target.value)}
                     className="w-full rounded-md border border-gray-300 px-3 py-2"
                   >
-                    <option value="viewer">Viewer - View only access</option>
-                    <option value="editor">Editor - Can create and edit content</option>
+                    <option value="analyst">Analyst - View analytics only</option>
+                    <option value="creator">Creator - Create and edit content</option>
+                    <option value="manager">Manager - Manage content and members</option>
                     <option value="admin">Admin - Full access except billing</option>
                   </select>
                 </div>

@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Sparkles, Edit3, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Platform } from '@/types';
-import type { MediaFile } from './unified-post-composer';
+import type { Platform, MediaFile } from '@/types';
 import {
     Popover,
     PopoverContent,
@@ -68,10 +68,11 @@ const PLATFORM_CONFIG: Record<Platform, {
 
 const REFINE_OPTIONS = [
     { value: 'shorter', label: 'Make it shorter' },
-    { value: 'emojis', label: 'Add more emojis' },
-    { value: 'professional', label: 'More professional' },
-    { value: 'casual', label: 'More casual' },
-    { value: 'cta', label: 'Add call-to-action' },
+    { value: 'longer', label: 'Make it longer' },
+    { value: 'more_emojis', label: 'Add more emojis' },
+    { value: 'more_professional', label: 'More professional' },
+    { value: 'more_casual', label: 'More casual' },
+    { value: 'add_urgency', label: 'Add call-to-action' },
     { value: 'hashtags', label: 'Add hashtags' },
 ];
 
@@ -176,10 +177,11 @@ export function PlatformPreviewCard({
                             className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-secondary-100"
                         >
                             {file.type === 'image' ? (
-                                <img
+                                <Image
                                     src={file.url}
                                     alt={file.name}
-                                    className="h-full w-full object-cover"
+                                    fill
+                                    className="object-cover"
                                 />
                             ) : (
                                 <div className="flex h-full items-center justify-center text-xs text-secondary-600">

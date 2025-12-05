@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { WorkspaceSwitcher } from "@/components/shared/workspace-switcher";
+import { NotificationCenter } from "@/components/shared/notification-center";
 
 interface HeaderProps {
   user?: {
@@ -27,7 +28,7 @@ export function Header({ user }: HeaderProps) {
   const handleSignOut = async () => {
     const supabase = createClient();
     const { error } = await supabase.auth.signOut();
-    
+
     if (error) {
       toast.error("Failed to sign out");
     } else {
@@ -56,10 +57,7 @@ export function Header({ user }: HeaderProps) {
         {/* Right Side Actions */}
         <div className="flex items-center gap-3">
           {/* Notifications */}
-          <button className="relative rounded-lg p-2 text-secondary-600 hover:bg-secondary-100">
-            <Bell className="h-5 w-5" />
-            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-error-500" />
-          </button>
+          <NotificationCenter />
 
           {/* Settings */}
           <Link href="/settings">
@@ -74,7 +72,7 @@ export function Header({ user }: HeaderProps) {
               onClick={() => setShowUserMenu(!showUserMenu)}
               className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary-100"
             >
-              {user?.avatar_url ? (
+              {user?.avatar_url?.length ? (
                 <img
                   src={user.avatar_url}
                   alt={user.name}

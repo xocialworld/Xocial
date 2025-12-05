@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 
-interface DialogProps {
+export interface DialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
@@ -31,7 +31,7 @@ const DialogContent = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "relative w-full max-w-lg rounded-lg bg-white p-6 shadow-lg",
+      "relative w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto rounded-lg bg-white p-6 shadow-lg",
       className
     )}
     {...props}

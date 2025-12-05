@@ -11,7 +11,7 @@ import {
 import { generateContent } from '@/lib/openai';
 import { logger } from '@/lib/logger';
 import type { Platform } from '@/types';
-import { AI_MODEL_IDS, DEFAULT_AI_MODEL } from '@/lib/ai/models';
+import { DEFAULT_AI_MODEL } from '@/lib/ai/models';
 import { z } from 'zod';
 
 /**
@@ -30,11 +30,21 @@ const generateSchema = z.object({
   platforms: z.array(platformEnum).min(1).optional(),
   platform: platformEnum.optional(),
   prompt: z.string().min(10, 'Prompt must be at least 10 characters'),
-  model: z.enum(AI_MODEL_IDS).optional(),
-  tone: z.enum(['professional', 'casual', 'friendly', 'enthusiastic', 'informative']).optional(),
+  model: z.string().optional(),
+  tone: z.enum([
+    'professional',
+    'casual',
+    'friendly',
+    'enthusiastic',
+    'informative',
+    'playful',
+    'inspirational',
+    'educational',
+  ]).optional(),
   style: z
     .enum(['informative', 'storytelling', 'educational', 'promotional', 'playful'])
     .optional(),
+  audience: z.string().optional(),
   length: z.enum(['short', 'medium', 'long']).optional(),
   addEmojis: z.boolean().optional(),
   addHashtags: z.boolean().optional(),
@@ -71,21 +81,28 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   // Generate content using OpenAI
   let generated;
   try {
+    // Enhance the prompt to be more explicit if it's very short
+    let refinedPrompt = validatedData.prompt;
+    if (refinedPrompt.length < 50) {
+        refinedPrompt = `Create a high-quality social media post based on this idea: "${refinedPrompt}". Expand on it, make it engaging, and ensure it offers value to the reader.`;
+    }
+
     generated = await generateContent({
-      prompt: validatedData.prompt,
+      prompt: refinedPrompt,
       platforms,
       model: resolvedModel,
       tone: validatedData.tone,
       style: validatedData.style,
+      audience: validatedData.audience,
       length: validatedData.length,
       addEmojis: validatedData.addEmojis,
       addHashtags: validatedData.addHashtags,
       addCTA: validatedData.addCTA,
       maxLength: validatedData.maxLength,
+      userId: user.id,
     });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Unable to generate AI content';
+    const message = error instanceof Error ? error.message : 'Unable to generate AI content';
     throw new APIError(502, message, 'AI_GENERATE_FAILED');
   }
 
@@ -111,6 +128,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       parameters: {
         tone: validatedData.tone,
         style: validatedData.style,
+        audience: validatedData.audience,
         length: validatedData.length,
         platforms,
         model: resolvedModel,
@@ -134,7 +152,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       platforms,
       tone: validatedData.tone,
       length: validatedData.length,
-        model: resolvedModel,
+      model: resolvedModel,
     },
   });
 

@@ -107,6 +107,11 @@ export async function GET(request: NextRequest) {
         shares,
         engagement,
         engagementRate: 0,
+        impressions: analytics.reduce((sum: number, a: any) => sum + (a.impressions || 0), 0),
+        reach: analytics.reduce((sum: number, a: any) => sum + (a.reach || 0), 0),
+        saves: analytics.reduce((sum: number, a: any) => sum + (a.saves || 0), 0),
+        clicks: analytics.reduce((sum: number, a: any) => sum + (a.clicks || 0), 0),
+        type: (post.post_analytics?.[0] as any)?.type || 'text',
       };
     });
 

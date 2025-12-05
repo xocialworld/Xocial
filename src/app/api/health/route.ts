@@ -70,15 +70,26 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     }
 
     // Check 3: Vercel AI Gateway
-    if (process.env.VERCEL_AI_GATEWAY_API_KEY) {
-      checks.aiGateway = {
-        status: 'ok',
-        message: 'Gateway API key configured',
-      };
-    } else {
+    try {
+      if (process.env.VERCEL_AI_GATEWAY_API_KEY || env.OPENAI_API_KEY) {
+        const aiStart = Date.now();
+        const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/ai/models`);
+        const json = await res.json().catch(() => null);
+        checks.aiGateway = {
+          status: res.ok && json ? 'ok' : 'error',
+          message: res.ok && json ? `Models: ${Array.isArray(json?.data?.models) ? json.data.models.length : 'unknown'}` : 'AI models endpoint unreachable',
+          duration: Date.now() - aiStart,
+        };
+      } else {
+        checks.aiGateway = {
+          status: 'error',
+          message: 'AI credentials missing',
+        };
+      }
+    } catch (e: any) {
       checks.aiGateway = {
         status: 'error',
-        message: 'VERCEL_AI_GATEWAY_API_KEY missing',
+        message: e.message || 'Gateway check failed',
       };
     }
 
@@ -137,4 +148,3 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
 // Prevent caching
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-

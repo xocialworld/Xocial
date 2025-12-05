@@ -5,7 +5,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { APIError } from '@/lib/api-error';
+import { APIError, APIErrorCode } from '@/lib/api-error';
 
 export type WorkspaceRole = 'owner' | 'admin' | 'member';
 
@@ -49,8 +49,11 @@ export async function verifyWorkspaceAccess(
         const requiredRoleLevel = ROLE_HIERARCHY[requiredRole];
 
         if (userRoleLevel < requiredRoleLevel) {
-            throw APIError.forbidden(
+            throw new APIError(
+                403,
+                APIErrorCode.FORBIDDEN,
                 `This action requires ${requiredRole} role or higher`,
+                undefined,
                 {
                     required_role: requiredRole,
                     current_role: membership.role,

@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { RefreshCcw } from "lucide-react";
+import { RefreshCcw, MousePointerClick, Activity, Users } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -10,6 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { OverviewMetrics } from "./components/overview-metrics";
+import { OverviewCards } from "./components/overview-cards";
+import { AdvancedAnalyticsTable } from "./components/advanced-analytics-table";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { DateRangeSelector } from "./components/date-range-selector";
 import { ExportButton } from "./components/export-button";
 import { useAnalytics } from "./hooks/useAnalytics";
@@ -57,6 +61,7 @@ export default function AnalyticsPage() {
     from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
     to: new Date(),
   });
+  const [isLive, setIsLive] = useState(false);
 
   const {
     overview,
@@ -66,7 +71,8 @@ export default function AnalyticsPage() {
     loading,
     error,
     refetch,
-  } = useAnalytics(dateRange);
+  } = useAnalytics(dateRange, isLive ? 5000 : false);
+
   const {
     workspace,
     loading: workspaceLoading,
@@ -90,6 +96,50 @@ export default function AnalyticsPage() {
       setIsRefreshing(false);
     }
   };
+
+  const overviewMetrics = useMemo(() => {
+    if (!overview) return [];
+
+    // Helper to get sparkline data for a specific metric
+    const getSparkline = (key: 'impressions' | 'engagement' | 'followers' | 'engagementRate') => {
+      return overview.sparklineData?.map(d => ({ value: d[key] })) || [];
+    };
+
+    return [
+      {
+        label: "Total Posts",
+        value: overview.totalPosts,
+        change: overview.postsChange,
+        trend: overview.postsChange > 0 ? "up" : overview.postsChange < 0 ? "down" : "neutral",
+        data: overview.sparklineData?.map(d => ({ value: d.posts })) || [],
+        icon: MousePointerClick, // Placeholder icon
+      },
+      {
+        label: "Total Engagement",
+        value: overview.totalEngagement.toLocaleString(),
+        change: overview.engagementChange,
+        trend: overview.engagementChange > 0 ? "up" : overview.engagementChange < 0 ? "down" : "neutral",
+        data: getSparkline('engagement'),
+        icon: Activity,
+      },
+      {
+        label: "Engagement Rate",
+        value: `${overview.avgEngagementRate.toFixed(2)}%`,
+        change: overview.engagementRateChange,
+        trend: overview.engagementRateChange > 0 ? "up" : overview.engagementRateChange < 0 ? "down" : "neutral",
+        data: getSparkline('engagementRate'),
+        icon: Users,
+      },
+      {
+        label: "Total Followers",
+        value: overview.totalFollowers.toLocaleString(),
+        change: overview.followersChange,
+        trend: overview.followersChange > 0 ? "up" : overview.followersChange < 0 ? "down" : "neutral",
+        data: getSparkline('followers'),
+        icon: Users,
+      },
+    ] as any[]; // Cast to any to avoid strict icon type issues for now
+  }, [overview]);
 
   if (loading || workspaceLoading) {
     return (
@@ -116,11 +166,27 @@ export default function AnalyticsPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <DateRangeSelector value={dateRange} onChange={setDateRange} />
           <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center space-x-2 mr-4">
+              <Switch
+                id="live-mode"
+                checked={isLive}
+                onCheckedChange={setIsLive}
+              />
+              <Label htmlFor="live-mode" className="flex items-center gap-2 cursor-pointer">
+                Live Mode
+                {isLive && (
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                  </span>
+                )}
+              </Label>
+            </div>
             <Button
               variant="ghost"
               size="sm"
               onClick={handleRefresh}
-              disabled={isRefreshing}
+              disabled={isRefreshing || isLive}
             >
               <RefreshCcw
                 className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
@@ -149,11 +215,22 @@ export default function AnalyticsPage() {
         </TabsList>
 
         <TabsContent value="overview">
-          {overview && (
-            <div aria-live="polite" role="region" aria-label="Overview metrics">
-              <OverviewMetrics metrics={overview} />
+          <div className="space-y-6">
+            <OverviewCards metrics={overviewMetrics} loading={loading} />
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              {engagementData.length > 0 ? (
+                <EngagementChart data={engagementData} />
+              ) : (
+                <div className="rounded-xl border border-dashed border-gray-200 bg-white p-6 text-sm text-gray-500">
+                  Engagement trends will appear once you start publishing content in this range.
+                </div>
+              )}
+              {workspace?.id && (
+                <ComparativeAnalytics workspaceId={workspace.id} />
+              )}
             </div>
-          )}
+          </div>
         </TabsContent>
 
         <TabsContent value="trends">
@@ -199,13 +276,7 @@ export default function AnalyticsPage() {
         </TabsContent>
 
         <TabsContent value="content">
-          {topPosts.length > 0 ? (
-            <TopPostsTable posts={topPosts} />
-          ) : (
-            <div className="rounded-xl border border-dashed border-gray-200 bg-white p-6 text-sm text-gray-500">
-              We’ll highlight your top-performing posts once you start publishing.
-            </div>
-          )}
+          <AdvancedAnalyticsTable data={topPosts} loading={loading} />
         </TabsContent>
 
         <TabsContent value="audience">

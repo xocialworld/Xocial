@@ -1,6 +1,6 @@
 /**
  * Notification Center Component
- * Displays user notifications with real-time updates
+ * Displays user notifications with real-time updates and integrated Inbox features
  */
 
 'use client';
@@ -8,18 +8,20 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
-import { Bell, Check, Trash2, X } from 'lucide-react';
+import { Bell, Check, Trash2, MessageSquare, AtSign, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import type { Notification } from '@/lib/notifications';
+import { CommentItem, type Comment } from './notifications/comment-item';
 
 /**
  * Fetch notifications
@@ -42,7 +44,7 @@ async function markAsRead(notificationIds?: string[], markAll = false) {
       markAllAsRead: markAll,
     }),
   });
-  
+
   if (!response.ok) throw new Error('Failed to mark as read');
   return response.json();
 }
@@ -59,7 +61,7 @@ async function deleteNotifications(notificationIds?: string[], deleteAll = false
       deleteAll,
     }),
   });
-  
+
   if (!response.ok) throw new Error('Failed to delete notifications');
   return response.json();
 }
@@ -71,16 +73,42 @@ export function NotificationCenter() {
   const queryClient = useQueryClient();
   const supabase = createClient();
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("all");
 
   // Fetch notifications
   const { data, isLoading } = useQuery({
     queryKey: ['notifications'],
     queryFn: fetchNotifications,
-    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchInterval: 30000,
   });
 
   const notifications = data?.data?.notifications || [];
   const unreadCount = data?.data?.unreadCount || 0;
+
+  // Mock comments for the "Comments" tab until backend integration
+  const [comments, setComments] = useState<Comment[]>([]);
+
+  useEffect(() => {
+    // Simulate fetching comments
+    // In real app, this would be a separate query or part of notifications
+    const mockComments: Comment[] = [
+      {
+        id: '1',
+        author_name: 'Sarah Wilson',
+        content: 'Great post! Looking forward to more.',
+        platform: 'instagram',
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: '2',
+        author_name: 'Tech Daily',
+        content: 'Can we collaborate on this?',
+        platform: 'twitter',
+        created_at: new Date(Date.now() - 3600000).toISOString(),
+      }
+    ];
+    setComments(mockComments);
+  }, []);
 
   // Set up real-time subscription
   useEffect(() => {
@@ -135,24 +163,95 @@ export function NotificationCenter() {
     deleteMutation.mutate({ ids: [id] });
   };
 
+  const handleReply = async (text: string) => {
+    toast.success("Reply sent!");
+  };
+
+  const renderNotificationList = (filterFn: (n: Notification) => boolean) => {
+    const filtered = notifications.filter(filterFn);
+
+    if (isLoading) {
+      return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
+    }
+
+    if (filtered.length === 0) {
+      return (
+        <div className="p-8 text-center text-muted-foreground">
+          <Inbox className="h-10 w-10 mx-auto mb-2 opacity-50" />
+          <p>No notifications</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="divide-y">
+        {filtered.map((notification: Notification) => (
+          <div
+            key={notification.id}
+            className={`p-4 hover:bg-muted/50 transition-colors ${!notification.read ? 'bg-primary-50/30' : ''
+              }`}
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between mb-1">
+                  <p className="text-sm font-medium truncate">
+                    {notification.title}
+                  </p>
+                  {!notification.read && (
+                    <div className="h-2 w-2 rounded-full bg-primary-500 flex-shrink-0 mt-1" />
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground line-clamp-2">
+                  {notification.message}
+                </p>
+                <p className="text-xs text-muted-foreground/70 mt-1">
+                  {formatDistanceToNow(new Date(notification.created_at), {
+                    addSuffix: true,
+                  })}
+                </p>
+              </div>
+
+              <div className="flex gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                {!notification.read && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleMarkAsRead(notification.id)}
+                    className="h-7 w-7 p-0"
+                    title="Mark as read"
+                  >
+                    <Check className="h-4 w-4" />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDelete(notification.id)}
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                  title="Delete"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="relative">
-          <Bell className="h-5 w-5" />
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="sm" className="relative h-10 w-10 rounded-full">
+          <Bell className="h-5 w-5 text-secondary-600" />
           {unreadCount > 0 && (
-            <Badge
-              variant="error"
-              className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
-            >
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </Badge>
+            <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-error-500 ring-2 ring-white" />
           )}
         </Button>
-      </DropdownMenuTrigger>
+      </PopoverTrigger>
 
-      <DropdownMenuContent align="end" className="w-80 p-0">
-        {/* Header */}
+      <PopoverContent align="end" className="w-[400px] p-0">
         <div className="flex items-center justify-between p-4 border-b">
           <h3 className="font-semibold">Notifications</h3>
           {unreadCount > 0 && (
@@ -160,88 +259,80 @@ export function NotificationCenter() {
               variant="ghost"
               size="sm"
               onClick={handleMarkAllAsRead}
-              disabled={markAsReadMutation.isPending}
+              className="text-xs h-auto py-1"
             >
               Mark all read
             </Button>
           )}
         </div>
 
-        {/* Notifications list */}
-        <ScrollArea className="h-96">
-          {isLoading ? (
-            <div className="p-4 text-center text-sm text-gray-500">
-              Loading notifications...
-            </div>
-          ) : notifications.length === 0 ? (
-            <div className="p-8 text-center">
-              <Bell className="h-12 w-12 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-500">No notifications yet</p>
-            </div>
-          ) : (
-            <div>
-              {notifications.map((notification: Notification) => (
-                <div
-                  key={notification.id}
-                  className={`p-4 border-b hover:bg-gray-50 transition-colors ${
-                    !notification.read ? 'bg-primary-50/30' : ''
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between mb-1">
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {notification.title}
-                        </p>
-                        {!notification.read && (
-                          <div className="h-2 w-2 rounded-full bg-primary-500 flex-shrink-0 mt-1" />
-                        )}
-                      </div>
-                      <p className="text-sm text-gray-600 line-clamp-2">
-                        {notification.message}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {formatDistanceToNow(new Date(notification.created_at), {
-                          addSuffix: true,
-                        })}
-                      </p>
-                    </div>
+        <Tabs defaultValue="all" className="w-full" onValueChange={setActiveTab}>
+          <div className="px-4 pt-2">
+            <TabsList className="w-full justify-start h-9 bg-transparent p-0 border-b rounded-none">
+              <TabsTrigger
+                value="all"
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary-600 rounded-none px-4 pb-2"
+              >
+                All
+              </TabsTrigger>
+              <TabsTrigger
+                value="unread"
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary-600 rounded-none px-4 pb-2"
+              >
+                Unread
+              </TabsTrigger>
+              <TabsTrigger
+                value="comments"
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary-600 rounded-none px-4 pb-2"
+              >
+                Comments
+              </TabsTrigger>
+              <TabsTrigger
+                value="mentions"
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary-600 rounded-none px-4 pb-2"
+              >
+                Mentions
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-                    {/* Actions */}
-                    <div className="flex gap-1 flex-shrink-0">
-                      {!notification.read && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleMarkAsRead(notification.id)}
-                          disabled={markAsReadMutation.isPending}
-                          className="h-7 w-7 p-0"
-                          title="Mark as read"
-                        >
-                          <Check className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(notification.id)}
-                        disabled={deleteMutation.isPending}
-                        className="h-7 w-7 p-0"
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
+          <ScrollArea className="h-[400px]">
+            <TabsContent value="all" className="m-0">
+              {renderNotificationList(() => true)}
+            </TabsContent>
+
+            <TabsContent value="unread" className="m-0">
+              {renderNotificationList((n) => !n.read)}
+            </TabsContent>
+
+            <TabsContent value="comments" className="m-0">
+              {comments.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  <MessageSquare className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                  <p>No new comments</p>
                 </div>
-              ))}
-            </div>
-          )}
-        </ScrollArea>
-      </DropdownMenuContent>
-    </DropdownMenu>
+              ) : (
+                <div className="divide-y">
+                  {comments.map((comment) => (
+                    <CommentItem
+                      key={comment.id}
+                      comment={comment}
+                      onReply={handleReply}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="mentions" className="m-0">
+              <div className="p-8 text-center text-muted-foreground">
+                <AtSign className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                <p>No mentions yet</p>
+              </div>
+            </TabsContent>
+          </ScrollArea>
+        </Tabs>
+      </PopoverContent>
+    </Popover>
   );
 }
-
-export default NotificationCenter;
-

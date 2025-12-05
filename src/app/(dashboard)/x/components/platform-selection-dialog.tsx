@@ -34,7 +34,7 @@ export function PlatformSelectionDialog({ open, onOpenChange }: PlatformSelectio
     const handleConnect = async (platform: Platform) => {
         setConnecting(platform);
         // Redirect to OAuth flow
-        window.location.href = `/api/oauth/connect?platform=${platform}`;
+        window.location.href = `/api/auth/connect?platform=${platform}`;
     };
 
     return (
@@ -43,7 +43,7 @@ export function PlatformSelectionDialog({ open, onOpenChange }: PlatformSelectio
                 <DialogHeader>
                     <DialogTitle className="text-2xl">Connect Social Account</DialogTitle>
                     <DialogDescription>
-                        Choose a platform to connect. You'll be redirected to authenticate your account.
+                        Choose a platform to connect. You&apos;ll be redirected to authenticate your account.
                     </DialogDescription>
                 </DialogHeader>
 

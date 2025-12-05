@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server';
+import { decryptToken } from '@/lib/encryption';
 
 export interface FacebookConfig {
   accessToken: string;
@@ -46,7 +47,7 @@ export class FacebookClient {
   ): Promise<any> {
     try {
       const response = await fetch(url, options);
-      
+
       // Handle rate limiting (429)
       if (response.status === 429) {
         if (retries > 0) {
@@ -57,13 +58,13 @@ export class FacebookClient {
         }
         throw new Error('Rate limit exceeded after retries');
       }
-      
+
       // Handle other errors
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error?.message || `API request failed: ${response.status}`);
       }
-      
+
       return response.json();
     } catch (error: any) {
       // Retry on network errors
@@ -81,7 +82,7 @@ export class FacebookClient {
    */
   async publishPost(post: FacebookPost): Promise<{ id: string; post_id?: string }> {
     const url = `${this.baseUrl}/${this.pageId}/feed`;
-    
+
     const body: any = {
       message: post.message,
       access_token: this.accessToken,
@@ -275,7 +276,7 @@ export class FacebookClient {
    */
   private async uploadUnpublishedPhoto(url: string): Promise<string> {
     const uploadUrl = `${this.baseUrl}/${this.pageId}/photos`;
-    
+
     const response = await this.makeRequest(uploadUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -285,7 +286,7 @@ export class FacebookClient {
         access_token: this.accessToken,
       }),
     });
-    
+
     return response.id;
   }
 
@@ -301,15 +302,15 @@ export class FacebookClient {
     if (album.urls.length < 2 || album.urls.length > 10) {
       throw new Error('Album must contain 2-10 photos');
     }
-    
+
     // Step 1: Upload all photos as unpublished
     const photoIds = await Promise.all(
       album.urls.map(url => this.uploadUnpublishedPhoto(url))
     );
-    
+
     // Step 2: Create post with attached photos
     const url = `${this.baseUrl}/${this.pageId}/feed`;
-    
+
     return this.makeRequest(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -336,7 +337,7 @@ export class FacebookClient {
       limit: limit.toString(),
       access_token: this.accessToken,
     });
-    
+
     const response = await this.makeRequest(`${url}?${params}`, { method: 'GET' });
     return response.data || [];
   }
@@ -349,7 +350,7 @@ export class FacebookClient {
     message: string
   ): Promise<{ id: string }> {
     const url = `${this.baseUrl}/${commentId}/comments`;
-    
+
     return this.makeRequest(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -365,7 +366,7 @@ export class FacebookClient {
    */
   async hideComment(commentId: string): Promise<{ success: boolean }> {
     const url = `${this.baseUrl}/${commentId}`;
-    
+
     return this.makeRequest(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -381,7 +382,7 @@ export class FacebookClient {
    */
   async deleteComment(commentId: string): Promise<{ success: boolean }> {
     const url = `${this.baseUrl}/${commentId}`;
-    
+
     return this.makeRequest(url, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -401,22 +402,22 @@ export class FacebookClient {
       'page_fans_city',
       'page_fans_country',
     ];
-    
+
     const url = `${this.baseUrl}/${this.pageId}/insights`;
     const params = new URLSearchParams({
       metric: metrics.join(','),
       period: 'lifetime',
       access_token: this.accessToken,
     });
-    
+
     const response = await this.makeRequest(`${url}?${params}`, { method: 'GET' });
-    
+
     const demographics: any = {
       ageGender: {},
       cities: {},
       countries: {},
     };
-    
+
     response.data?.forEach((metric: any) => {
       if (metric.name === 'page_fans_gender_age') {
         demographics.ageGender = metric.values?.[0]?.value || {};
@@ -426,7 +427,7 @@ export class FacebookClient {
         demographics.countries = metric.values?.[0]?.value || {};
       }
     });
-    
+
     return demographics;
   }
 
@@ -441,22 +442,22 @@ export class FacebookClient {
       'post_impressions_viral',
       'post_impressions_unique',
     ];
-    
+
     const url = `${this.baseUrl}/${postId}/insights`;
     const params = new URLSearchParams({
       metric: metrics.join(','),
       access_token: this.accessToken,
     });
-    
+
     const response = await this.makeRequest(`${url}?${params}`, { method: 'GET' });
-    
+
     const breakdown: any = {
       organic: 0,
       paid: 0,
       viral: 0,
       total: 0,
     };
-    
+
     response.data?.forEach((metric: any) => {
       const value = metric.values?.[0]?.value || 0;
       if (metric.name === 'post_impressions_organic') breakdown.organic = value;
@@ -464,7 +465,7 @@ export class FacebookClient {
       if (metric.name === 'post_impressions_viral') breakdown.viral = value;
       if (metric.name === 'post_impressions_unique') breakdown.total = value;
     });
-    
+
     return breakdown;
   }
 
@@ -478,28 +479,28 @@ export class FacebookClient {
       'post_video_view_time',
       'post_video_complete_views_30s',
     ];
-    
+
     const url = `${this.baseUrl}/${videoId}/video_insights`;
     const params = new URLSearchParams({
       metric: metrics.join(','),
       access_token: this.accessToken,
     });
-    
+
     const response = await this.makeRequest(`${url}?${params}`, { method: 'GET' });
-    
+
     const videoMetrics: any = {
       views: 0,
       watchTime: 0,
       completions: 0,
     };
-    
+
     response.data?.forEach((metric: any) => {
       const value = metric.values?.[0]?.value || 0;
       if (metric.name === 'post_video_views') videoMetrics.views = value;
       if (metric.name === 'post_video_view_time') videoMetrics.watchTime = value;
       if (metric.name === 'post_video_complete_views_30s') videoMetrics.completions = value;
     });
-    
+
     return videoMetrics;
   }
 }
@@ -509,10 +510,10 @@ export class FacebookClient {
  */
 export async function createFacebookClient(accountId: string): Promise<FacebookClient> {
   const supabase = await createClient();
-  
+
   const { data: account, error } = await supabase
     .from('social_accounts')
-    .select('platform_user_id, metadata')
+    .select('account_id, access_token, is_active')
     .eq('id', accountId)
     .eq('platform', 'facebook')
     .single();
@@ -521,20 +522,16 @@ export async function createFacebookClient(accountId: string): Promise<FacebookC
     throw new Error('Facebook account not found');
   }
 
-  // Get OAuth token
-  const { data: token, error: tokenError } = await supabase
-    .from('oauth_tokens')
-    .select('access_token')
-    .eq('account_id', accountId)
-    .single();
-
-  if (tokenError || !token) {
-    throw new Error('Facebook access token not found');
+  if (!account.is_active) {
+    throw new Error('Facebook account is inactive');
   }
 
+  // Decrypt token
+  const accessToken = decryptToken(account.access_token);
+
   return new FacebookClient({
-    accessToken: token.access_token,
-    pageId: account.platform_user_id,
+    accessToken,
+    pageId: account.account_id,
   });
 }
 

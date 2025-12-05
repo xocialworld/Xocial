@@ -32,7 +32,7 @@ export interface WorkspaceMember {
   id: string;
   workspace_id: string;
   user_id: string;
-  role: 'owner' | 'admin' | 'editor' | 'viewer' | 'client';
+  role: 'owner' | 'admin' | 'manager' | 'creator' | 'analyst';
   joined_at: string;
 }
 
@@ -147,18 +147,78 @@ export interface PostAnalytics {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Approval Workflow Types
+// ═══════════════════════════════════════════════════════════════
+
+export interface ApprovalWorkflow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description?: string;
+  type: 'single_step' | 'sequential' | 'parallel';
+  is_default: boolean;
+  created_at: string;
+}
+
+export interface ApprovalWorkflowStep {
+  id: string;
+  workflow_id: string;
+  step_order: number;
+  required_role?: string;
+  required_users?: string[];
+  approval_rule: 'any' | 'all';
+  created_at: string;
+}
+
+export interface ContentApprovalInstance {
+  id: string;
+  content_item_id: string;
+  workflow_id: string;
+  current_step_id?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContentApprovalAction {
+  id: string;
+  approval_instance_id: string;
+  step_id?: string;
+  actor_id: string;
+  action: 'approve' | 'reject' | 'comment';
+  comment?: string;
+  created_at: string;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // AI Content Types
 // ═══════════════════════════════════════════════════════════════
 
 export type AISentiment = 'positive' | 'neutral' | 'negative';
 export type AIReadability = 'easy' | 'moderate' | 'difficult';
-export type AITone = 'professional' | 'casual' | 'friendly' | 'enthusiastic' | 'informative';
-export type AIStyle = 'informative' | 'storytelling' | 'educational' | 'promotional' | 'playful';
+export type AITone = 
+  | 'professional' 
+  | 'casual' 
+  | 'friendly' 
+  | 'enthusiastic' 
+  | 'informative' 
+  | 'playful' 
+  | 'inspirational' 
+  | 'educational';
+
+export type AIStyle = 
+  | 'informative' 
+  | 'storytelling' 
+  | 'educational' 
+  | 'promotional' 
+  | 'playful';
+
 export type AILength = 'short' | 'medium' | 'long';
 
 export interface AIOptions {
   tone: AITone;
   style: AIStyle;
+  audience?: string;
   length: AILength;
   addEmojis: boolean;
   addHashtags: boolean;
@@ -246,3 +306,31 @@ export interface DashboardMetrics {
   engagementRate: AnalyticsMetric;
 }
 
+
+export interface StrategyRecommendation {
+  id: string;
+  workspace_id: string;
+  type: 'content' | 'timing' | 'engagement' | 'growth' | 'hashtag' | 'topic';
+  title: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  confidence_score: number;
+  metrics?: Record<string, any>;
+  action_items?: string[];
+  status: 'pending' | 'active' | 'completed' | 'dismissed';
+  valid_from: string;
+  valid_until?: string;
+  implemented_at?: string;
+  implemented_by?: string;
+  results?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MediaFile {
+  id: string;
+  url: string;
+  type: 'image' | 'video';
+  name: string;
+  size: number;
+}

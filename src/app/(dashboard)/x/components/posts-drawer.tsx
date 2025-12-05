@@ -6,9 +6,10 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { X, MessageCircle, Heart, Share2, Eye, Bookmark, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Image from 'next/image';
 import { LoadingSkeleton, PostCardSkeleton } from '@/components/shared/loading-skeleton';
 import { EmptyState } from '@/components/shared/empty-state';
 import { ErrorState } from '@/components/shared/error-state';
@@ -18,6 +19,7 @@ import { slideInRight } from '@/lib/animations';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { SocialAccount, Post } from '@/types';
 import { toast } from 'sonner';
+import { usePostsSync } from '@/hooks/use-account-sync';
 
 interface PostsDrawerProps {
     account: SocialAccount | null;
@@ -72,7 +74,7 @@ export function PostsDrawer({ account, isOpen, onClose, onPostClick }: PostsDraw
 
     const tabs = account ? POST_TYPE_TABS[account.platform as keyof typeof POST_TYPE_TABS] || POST_TYPE_TABS.instagram : [];
 
-    const fetchPosts = async (isRefresh = false) => {
+    const fetchPosts = useCallback(async (isRefresh = false) => {
         if (!account) return;
 
         if (!isRefresh) setLoading(true);
@@ -104,12 +106,20 @@ export function PostsDrawer({ account, isOpen, onClose, onPostClick }: PostsDraw
         } finally {
             if (!isRefresh) setLoading(false);
         }
-    };
+    }, [account, selectedPostType]);
 
     // Fetch posts when account or post type changes
     useEffect(() => {
         fetchPosts();
-    }, [account, selectedPostType]);
+    }, [fetchPosts]);
+
+    // Real-time updates for this account
+    usePostsSync({
+        accountId: account?.id,
+        onPostInsert: () => fetchPosts(true),
+        onPostUpdate: () => fetchPosts(true),
+        onPostDelete: () => fetchPosts(true),
+    });
 
     // Handle sync posts
     const handleSync = async () => {
@@ -204,10 +214,12 @@ export function PostsDrawer({ account, isOpen, onClose, onPostClick }: PostsDraw
                             <div className="flex items-center justify-between p-6">
                                 <div className="flex items-center gap-3">
                                     {account?.account_avatar && (
-                                        <img
+                                        <Image
                                             src={account.account_avatar}
-                                            alt={account.account_name}
-                                            className="h-10 w-10 rounded-full"
+                                            alt={account.account_name || ''}
+                                            width={40}
+                                            height={40}
+                                            className="rounded-full"
                                         />
                                     )}
                                     <div>
@@ -326,7 +338,7 @@ interface PostItemProps {
 
 function PostItem({ post, onClick }: PostItemProps) {
     // Get first media URL if available
-    const mediaUrl = post.media?.[0]?.url || (post.media as any)?.[0];
+    const mediaUrl = (post.media?.[0] as any)?.thumbnail || post.media?.[0]?.url || (post.media as any)?.[0];
     const caption = typeof post.content === 'string'
         ? post.content
         : (post.content as any)?.caption || '';
@@ -355,10 +367,11 @@ function PostItem({ post, onClick }: PostItemProps) {
             {/* Media Thumbnail */}
             {mediaUrl && (
                 <div className="relative aspect-square bg-gray-100">
-                    <img
+                    <Image
                         src={mediaUrl}
                         alt="Post media"
-                        className="w-full h-full object-cover"
+                        fill
+                        className="object-cover"
                     />
                 </div>
             )}

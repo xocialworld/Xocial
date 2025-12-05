@@ -3,6 +3,57 @@
  * Instagram uses Facebook's Graph API for business accounts
  */
 
+export interface InstagramOAuthConfig {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+}
+
+/**
+ * Generate Instagram OAuth authorization URL
+ * Instagram uses Facebook Login for OAuth
+ */
+export function getInstagramAuthUrl(
+  config: InstagramOAuthConfig,
+  state: string
+): string {
+  const params = new URLSearchParams({
+    client_id: config.clientId,
+    redirect_uri: config.redirectUri,
+    state,
+    scope: 'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement',
+    response_type: 'code',
+  });
+
+  return `https://www.facebook.com/v18.0/dialog/oauth?${params.toString()}`;
+}
+
+/**
+ * Exchange Instagram/Facebook OAuth code for access token
+ */
+export async function exchangeInstagramCode(
+  config: InstagramOAuthConfig,
+  code: string
+): Promise<{ access_token: string; token_type: string }> {
+  const params = new URLSearchParams({
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    redirect_uri: config.redirectUri,
+    code,
+  });
+
+  const response = await fetch(
+    `https://graph.facebook.com/v18.0/oauth/access_token?${params.toString()}`
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || 'Failed to exchange Instagram OAuth code');
+  }
+
+  return response.json();
+}
+
 export interface InstagramBusinessAccount {
   id: string;
   username: string;
@@ -29,7 +80,7 @@ export async function getInstagramBusinessAccounts(
   }
 
   const data = await response.json();
-  
+
   if (!data.instagram_business_account) {
     return null;
   }
@@ -47,17 +98,106 @@ export async function getInstagramBusinessAccounts(
 }
 
 /**
+ * Post media to Instagram (Create Container + Publish)
+ */
+export async function postInstagramMedia(
+  accessToken: string,
+  instagramAccountId: string,
+  mediaUrl: string,
+  caption?: string,
+  mediaType: 'IMAGE' | 'VIDEO' | 'REELS' = 'IMAGE'
+): Promise<{ id: string }> {
+  // Step 1: Create container
+  const containerParams = new URLSearchParams({
+    access_token: accessToken,
+    caption: caption || '',
+  });
+
+  if (mediaType === 'IMAGE') {
+    containerParams.append('image_url', mediaUrl);
+  } else {
+    containerParams.append('video_url', mediaUrl);
+    containerParams.append('media_type', mediaType === 'REELS' ? 'REELS' : 'VIDEO');
+  }
+
+  const containerResponse = await fetch(
+    `https://graph.facebook.com/v24.0/${instagramAccountId}/media?${containerParams.toString()}`,
+    { method: 'POST' }
+  );
+
+  if (!containerResponse.ok) {
+    const error = await containerResponse.json();
+    throw new Error(error.error?.message || 'Failed to create Instagram media container');
+  }
+
+  const containerData = await containerResponse.json();
+  const creationId = containerData.id;
+
+  // Step 2: Publish container
+  const publishParams = new URLSearchParams({
+    access_token: accessToken,
+    creation_id: creationId,
+  });
+
+  const publishResponse = await fetch(
+    `https://graph.facebook.com/v24.0/${instagramAccountId}/media_publish?${publishParams.toString()}`,
+    { method: 'POST' }
+  );
+
+  if (!publishResponse.ok) {
+    const error = await publishResponse.json();
+    throw new Error(error.error?.message || 'Failed to publish Instagram media');
+  }
+
+  return publishResponse.json();
+}
+
+/**
+ * Get Instagram media list
+ */
+export async function getInstagramMedia(
+  accessToken: string,
+  instagramAccountId: string,
+  limit: number = 20
+): Promise<any[]> {
+  const fields = [
+    'id',
+    'caption',
+    'media_type',
+    'media_url',
+    'permalink',
+    'thumbnail_url',
+    'timestamp',
+    'like_count',
+    'comments_count'
+  ].join(',');
+
+  const response = await fetch(
+    `https://graph.facebook.com/v24.0/${instagramAccountId}/media?fields=${fields}&limit=${limit}&access_token=${accessToken}`
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch Instagram media');
+  }
+
+  const data = await response.json();
+  return data.data || [];
+}
+
+
+
+/**
  * Create Instagram media container (for images)
  */
 type InstagramMediaContent =
   | {
-      image_url: string;
-      caption: string;
-    }
+    image_url: string;
+    caption: string;
+  }
   | {
-      video_url: string;
-      caption: string;
-    };
+    video_url: string;
+    caption: string;
+  };
 
 export async function createInstagramMediaContainer(
   igAccountId: string,
@@ -107,8 +247,8 @@ export async function publishInstagramMedia(
         access_token: accessToken,
         ...(publishTime
           ? {
-              publish_time: Math.floor(publishTime.getTime() / 1000),
-            }
+            publish_time: Math.floor(publishTime.getTime() / 1000),
+          }
           : {}),
       }),
     }
@@ -176,24 +316,7 @@ export async function getInstagramAccountInsights(
   return response.json();
 }
 
-/**
- * Get Instagram media (posts)
- */
-export async function getInstagramMedia(
-  igAccountId: string,
-  accessToken: string,
-  limit: number = 25
-): Promise<any> {
-  const response = await fetch(
-    `https://graph.facebook.com/v24.0/${igAccountId}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count&limit=${limit}&access_token=${accessToken}`
-  );
 
-  if (!response.ok) {
-    throw new Error('Failed to fetch Instagram media');
-  }
-
-  return response.json();
-}
 
 /**
  * Get Instagram comments on a media

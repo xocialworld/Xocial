@@ -6,6 +6,7 @@ export type WorkspaceSummary = {
   name: string;
   slug: string;
   role: string;
+  logo_url?: string | null;
 };
 
 interface WorkspaceState {

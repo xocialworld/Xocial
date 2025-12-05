@@ -10,6 +10,7 @@ import {
   Users,
   LogOut,
   Lightbulb,
+  MessageSquare,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";

@@ -7,6 +7,7 @@ import { queryKeys } from '@/lib/react-query';
 import type { SocialAccount, SocialAccountMetrics } from '@/types';
 import { toast } from 'sonner';
 import { useSelectedWorkspace } from '@/store/workspaceStore';
+import { logger } from '@/lib/logger';
 
 const DEFAULT_ACCOUNT_METRICS: SocialAccountMetrics = {
   postsPublished: 0,
@@ -56,6 +57,12 @@ async function fetchAccounts(
       payload?.error?.message ||
       payload?.message ||
       `Failed to load accounts (status ${response.status})`;
+    logger.error('Accounts fetch failed', new Error(message), {
+      action: 'fetch_accounts',
+      workspaceId,
+      filters,
+      status: response.status,
+    });
     throw new Error(message);
   }
 
@@ -142,6 +149,10 @@ export function useAccounts(
         () => {
           // Invalidate and refetch accounts when changes occur
           queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
+          logger.info('Accounts change event received', {
+            action: 'accounts_change',
+            workspaceId: activeWorkspaceId,
+          });
         }
       )
       .subscribe();
@@ -209,4 +220,3 @@ export function useAccounts(
     isDisconnecting: disconnectMutation.isPending,
   };
 }
-

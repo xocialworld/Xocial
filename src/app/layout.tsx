@@ -19,6 +19,7 @@ export const metadata: Metadata = {
     template: '%s | Xocial',
     default: 'Xocial - AI-Powered Social Media Management',
   },
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
   description: "Enterprise-grade social media management platform with AI-powered content creation",
   keywords: [
     'social media management',
@@ -87,4 +88,3 @@ export default function RootLayout({
     </html>
   );
 }
-

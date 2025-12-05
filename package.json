@@ -26,7 +26,7 @@
     "test:e2e:report": "playwright show-report",
     "test:all": "npm run test:ci && npm run test:e2e",
     "analyze": "ANALYZE=true npm run build",
-    "prepare": "husky install",
+    "prepare": "node -e \"if (process.env.CI !== 'true' && process.env.VERCEL !== '1') { require('child_process').execSync('husky install', {stdio: 'inherit'}) }\"",
     "deploy": "vercel --prod"
   },
   "dependencies": {

@@ -3,36 +3,34 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["iad1"],
-  
+  "regions": [
+    "iad1"
+  ],
   "env": {
     "NEXT_PUBLIC_APP_ENV": "production"
   },
-  
   "crons": [
     {
       "path": "/api/cron/publish",
-      "schedule": "* * * * *"
+      "schedule": "0 0 * * *"
     },
     {
       "path": "/api/cron/sync-metrics",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 0 * * *"
     },
     {
       "path": "/api/cron/refresh-youtube-tokens",
-      "schedule": "0 * * * *"
+      "schedule": "0 0 * * *"
     },
     {
       "path": "/api/cron/sync-youtube-analytics",
-      "schedule": "0 */4 * * *"
+      "schedule": "0 0 * * *"
     },
     {
       "path": "/api/cron/refresh-tokens",
-      "schedule": "0 * * * *"
+      "schedule": "0 0 * * *"
     }
   ],
-  
-  
   "headers": [
     {
       "source": "/api/(.*)",

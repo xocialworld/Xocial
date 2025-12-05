@@ -2,9 +2,19 @@ import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { updateSession } from './src/lib/supabase/middleware'
 import { createServerClient } from '@supabase/ssr'
-import { env } from './src/lib/env'
+
+// Get environment variables directly for Edge Runtime compatibility
+// Note: Do NOT import from ./src/lib/env as Zod validation can fail in Edge Runtime
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 export async function middleware(request: NextRequest) {
+  // Early exit if Supabase is not configured
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.warn('Middleware: Supabase environment variables not configured')
+    return NextResponse.next()
+  }
+
   let res: NextResponse
   try {
     res = await updateSession(request)
@@ -15,15 +25,15 @@ export async function middleware(request: NextRequest) {
   let user: any
   try {
     const supabase = createServerClient(
-      env.NEXT_PUBLIC_SUPABASE_URL!,
-      env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      SUPABASE_URL,
+      SUPABASE_ANON_KEY,
       {
         cookies: {
           getAll() {
             return request.cookies.getAll()
           },
           setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           },
         },
       }

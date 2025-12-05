@@ -5,13 +5,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 
-export const metadata = { title: 'Support – Xocial', description: 'Get help from the Xocial team' }
 
 export default function SupportPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [message, setMessage] = useState('')
-  const [status, setStatus] = useState<'idle'|'submitting'|'success'|'error'>('idle')
+  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle')
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -45,9 +44,9 @@ export default function SupportPage() {
           <label className="block text-sm text-secondary-700 mb-1">Message</label>
           <Textarea value={message} onChange={(e) => setMessage(e.target.value)} required aria-label="Message" />
         </div>
-        <Button type="submit" disabled={status==='submitting'}>{status==='submitting' ? 'Sending…' : 'Send message'}</Button>
-        {status==='success' && <p role="status" className="text-success-700">Thanks! We’ll reply soon.</p>}
-        {status==='error' && <p role="alert" className="text-destructive-700">Something went wrong. Try again.</p>}
+        <Button type="submit" disabled={status === 'submitting'}>{status === 'submitting' ? 'Sending…' : 'Send message'}</Button>
+        {status === 'success' && <p role="status" className="text-success-700">Thanks! We’ll reply soon.</p>}
+        {status === 'error' && <p role="alert" className="text-destructive-700">Something went wrong. Try again.</p>}
       </form>
     </div>
   )

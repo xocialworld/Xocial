@@ -6,7 +6,6 @@ import FaqSchema from '@/components/marketing/faq-schema'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
-export const metadata = { title: 'Approve – Xocial', description: 'Robust approval workflows' }
 
 export default function ApprovePage() {
   return (

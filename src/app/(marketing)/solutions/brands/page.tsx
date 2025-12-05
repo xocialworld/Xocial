@@ -4,7 +4,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
-export const metadata = { title: 'Solutions for Brands – Xocial', description: 'Solve multi-stakeholder signoff and keep posts on-brand' }
 
 export default function BrandsSolutionsPage() {
   return (

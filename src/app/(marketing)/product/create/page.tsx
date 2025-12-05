@@ -6,7 +6,6 @@ import FaqSchema from '@/components/marketing/faq-schema'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
-export const metadata = { title: 'Create – Xocial', description: 'AI-first content creation across platforms' }
 
 export default function CreatePage() {
   return (

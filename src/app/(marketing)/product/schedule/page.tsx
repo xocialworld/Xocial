@@ -6,7 +6,6 @@ import FaqSchema from '@/components/marketing/faq-schema'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
-export const metadata = { title: 'Schedule – Xocial', description: 'Reliable scheduling and auto-publishing' }
 
 export default function SchedulePage() {
   return (

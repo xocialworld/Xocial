@@ -4,7 +4,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
-export const metadata = { title: 'Solutions for Agencies – Xocial', description: 'Per-client workspaces and approvals at scale' }
 
 export default function AgenciesSolutionsPage() {
   return (

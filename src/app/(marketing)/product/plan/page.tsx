@@ -6,7 +6,6 @@ import FaqSchema from '@/components/marketing/faq-schema'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
-export const metadata = { title: 'Plan – Xocial', description: 'Visual content calendar with filters and day details' }
 
 export default function PlanPage() {
   return (

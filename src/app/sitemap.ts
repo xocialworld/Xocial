@@ -4,10 +4,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const baseUrl = 'https://xocial.world';
 
   const now = new Date()
-  const route = (path: string, priority = 0.8) => ({ url: `${baseUrl}${path}`, lastModified: now, changeFrequency: 'monthly', priority })
+  const route = (path: string, priority = 0.8): MetadataRoute.Sitemap[number] => ({
+    url: `${baseUrl}${path}`,
+    lastModified: now,
+    changeFrequency: 'monthly' as const,
+    priority
+  })
 
   return [
-    { url: baseUrl, lastModified: now, changeFrequency: 'monthly', priority: 1 },
+    { url: baseUrl, lastModified: now, changeFrequency: 'monthly' as const, priority: 1 },
     route('/auth/login'),
     route('/auth/signup'),
     route('/product/create'),

@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import FaqSchema from '@/components/marketing/faq-schema'
 
-export const metadata = { title: 'Pricing – Xocial', description: 'Simple, transparent pricing for teams and agencies' }
 
 const plans = {
   monthly: { free: 0, pro: 39, growth: 99 },

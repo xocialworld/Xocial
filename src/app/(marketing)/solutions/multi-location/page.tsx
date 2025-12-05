@@ -4,7 +4,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
-export const metadata = { title: 'Solutions for Multi-location – Xocial', description: 'Coordinate brand + local pages with safe approvals' }
 
 export default function MultiLocationSolutionsPage() {
   return (

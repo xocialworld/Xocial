@@ -4,12 +4,11 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
-export const metadata = { title: 'Start Program – Xocial', description: 'Join our early access and onboarding program' }
 
 export default function StartProgramPage() {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
-  const [status, setStatus] = useState<'idle'|'submitting'|'success'|'error'>('idle')
+  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle')
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -38,9 +37,9 @@ export default function StartProgramPage() {
           <label className="block text-sm text-secondary-700 mb-1">Email</label>
           <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required aria-label="Email" />
         </div>
-        <Button type="submit" disabled={status==='submitting'}>{status==='submitting' ? 'Submitting…' : 'Join program'}</Button>
-        {status==='success' && <p role="status" className="text-success-700">Thanks! We’ll be in touch.</p>}
-        {status==='error' && <p role="alert" className="text-destructive-700">Something went wrong. Try again.</p>}
+        <Button type="submit" disabled={status === 'submitting'}>{status === 'submitting' ? 'Submitting…' : 'Join program'}</Button>
+        {status === 'success' && <p role="status" className="text-success-700">Thanks! We’ll be in touch.</p>}
+        {status === 'error' && <p role="alert" className="text-destructive-700">Something went wrong. Try again.</p>}
       </form>
     </div>
   )

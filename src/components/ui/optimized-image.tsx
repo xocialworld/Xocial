@@ -1,3 +1,5 @@
+"use client"
+
 /**
  * Optimized Image Component
  * Wrapper around Next.js Image with best practices
@@ -58,8 +60,8 @@ export function OptimizedImage({
   const defaultSizes = fill
     ? '100vw'
     : width
-    ? `(max-width: 768px) 100vw, (max-width: 1200px) 50vw, ${width}px`
-    : '100vw';
+      ? `(max-width: 768px) 100vw, (max-width: 1200px) 50vw, ${width}px`
+      : '100vw';
 
   const handleLoad = () => {
     setIsLoading(false);

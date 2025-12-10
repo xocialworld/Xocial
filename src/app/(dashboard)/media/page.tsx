@@ -19,6 +19,7 @@ import {
   List,
   CheckSquare,
   X,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -33,6 +34,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { MediaGridSkeleton } from '@/components/ui/skeleton-variants';
+import { MediaDetailsDrawer } from '@/components/media/media-details-drawer';
+import { MediaUploadModal } from '@/components/media/media-upload-modal';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { useSelectedWorkspace } from '@/store/workspaceStore';
@@ -85,7 +88,7 @@ async function deleteMedia(id: string, workspaceId?: string) {
   const response = await fetch(
     `/api/media/${id}${workspaceId ? `?workspaceId=${workspaceId}` : ''}`,
     {
-    method: 'DELETE',
+      method: 'DELETE',
     }
   );
   if (!response.ok) throw new Error('Failed to delete media');
@@ -108,6 +111,11 @@ export default function MediaLibraryPage() {
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [typeFilter, setTypeFilter] = useState<MediaFilterType>('all');
   const [labelFilter, setLabelFilter] = useState('');
+
+  // Modal and drawer state
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedMedia, setSelectedMedia] = useState<MediaFile | null>(null);
+  const [showDetailsDrawer, setShowDetailsDrawer] = useState(false);
 
   const selectedWorkspace = useSelectedWorkspace();
   const activeWorkspaceId = selectedWorkspace?.id;
@@ -158,7 +166,7 @@ export default function MediaLibraryPage() {
 
   const handleBulkDelete = () => {
     if (selectedFiles.size === 0) return;
-    
+
     if (confirm(`Delete ${selectedFiles.size} file(s)?`)) {
       selectedFiles.forEach((id) => deleteMutation.mutate(id));
       setSelectedFiles(new Set());
@@ -191,7 +199,7 @@ export default function MediaLibraryPage() {
               Manage all your images and videos in one place
             </p>
           </div>
-          <Button>
+          <Button onClick={() => setShowUploadModal(true)}>
             <Upload className="mr-2 h-5 w-5" />
             Upload Media
           </Button>
@@ -249,20 +257,20 @@ export default function MediaLibraryPage() {
 
         {/* View toggle */}
         <div className="flex gap-1 border border-gray-200 rounded-md p-1">
-            <Button
-              variant={view === 'grid' ? 'primary' : 'ghost'}
-              size="sm"
-              onClick={() => setView('grid')}
-            >
-              <Grid3x3 className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={view === 'list' ? 'primary' : 'ghost'}
-              size="sm"
-              onClick={() => setView('list')}
-            >
-              <List className="h-4 w-4" />
-            </Button>
+          <Button
+            variant={view === 'grid' ? 'primary' : 'ghost'}
+            size="sm"
+            onClick={() => setView('grid')}
+          >
+            <Grid3x3 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={view === 'list' ? 'primary' : 'ghost'}
+            size="sm"
+            onClick={() => setView('list')}
+          >
+            <List className="h-4 w-4" />
+          </Button>
         </div>
 
         {/* Bulk actions */}
@@ -329,11 +337,10 @@ export default function MediaLibraryPage() {
                   }}
                 >
                   <div
-                    className={`h-6 w-6 rounded border-2 flex items-center justify-center transition-colors ${
-                      selectedFiles.has(file.id)
-                        ? 'bg-primary-500 border-primary-500'
-                        : 'bg-white border-gray-300'
-                    }`}
+                    className={`h-6 w-6 rounded border-2 flex items-center justify-center transition-colors ${selectedFiles.has(file.id)
+                      ? 'bg-primary-500 border-primary-500'
+                      : 'bg-white border-gray-300'
+                      }`}
                   >
                     {selectedFiles.has(file.id) && (
                       <CheckSquare className="h-4 w-4 text-white" />
@@ -350,6 +357,18 @@ export default function MediaLibraryPage() {
 
                 {/* Overlay with actions */}
                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-white hover:bg-white/20"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedMedia(file);
+                      setShowDetailsDrawer(true);
+                    }}
+                  >
+                    <Info className="h-4 w-4" />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -429,11 +448,10 @@ export default function MediaLibraryPage() {
                   className="cursor-pointer"
                 >
                   <div
-                    className={`h-5 w-5 rounded border-2 flex items-center justify-center ${
-                      selectedFiles.has(file.id)
-                        ? 'bg-primary-500 border-primary-500'
-                        : 'border-gray-300'
-                    }`}
+                    className={`h-5 w-5 rounded border-2 flex items-center justify-center ${selectedFiles.has(file.id)
+                      ? 'bg-primary-500 border-primary-500'
+                      : 'border-gray-300'
+                      }`}
                   >
                     {selectedFiles.has(file.id) && (
                       <CheckSquare className="h-4 w-4 text-white" />
@@ -504,6 +522,33 @@ export default function MediaLibraryPage() {
           </div>
         </Card>
       )}
+
+      {/* Upload Modal */}
+      <MediaUploadModal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onUploadComplete={() => {
+          queryClient.invalidateQueries({ queryKey: ['media'] });
+          setShowUploadModal(false);
+        }}
+        workspaceId={activeWorkspaceId}
+      />
+
+      {/* Details Drawer */}
+      <MediaDetailsDrawer
+        media={selectedMedia}
+        isOpen={showDetailsDrawer}
+        onClose={() => {
+          setShowDetailsDrawer(false);
+          setSelectedMedia(null);
+        }}
+        onDelete={(id) => {
+          deleteMutation.mutate(id);
+          setShowDetailsDrawer(false);
+          setSelectedMedia(null);
+        }}
+        isDeleting={deleteMutation.isPending}
+      />
     </div>
   );
 }

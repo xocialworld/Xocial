@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Calendar, Filter, RefreshCw } from "lucide-react";
 import { CalendarGrid } from "./components/calendar-grid";
 import { DayPostsPanel } from "./components/day-posts-panel";
 import { RescheduleModal } from "./components/reschedule-modal";
@@ -13,6 +13,12 @@ import { useCalendarShortcuts } from "@/hooks/use-calendar-shortcuts";
 import { Spinner } from "@/components/ui/spinner";
 import { ErrorBoundary } from "@/components/shared/error-boundary";
 import { ErrorState } from "@/components/shared/error-state";
+import {
+  PageHeader,
+  PageContainer,
+  ContentCard,
+  FilterChip
+} from "@/components/shared/page-components";
 import type { Post, Platform } from "@/types";
 import { toast } from "sonner";
 import {
@@ -23,12 +29,29 @@ import {
 import { useRouter } from "next/navigation";
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
 
+const platformColors: Record<string, string> = {
+  instagram: 'bg-gradient-to-r from-pink-500 to-purple-500',
+  facebook: 'bg-blue-600',
+  twitter: 'bg-black',
+  linkedin: 'bg-blue-700',
+  tiktok: 'bg-gradient-to-r from-pink-600 to-cyan-400',
+  youtube: 'bg-red-600',
+};
+
+const statusColors: Record<string, { bg: string; text: string }> = {
+  draft: { bg: 'bg-secondary-100', text: 'text-secondary-700' },
+  pending_approval: { bg: 'bg-yellow-100', text: 'text-yellow-700' },
+  scheduled: { bg: 'bg-blue-100', text: 'text-blue-700' },
+  published: { bg: 'bg-green-100', text: 'text-green-700' },
+  failed: { bg: 'bg-red-100', text: 'text-red-700' },
+};
+
 export default function OPage() {
   const router = useRouter();
   const { updatePostAsync, deletePost } = usePosts();
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  
+
   // Calculate date range for the calendar view (including surrounding weeks)
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -36,16 +59,18 @@ export default function OPage() {
   const calendarEnd = endOfWeek(monthEnd);
 
   // Fetch posts for the current calendar view
-  const { 
-    data: posts = [], 
-    isLoading: loading, 
-    error, 
-    refetch 
+  const {
+    data: posts = [],
+    isLoading: loading,
+    error,
+    refetch
   } = useCalendarPosts(calendarStart, calendarEnd);
 
   const [reschedulePost, setReschedulePost] = useState<{ id: string; date: Date } | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+
   const {
     platforms: platformFilters,
     statuses: statusFilters,
@@ -73,6 +98,8 @@ export default function OPage() {
       );
     })
     : [];
+
+  const activeFilters = platformFilters.length + statusFilters.length;
 
   const handleReschedule = async (postId: string) => {
     const post = posts.find((p) => p.id === postId);
@@ -137,7 +164,7 @@ export default function OPage() {
       await deletePost(postId);
 
       // Show undo toast
-      const undoToast = toast.success('Post deleted', {
+      toast.success('Post deleted', {
         description: 'You can undo this action',
         duration: 5000,
         action: {
@@ -152,7 +179,6 @@ export default function OPage() {
 
               if (response.ok) {
                 toast.success('Post restored');
-                // Trigger a refetch
                 window.location.reload();
               } else {
                 const error = await response.json();
@@ -193,19 +219,25 @@ export default function OPage() {
 
   if (loading && posts.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner />
-      </div>
+      <PageContainer>
+        <div className="flex h-[60vh] items-center justify-center">
+          <Spinner />
+        </div>
+      </PageContainer>
     );
   }
 
   if (error) {
     return (
-      <ErrorState 
-        title="Failed to load calendar" 
-        message={error instanceof Error ? error.message : "Could not load posts"}
-        onRetry={refetch}
-      />
+      <PageContainer>
+        <ContentCard>
+          <ErrorState
+            title="Failed to load calendar"
+            message={error instanceof Error ? error.message : "Could not load posts"}
+            onRetry={refetch}
+          />
+        </ContentCard>
+      </PageContainer>
     );
   }
 
@@ -213,122 +245,166 @@ export default function OPage() {
     <ErrorBoundary>
       <div className="flex h-full">
         {/* Main Calendar Area */}
-        <div className="flex-1 p-8 overflow-auto">
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-secondary-900">O — Organize</h1>
-              <p className="mt-2 text-secondary-600">Visual, multi-platform calendar to schedule and manage posts</p>
-            </div>
-            <Button
-              onClick={() => {
-                const date = selectedDate ?? new Date();
-                // set default time to 10:00 for convenience
-                const prefillDate = new Date(date);
-                prefillDate.setHours(10, 0, 0, 0);
-                router.push(`/c?date=${encodeURIComponent(prefillDate.toISOString())}`);
+        <div className="flex-1 overflow-auto">
+          <PageContainer>
+            <PageHeader
+              shortCode="O"
+              title="Organize"
+              description="Visual, multi-platform calendar to schedule and manage posts"
+              icon={Calendar}
+              iconColor="text-green-500"
+              badge={{
+                label: `${filteredPosts.length} posts`,
+                variant: 'default'
               }}
-            >
-              <Plus className="mr-2 h-5 w-5" />
-              Schedule Post
-            </Button>
-          </div>
+              actions={
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="gap-2"
+                  >
+                    <Filter className="h-4 w-4" />
+                    <span className="hidden sm:inline">Filters</span>
+                    {activeFilters > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-primary-100 text-primary-700">
+                        {activeFilters}
+                      </span>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      const date = selectedDate ?? new Date();
+                      // set default time to 10:00 for convenience
+                      const prefillDate = new Date(date);
+                      prefillDate.setHours(10, 0, 0, 0);
+                      router.push(`/c?date=${encodeURIComponent(prefillDate.toISOString())}`);
+                    }}
+                    className="gap-2"
+                  >
+                    <Plus className="h-5 w-5" />
+                    <span className="hidden sm:inline">Schedule Post</span>
+                    <span className="sm:hidden">New</span>
+                  </Button>
+                </div>
+              }
+            />
+
+            {/* Filters Panel */}
+            {showFilters && (
+              <ContentCard className="mb-6 animate-in slide-in-from-top-2 fade-in duration-200" padding="md">
+                <div className="space-y-4">
+                  {/* Platforms */}
+                  <div>
+                    <p className="text-sm font-semibold text-secondary-700 mb-3">Platforms</p>
+                    <div className="flex flex-wrap gap-2">
+                      {platformOptions.map((platform) => {
+                        const selected = platformFilters.includes(platform);
+                        return (
+                          <button
+                            key={platform}
+                            onClick={() => togglePlatform(platform)}
+                            className={`
+                              px-3 py-1.5 rounded-lg text-sm font-medium transition-all capitalize
+                              ${selected
+                                ? 'bg-primary-100 text-primary-700 ring-2 ring-primary-500/20'
+                                : 'bg-secondary-100 text-secondary-600 hover:bg-secondary-200'
+                              }
+                            `}
+                          >
+                            {platform}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Statuses */}
+                  <div>
+                    <p className="text-sm font-semibold text-secondary-700 mb-3">Statuses</p>
+                    <div className="flex flex-wrap gap-2">
+                      {statusOptions.map((status) => {
+                        const selected = statusFilters.includes(status);
+                        const colors = statusColors[status] || statusColors.draft;
+                        return (
+                          <button
+                            key={status}
+                            onClick={() => toggleStatus(status)}
+                            className={`
+                              px-3 py-1.5 rounded-lg text-sm font-medium transition-all capitalize
+                              ${selected
+                                ? `${colors.bg} ${colors.text} ring-2 ring-offset-1`
+                                : 'bg-secondary-100 text-secondary-600 hover:bg-secondary-200'
+                              }
+                            `}
+                          >
+                            {status.replace(/_/g, ' ')}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Clear filters */}
+                  {(platformFilters.length > 0 || statusFilters.length > 0) && (
+                    <Button variant="ghost" size="sm" onClick={reset} className="text-secondary-500">
+                      Clear all filters
+                    </Button>
+                  )}
+                </div>
+              </ContentCard>
+            )}
+
+            <ContentCard padding="none" className="overflow-hidden">
+              <CalendarGrid
+                posts={filteredPosts}
+                selectedDate={selectedDate}
+                onDateSelect={setSelectedDate}
+                onPostClick={setSelectedPost}
+                onPostDrop={handlePostDrop}
+                currentMonth={currentMonth}
+                onMonthChange={setCurrentMonth}
+              />
+            </ContentCard>
+          </PageContainer>
         </div>
 
-        <div className="mb-6 space-y-4">
-          <div>
-            <p className="text-sm font-semibold text-secondary-700 mb-2">Platforms</p>
-            <div className="flex flex-wrap gap-2">
-              {platformOptions.map((platform) => {
-                const selected = platformFilters.includes(platform);
-                return (
-                  <Button
-                    key={platform}
-                    variant={selected ? 'primary' : 'outline'}
-                    size="sm"
-                    onClick={() => togglePlatform(platform)}
-                    className="capitalize"
-                  >
-                    {platform}
-                  </Button>
-                );
-              })}
-            </div>
+        {/* Day Posts Panel */}
+        {selectedDate && (
+          <div className="sm:w-96 w-full fixed sm:relative inset-0 sm:inset-auto z-50 sm:z-auto bg-white border-l border-secondary-200 shadow-xl sm:shadow-none">
+            <DayPostsPanel
+              date={selectedDate}
+              posts={selectedDatePosts}
+              onClose={() => setSelectedDate(null)}
+              onEditPost={setEditingPost}
+              onDeletePost={handleDeletePost}
+              onReschedulePost={handleReschedule}
+            />
           </div>
+        )}
 
-          <div>
-            <p className="text-sm font-semibold text-secondary-700 mb-2">Statuses</p>
-            <div className="flex flex-wrap gap-2">
-              {statusOptions.map((status) => {
-                const selected = statusFilters.includes(status);
-                return (
-                  <Button
-                    key={status}
-                    variant={selected ? 'primary' : 'outline'}
-                    size="sm"
-                    onClick={() => toggleStatus(status)}
-                    className="capitalize"
-                  >
-                    {status.replace(/_/g, ' ')}
-                  </Button>
-                );
-              })}
-            </div>
-          </div>
+        {/* Reschedule Modal */}
+        {reschedulePost && (
+          <RescheduleModal
+            open={!!reschedulePost}
+            onOpenChange={(open) => !open && setReschedulePost(null)}
+            currentDate={reschedulePost.date}
+            onReschedule={handleRescheduleSubmit}
+          />
+        )}
 
-          {(platformFilters.length > 0 || statusFilters.length > 0) && (
-            <Button variant="ghost" size="sm" onClick={reset}>
-              Clear filters
-            </Button>
-          )}
-        </div>
-
-        <CalendarGrid
-          posts={filteredPosts}
-          selectedDate={selectedDate}
-          onDateSelect={setSelectedDate}
-          onPostClick={setSelectedPost}
-          onPostDrop={handlePostDrop}
-          currentMonth={currentMonth}
-          onMonthChange={setCurrentMonth}
+        {/* Edit Post Modal */}
+        <EditPostModal
+          post={editingPost}
+          isOpen={!!editingPost}
+          onClose={() => setEditingPost(null)}
+          onSave={async (postId, updates) => {
+            await updatePostAsync(postId, updates);
+            setEditingPost(null);
+          }}
         />
       </div>
-
-      {/* Day Posts Panel */}
-      {selectedDate && (
-        <div className="sm:w-96 w-full fixed sm:relative inset-0 sm:inset-auto z-50 sm:z-auto bg-white">
-          <DayPostsPanel
-            date={selectedDate}
-            posts={selectedDatePosts}
-            onClose={() => setSelectedDate(null)}
-            onEditPost={setEditingPost}
-            onDeletePost={handleDeletePost}
-            onReschedulePost={handleReschedule}
-          />
-        </div>
-      )}
-
-      {/* Reschedule Modal */}
-      {reschedulePost && (
-        <RescheduleModal
-          open={!!reschedulePost}
-          onOpenChange={(open) => !open && setReschedulePost(null)}
-          currentDate={reschedulePost.date}
-          onReschedule={handleRescheduleSubmit}
-        />
-      )}
-
-      {/* Edit Post Modal */}
-      <EditPostModal
-        post={editingPost}
-        isOpen={!!editingPost}
-        onClose={() => setEditingPost(null)}
-        onSave={async (postId, updates) => {
-          await updatePostAsync(postId, updates);
-          setEditingPost(null);
-        }}
-      />
-    </div>
     </ErrorBoundary>
   );
 }

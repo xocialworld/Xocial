@@ -6,122 +6,152 @@
 
 export const DesignTokens = {
   // ═══════════════════════════════════════════════════════════════
-  // COLOR SYSTEM (Based on HSL for easy manipulation)
+  // COLOR SYSTEM — Premium palette inspired by Linear/Notion/Figma
   // ═══════════════════════════════════════════════════════════════
   colors: {
-    // Primary Brand Colors (Cosmic Teal)
+    // Primary Brand Colors (Ocean Depth Teal)
     primary: {
-      50: 'hsl(175, 80%, 97%)',
-      100: 'hsl(175, 80%, 93%)',
-      200: 'hsl(175, 80%, 85%)',
-      300: 'hsl(175, 80%, 75%)',
-      400: 'hsl(175, 80%, 60%)',
-      500: 'hsl(175, 80%, 45%)',  // Base #14B8A6
-      600: 'hsl(175, 100%, 35%)',
-      700: 'hsl(175, 100%, 28%)',
-      800: 'hsl(175, 100%, 22%)',
-      900: 'hsl(175, 100%, 18%)',
-      950: 'hsl(175, 100%, 12%)',
-      DEFAULT: 'hsl(175, 80%, 45%)',
+      50: 'hsl(172, 67%, 97%)',    // Barely-there tint
+      100: 'hsl(172, 67%, 93%)',   // Subtle highlight
+      200: 'hsl(172, 62%, 85%)',   // Light accent
+      300: 'hsl(172, 58%, 72%)',   // Mid-light
+      400: 'hsl(173, 55%, 55%)',   // Vivid accent
+      500: 'hsl(173, 58%, 42%)',   // Primary base (hero color)
+      600: 'hsl(174, 65%, 34%)',   // Hover state
+      700: 'hsl(175, 72%, 26%)',   // Active/pressed
+      800: 'hsl(176, 78%, 20%)',   // Dark accent
+      900: 'hsl(177, 82%, 14%)',   // Deepest
+      950: 'hsl(178, 85%, 8%)',    // Near-black
+      DEFAULT: 'hsl(173, 58%, 42%)',
     },
 
-    // Secondary/Neutral Colors (Soft Purple)
+    // Secondary Colors (Refined Slate)
     secondary: {
-      50: 'hsl(265, 80%, 98%)',
-      100: 'hsl(265, 80%, 96%)',
-      200: 'hsl(265, 80%, 92%)',
-      300: 'hsl(265, 80%, 85%)',
-      400: 'hsl(265, 80%, 75%)',  // #A78BFA
-      500: 'hsl(265, 60%, 60%)',
-      600: 'hsl(265, 60%, 50%)',
-      700: 'hsl(265, 60%, 40%)',
-      800: 'hsl(265, 60%, 30%)',
-      900: 'hsl(265, 60%, 20%)',
-      950: 'hsl(265, 60%, 10%)',
-      DEFAULT: 'hsl(265, 80%, 75%)',
+      50: 'hsl(230, 25%, 98%)',    // Near white
+      100: 'hsl(228, 22%, 96%)',   // Subtle tint
+      200: 'hsl(226, 18%, 91%)',   // Light border
+      300: 'hsl(224, 15%, 82%)',   // Muted text
+      400: 'hsl(222, 12%, 62%)',   // Placeholder
+      500: 'hsl(220, 13%, 46%)',   // Secondary text
+      600: 'hsl(218, 16%, 36%)',   // Emphasis
+      700: 'hsl(216, 20%, 27%)',   // Card backgrounds (dark)
+      800: 'hsl(214, 24%, 18%)',   // Sidebar/panels
+      900: 'hsl(212, 28%, 12%)',   // Deep dark
+      950: 'hsl(210, 32%, 7%)',    // Near black
+      DEFAULT: 'hsl(220, 13%, 46%)',
     },
 
-    // Semantic Colors
+    // Accent Colors (Premium highlights)
+    accent: {
+      violet: 'hsl(262, 83%, 65%)',
+      indigo: 'hsl(238, 78%, 62%)',
+      rose: 'hsl(347, 77%, 62%)',
+      amber: 'hsl(38, 92%, 55%)',
+      emerald: 'hsl(160, 84%, 42%)',
+      DEFAULT: 'hsl(262, 83%, 65%)',
+    },
+
+    // Semantic Colors (Refined)
     success: {
-      50: 'hsl(145, 63%, 97%)',
-      100: 'hsl(145, 63%, 95%)',
-      200: 'hsl(145, 63%, 85%)',
-      300: 'hsl(145, 63%, 75%)',
-      400: 'hsl(145, 63%, 63%)',
-      500: 'hsl(145, 63%, 49%)',  // Base
-      600: 'hsl(145, 63%, 40%)',
-      700: 'hsl(145, 63%, 35%)',
-      800: 'hsl(145, 63%, 28%)',
-      900: 'hsl(145, 63%, 22%)',
-      DEFAULT: 'hsl(145, 63%, 49%)',
+      50: 'hsl(158, 64%, 97%)',
+      100: 'hsl(158, 64%, 93%)',
+      200: 'hsl(158, 60%, 82%)',
+      300: 'hsl(159, 56%, 68%)',
+      400: 'hsl(160, 72%, 52%)',
+      500: 'hsl(160, 84%, 42%)',   // Base emerald
+      600: 'hsl(161, 90%, 34%)',
+      700: 'hsl(162, 92%, 28%)',
+      800: 'hsl(163, 88%, 22%)',
+      900: 'hsl(164, 85%, 16%)',
+      DEFAULT: 'hsl(160, 84%, 42%)',
     },
 
     warning: {
-      50: 'hsl(38, 92%, 97%)',
-      100: 'hsl(38, 92%, 95%)',
-      200: 'hsl(38, 92%, 85%)',
-      300: 'hsl(38, 92%, 75%)',
-      400: 'hsl(38, 92%, 63%)',
-      500: 'hsl(38, 92%, 50%)',  // Base
-      600: 'hsl(38, 92%, 42%)',
-      700: 'hsl(38, 92%, 35%)',
-      800: 'hsl(38, 92%, 28%)',
-      900: 'hsl(38, 92%, 22%)',
-      DEFAULT: 'hsl(38, 92%, 50%)',
+      50: 'hsl(48, 96%, 97%)',
+      100: 'hsl(48, 96%, 92%)',
+      200: 'hsl(45, 94%, 82%)',
+      300: 'hsl(42, 92%, 70%)',
+      400: 'hsl(40, 92%, 60%)',
+      500: 'hsl(38, 92%, 55%)',    // Base amber
+      600: 'hsl(35, 90%, 48%)',
+      700: 'hsl(32, 88%, 40%)',
+      800: 'hsl(28, 85%, 32%)',
+      900: 'hsl(24, 80%, 24%)',
+      DEFAULT: 'hsl(38, 92%, 55%)',
     },
 
     error: {
-      50: 'hsl(0, 84%, 97%)',
-      100: 'hsl(0, 84%, 95%)',
-      200: 'hsl(0, 84%, 85%)',
-      300: 'hsl(0, 84%, 75%)',
-      400: 'hsl(0, 84%, 65%)',
-      500: 'hsl(0, 84%, 60%)',  // Base
-      600: 'hsl(0, 84%, 50%)',
-      700: 'hsl(0, 84%, 40%)',
-      800: 'hsl(0, 84%, 32%)',
-      900: 'hsl(0, 84%, 25%)',
+      50: 'hsl(0, 86%, 97%)',
+      100: 'hsl(0, 86%, 94%)',
+      200: 'hsl(0, 84%, 86%)',
+      300: 'hsl(0, 82%, 74%)',
+      400: 'hsl(0, 80%, 64%)',
+      500: 'hsl(0, 84%, 60%)',     // Base red
+      600: 'hsl(0, 78%, 52%)',
+      700: 'hsl(0, 75%, 44%)',
+      800: 'hsl(0, 70%, 36%)',
+      900: 'hsl(0, 65%, 28%)',
       DEFAULT: 'hsl(0, 84%, 60%)',
     },
 
     info: {
-      50: 'hsl(199, 89%, 97%)',
-      100: 'hsl(199, 89%, 95%)',
-      200: 'hsl(199, 89%, 85%)',
-      300: 'hsl(199, 89%, 75%)',
-      400: 'hsl(199, 89%, 63%)',
-      500: 'hsl(199, 89%, 48%)',  // Base
-      600: 'hsl(199, 89%, 40%)',
-      700: 'hsl(199, 89%, 35%)',
-      800: 'hsl(199, 89%, 28%)',
-      900: 'hsl(199, 89%, 22%)',
+      50: 'hsl(204, 94%, 97%)',
+      100: 'hsl(204, 94%, 93%)',
+      200: 'hsl(203, 92%, 84%)',
+      300: 'hsl(202, 90%, 72%)',
+      400: 'hsl(201, 88%, 60%)',
+      500: 'hsl(199, 89%, 48%)',   // Base blue
+      600: 'hsl(198, 85%, 42%)',
+      700: 'hsl(197, 80%, 36%)',
+      800: 'hsl(196, 75%, 28%)',
+      900: 'hsl(195, 70%, 22%)',
       DEFAULT: 'hsl(199, 89%, 48%)',
     },
 
-    // Neutral Grays
+    // Neutral Grays (Enhanced)
     gray: {
-      50: 'hsl(220, 13%, 98%)',
-      100: 'hsl(220, 13%, 95%)',
-      200: 'hsl(220, 13%, 91%)',
-      300: 'hsl(220, 9%, 78%)',
-      400: 'hsl(220, 9%, 65%)',
-      500: 'hsl(220, 9%, 46%)',
-      600: 'hsl(220, 13%, 36%)',
-      700: 'hsl(220, 14%, 27%)',
-      800: 'hsl(220, 15%, 20%)',
-      900: 'hsl(220, 15%, 13%)',
-      950: 'hsl(220, 15%, 8%)',
-      DEFAULT: 'hsl(220, 9%, 46%)',
+      50: 'hsl(220, 20%, 98%)',
+      100: 'hsl(220, 18%, 96%)',
+      200: 'hsl(220, 16%, 91%)',
+      300: 'hsl(220, 12%, 80%)',
+      400: 'hsl(220, 10%, 62%)',
+      500: 'hsl(220, 10%, 46%)',
+      600: 'hsl(220, 12%, 36%)',
+      700: 'hsl(220, 16%, 27%)',
+      800: 'hsl(220, 20%, 18%)',
+      900: 'hsl(220, 24%, 12%)',
+      950: 'hsl(220, 28%, 6%)',
+      DEFAULT: 'hsl(220, 10%, 46%)',
     },
 
-    // Platform-Specific Colors
+    // Surface System (for backgrounds, overlays, glassmorphism)
+    surface: {
+      base: 'hsl(220, 20%, 98%)',
+      elevated: 'hsl(0, 0%, 100%)',
+      sunken: 'hsl(220, 18%, 96%)',
+      overlay: 'hsla(220, 24%, 12%, 0.8)',
+      glass: 'hsla(0, 0%, 100%, 0.72)',
+      glassDark: 'hsla(220, 24%, 12%, 0.65)',
+      DEFAULT: 'hsl(220, 20%, 98%)',
+    },
+
+    // Border System
+    border: {
+      subtle: 'hsla(220, 16%, 12%, 0.06)',
+      default: 'hsla(220, 16%, 12%, 0.1)',
+      strong: 'hsla(220, 16%, 12%, 0.16)',
+      focus: 'hsla(173, 58%, 42%, 0.5)',
+      DEFAULT: 'hsla(220, 16%, 12%, 0.1)',
+    },
+
+    // Platform-Specific Colors (unchanged)
     platforms: {
-      facebook: 'hsl(221, 44%, 41%)',    // #1877F2
-      instagram: 'hsl(329, 100%, 50%)',  // #E4405F gradient approximation
-      twitter: 'hsl(203, 89%, 53%)',     // #1DA1F2
-      linkedin: 'hsl(201, 100%, 35%)',   // #0A66C2
-      youtube: 'hsl(0, 100%, 50%)',      // #FF0000
-      tiktok: 'hsl(0, 0%, 0%)',          // #000000
+      facebook: 'hsl(221, 44%, 41%)',
+      instagram: 'hsl(329, 100%, 50%)',
+      twitter: 'hsl(203, 89%, 53%)',
+      linkedin: 'hsl(201, 100%, 35%)',
+      youtube: 'hsl(0, 100%, 50%)',
+      tiktok: 'hsl(0, 0%, 0%)',
     },
   },
 
@@ -133,7 +163,7 @@ export const DesignTokens = {
       sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
       mono: ['JetBrains Mono', 'Menlo', 'Monaco', 'Courier New', 'monospace'],
     },
-    
+
     fontSize: {
       // Major Third Scale (1.250)
       xs: ['0.75rem', { lineHeight: '1rem', letterSpacing: '0.01em' }],      // 12px
@@ -148,7 +178,7 @@ export const DesignTokens = {
       '6xl': ['3.75rem', { lineHeight: '4rem', letterSpacing: '-0.02em' }],     // 60px
       '7xl': ['4.5rem', { lineHeight: '4.75rem', letterSpacing: '-0.02em' }],   // 72px
     },
-    
+
     fontWeight: {
       thin: '100',
       extralight: '200',
@@ -208,17 +238,27 @@ export const DesignTokens = {
   },
 
   // ═══════════════════════════════════════════════════════════════
-  // SHADOWS
+  // SHADOWS — Enhanced with glow effects and focus states
   // ═══════════════════════════════════════════════════════════════
   shadows: {
-    sm: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
-    DEFAULT: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
-    md: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
-    lg: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
-    xl: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
-    '2xl': '0 25px 50px -12px rgb(0 0 0 / 0.25)',
-    inner: 'inset 0 2px 4px 0 rgb(0 0 0 / 0.05)',
+    xs: '0 1px 2px hsla(220, 16%, 12%, 0.03)',
+    sm: '0 1px 3px hsla(220, 16%, 12%, 0.04), 0 1px 2px hsla(220, 16%, 12%, 0.02)',
+    DEFAULT: '0 2px 4px -1px hsla(220, 16%, 12%, 0.06), 0 1px 2px -1px hsla(220, 16%, 12%, 0.03)',
+    md: '0 4px 6px -1px hsla(220, 16%, 12%, 0.06), 0 2px 4px -2px hsla(220, 16%, 12%, 0.04)',
+    lg: '0 10px 15px -3px hsla(220, 16%, 12%, 0.07), 0 4px 6px -4px hsla(220, 16%, 12%, 0.04)',
+    xl: '0 20px 25px -5px hsla(220, 16%, 12%, 0.08), 0 8px 10px -6px hsla(220, 16%, 12%, 0.04)',
+    '2xl': '0 25px 50px -12px hsla(220, 16%, 12%, 0.15)',
+    inner: 'inset 0 2px 4px 0 hsla(220, 16%, 12%, 0.04)',
     none: 'none',
+    // Glow effects for interactive elements
+    glow: '0 0 20px hsla(173, 58%, 42%, 0.35)',
+    glowLg: '0 0 40px hsla(173, 58%, 42%, 0.25)',
+    glowAccent: '0 0 20px hsla(262, 83%, 65%, 0.35)',
+    // Focus ring
+    focus: '0 0 0 3px hsla(173, 58%, 42%, 0.35)',
+    focusError: '0 0 0 3px hsla(0, 84%, 60%, 0.35)',
+    // Card hover elevation
+    elevated: '0 8px 16px -4px hsla(220, 16%, 12%, 0.08), 0 4px 8px -4px hsla(220, 16%, 12%, 0.04)',
   },
 
   // ═══════════════════════════════════════════════════════════════
@@ -232,7 +272,7 @@ export const DesignTokens = {
       slow: '350ms',
       slower: '500ms',
     },
-    
+
     easing: {
       linear: 'linear',
       ease: 'cubic-bezier(0.4, 0, 0.2, 1)',

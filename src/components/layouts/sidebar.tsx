@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -7,80 +8,301 @@ import {
   Calendar,
   Sparkles,
   BarChart3,
-  Users,
-  LogOut,
   Lightbulb,
-  MessageSquare,
+  Menu,
+  X,
+  Keyboard,
+  ChevronsLeft,
+  ChevronsRight,
+  MessageCircle,
+  Users,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { KeyboardShortcutsHelp, useKeyboardShortcutsHelp } from "@/components/shared/keyboard-shortcuts-help";
 
 const navigation = [
-  { name: "X — Accounts", href: "/x", icon: Users },
-  { name: "O — Organize", href: "/o", icon: Calendar },
-  { name: "C — Create", href: "/c", icon: Sparkles },
-  { name: "I — Influence", href: "/i", icon: Users },
-  { name: "A — Analyze", href: "/a", icon: BarChart3 },
-  { name: "L — Leverage", href: "/l", icon: Lightbulb },
+  {
+    name: "Accounts",
+    shortName: "X",
+    href: "/x",
+    icon: Users,
+    shortcut: "⌥X",
+    description: "Manage connected accounts",
+    color: "text-blue-500",
+    bgColor: "bg-blue-500/10"
+  },
+  {
+    name: "Organize",
+    shortName: "O",
+    href: "/o",
+    icon: Calendar,
+    shortcut: "⌥O",
+    description: "Calendar & scheduling",
+    color: "text-green-500",
+    bgColor: "bg-green-500/10"
+  },
+  {
+    name: "Create",
+    shortName: "C",
+    href: "/c",
+    icon: Sparkles,
+    shortcut: "⌥C",
+    description: "Compose new posts",
+    color: "text-purple-500",
+    bgColor: "bg-purple-500/10"
+  },
+  {
+    name: "Influence",
+    shortName: "I",
+    href: "/i",
+    icon: MessageCircle,
+    shortcut: "⌥I",
+    description: "Community & reach",
+    color: "text-pink-500",
+    bgColor: "bg-pink-500/10"
+  },
+  {
+    name: "Analyze",
+    shortName: "A",
+    href: "/a",
+    icon: BarChart3,
+    shortcut: "⌥A",
+    description: "Analytics & insights",
+    color: "text-orange-500",
+    bgColor: "bg-orange-500/10"
+  },
+  {
+    name: "Leverage",
+    shortName: "L",
+    href: "/l",
+    icon: Lightbulb,
+    shortcut: "⌥L",
+    description: "AI & automation",
+    color: "text-yellow-500",
+    bgColor: "bg-yellow-500/10"
+  },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const supabase = createClient();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const { open: helpOpen, setOpen: setHelpOpen } = useKeyboardShortcutsHelp();
 
-  const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-      toast.success("Logged out successfully");
-      router.push("/auth/login");
-      router.refresh();
-    } catch (error: any) {
-      toast.error("Failed to logout");
-    }
+  // Load collapsed state from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('sidebarCollapsed');
+    if (saved === 'true') setCollapsed(true);
+  }, []);
+
+  // Save collapsed state
+  const toggleCollapsed = () => {
+    const newState = !collapsed;
+    setCollapsed(newState);
+    localStorage.setItem('sidebarCollapsed', String(newState));
   };
 
-  return (
-    <div className="flex h-screen w-64 flex-col bg-secondary-900 text-white">
-      {/* Logo */}
-      <div className="flex h-16 items-center px-6 border-b border-secondary-800">
-        <h1 className="text-2xl font-bold">Xocial</h1>
+  const closeMobile = () => setMobileOpen(false);
+
+  const SidebarContent = ({ isMobile = false }: { isMobile?: boolean }) => (
+    <>
+      {/* Header with Logo */}
+      <div className={cn(
+        "flex h-14 items-center border-b border-white/10",
+        collapsed && !isMobile ? "justify-center px-2" : "justify-between px-4"
+      )}>
+        <Link
+          href="/x"
+          className={cn(
+            "flex items-center gap-2 group",
+            collapsed && !isMobile && "justify-center"
+          )}
+        >
+          <div className="relative flex-shrink-0">
+            <Sparkles className="h-6 w-6 text-primary-400 group-hover:scale-110 transition-transform duration-200" />
+          </div>
+          {(!collapsed || isMobile) && (
+            <span className="text-lg font-bold text-white">
+              Xocial
+            </span>
+          )}
+        </Link>
+
+        {/* Desktop collapse toggle */}
+        {!isMobile && (
+          <button
+            onClick={toggleCollapsed}
+            className="p-1.5 rounded-md text-secondary-400 hover:text-white hover:bg-white/10 transition-colors"
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? (
+              <ChevronsRight className="h-4 w-4" />
+            ) : (
+              <ChevronsLeft className="h-4 w-4" />
+            )}
+          </button>
+        )}
+
+        {/* Mobile close button */}
+        {isMobile && (
+          <button
+            onClick={closeMobile}
+            className="p-1.5 text-secondary-400 hover:text-white rounded-md hover:bg-white/10 transition-colors"
+            aria-label="Close menu"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
-        {navigation.map((item) => {
-          const isActive = pathname === item.href;
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary-600 text-white"
-                  : "text-secondary-300 hover:bg-secondary-800 hover:text-white"
-              )}
-            >
-              <item.icon className="h-5 w-5" />
-              {item.name}
-            </Link>
-          );
-        })}
+      <nav className={cn(
+        "flex-1 py-3 overflow-y-auto",
+        collapsed && !isMobile ? "px-2" : "px-3"
+      )}>
+        <div className="space-y-1">
+          {navigation.map((item) => {
+            const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                onClick={closeMobile}
+                title={collapsed && !isMobile ? item.name : undefined}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg text-sm font-medium transition-colors duration-150 group relative",
+                  collapsed && !isMobile
+                    ? "justify-center p-2.5"
+                    : "px-3 py-2",
+                  isActive
+                    ? "bg-white/10 text-white"
+                    : "text-secondary-400 hover:bg-white/5 hover:text-white"
+                )}
+              >
+                {/* Active indicator */}
+                {isActive && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-primary-400 rounded-r-full" />
+                )}
+
+                <div className={cn(
+                  "p-1 rounded-md flex-shrink-0",
+                  isActive ? `${item.bgColor} ${item.color}` : ""
+                )}>
+                  <item.icon className={cn(
+                    "h-4 w-4",
+                    isActive ? "" : "text-secondary-400 group-hover:text-white"
+                  )} />
+                </div>
+
+                {(!collapsed || isMobile) && (
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={cn(
+                        "font-mono text-[10px] px-1 py-0.5 rounded",
+                        isActive
+                          ? "bg-primary-500/30 text-primary-300"
+                          : "bg-white/10 text-secondary-500"
+                      )}>
+                        {item.shortName}
+                      </span>
+                      <span className="truncate">{item.name}</span>
+                    </div>
+                    <span className={cn(
+                      "text-xs truncate block",
+                      isActive ? "text-white/60" : "text-secondary-500"
+                    )}>
+                      {item.description}
+                    </span>
+                  </div>
+                )}
+
+                {(!collapsed || isMobile) && (
+                  <kbd className={cn(
+                    "hidden lg:inline-flex px-1 py-0.5 text-[10px] rounded font-mono flex-shrink-0",
+                    isActive
+                      ? "bg-primary-500/20 text-primary-300"
+                      : "bg-white/5 text-secondary-500 opacity-0 group-hover:opacity-100"
+                  )}>
+                    {item.shortcut}
+                  </kbd>
+                )}
+              </Link>
+            );
+          })}
+        </div>
       </nav>
 
-      {/* User section */}
-      <div className="border-t border-secondary-800 p-4">
+      {/* Bottom section */}
+      <div className={cn(
+        "border-t border-white/10 py-2",
+        collapsed && !isMobile ? "px-2" : "px-3"
+      )}>
         <button
-          onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-secondary-300 transition-colors hover:bg-secondary-800 hover:text-white"
+          onClick={() => setHelpOpen(true)}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-lg text-sm font-medium text-secondary-400 transition-colors hover:bg-white/5 hover:text-white group",
+            collapsed && !isMobile ? "justify-center p-2.5" : "px-3 py-2"
+          )}
+          title={collapsed && !isMobile ? "Keyboard Shortcuts" : undefined}
         >
-          <LogOut className="h-5 w-5" />
-          Logout
+          <Keyboard className="h-4 w-4 text-secondary-500 group-hover:text-white transition-colors flex-shrink-0" />
+          {(!collapsed || isMobile) && (
+            <>
+              <span className="flex-1 text-left">Shortcuts</span>
+              <kbd className="hidden lg:inline-flex px-1 py-0.5 text-[10px] rounded bg-white/10 text-secondary-500 font-mono">
+                ?
+              </kbd>
+            </>
+          )}
         </button>
       </div>
-    </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile menu button */}
+      <div className="lg:hidden fixed top-3 left-3 z-50">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setMobileOpen(true)}
+          className="bg-white shadow-md border-secondary-200 h-9 w-9 p-0"
+          aria-label="Open menu"
+        >
+          <Menu className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          className="lg:hidden fixed inset-0 z-40 bg-black/50"
+          onClick={closeMobile}
+        />
+      )}
+
+      {/* Mobile sidebar */}
+      <div
+        className={cn(
+          "lg:hidden fixed inset-y-0 left-0 z-50 w-64 flex flex-col bg-secondary-900 shadow-2xl transition-transform duration-200",
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        <SidebarContent isMobile />
+      </div>
+
+      {/* Desktop sidebar */}
+      <div className={cn(
+        "hidden lg:flex h-screen flex-col bg-secondary-900 border-r border-secondary-800 transition-[width] duration-200",
+        collapsed ? "w-16" : "w-56"
+      )}>
+        <SidebarContent />
+      </div>
+
+      {/* Keyboard shortcuts help modal */}
+      <KeyboardShortcutsHelp open={helpOpen} onOpenChange={setHelpOpen} />
+    </>
   );
 }
-

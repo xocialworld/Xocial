@@ -34,12 +34,31 @@ export interface EngagementDataPoint {
   total: number;
 }
 
+// Platform-specific metrics that vary by social network
+export interface PlatformMetrics {
+  views?: number;        // YouTube, TikTok
+  reach?: number;        // Instagram, Facebook
+  impressions?: number;  // Twitter, LinkedIn, Instagram, Facebook
+  saves?: number;        // Instagram
+  clicks?: number;       // LinkedIn
+  retweets?: number;     // Twitter
+  replies?: number;      // Twitter
+  watchTime?: number;    // YouTube
+  profileViews?: number; // TikTok
+  profileClicks?: number; // Twitter
+}
+
 export interface PlatformStat {
   platform: string;
   followers: number;
   engagement: number;
   posts: number;
   engagementRate: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  platformMetrics?: PlatformMetrics;
+  metricKeys?: string[];
 }
 
 export interface TopPost {

@@ -107,6 +107,13 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
                 if (!process.env.TWITTER_CLIENT_ID || !process.env.TWITTER_CLIENT_SECRET) {
                     throw new APIError(500, 'Twitter OAuth is not configured', 'TWITTER_OAUTH_NOT_CONFIGURED');
                 }
+                logger.info('[OAuth Connect] Initiating Twitter OAuth', {
+                    userId: user.id,
+                    redirectUri: `${appUrl}/api/auth/twitter/callback`,
+                    clientIdPrefix: process.env.TWITTER_CLIENT_ID.substring(0, 10) + '...',
+                    hasPkce: !!pkce,
+                    pkceChallengeLength: pkce?.challenge.length,
+                });
                 authUrl = getTwitterAuthUrl(
                     {
                         clientId: process.env.TWITTER_CLIENT_ID!,
@@ -116,6 +123,10 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
                     state,
                     pkce!.challenge
                 );
+                logger.info('[OAuth Connect] Twitter auth URL generated', {
+                    authUrlLength: authUrl.length,
+                    authUrlPrefix: authUrl.substring(0, 60) + '...',
+                });
                 break;
 
             case 'linkedin':

@@ -27,7 +27,6 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   admin: [
     { resource: 'posts', actions: ['create', 'read', 'update', 'delete'] },
     { resource: 'accounts', actions: ['create', 'read', 'update', 'delete'] },
-    { resource: 'campaigns', actions: ['create', 'read', 'update', 'delete'] },
     { resource: 'analytics', actions: ['read'] },
     { resource: 'members', actions: ['create', 'read', 'update', 'delete'] },
     { resource: 'ai', actions: ['create', 'read'] },
@@ -37,7 +36,6 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   manager: [
     { resource: 'posts', actions: ['create', 'read', 'update', 'delete'] },
     { resource: 'accounts', actions: ['read'] },
-    { resource: 'campaigns', actions: ['create', 'read', 'update'] },
     { resource: 'analytics', actions: ['read'] },
     { resource: 'ai', actions: ['create', 'read'] },
     { resource: 'strategy', actions: ['read'] },
@@ -47,7 +45,6 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   creator: [
     { resource: 'posts', actions: ['create', 'read', 'update'] }, // Cannot delete approved posts usually, but basic CRUD for drafts
     { resource: 'accounts', actions: ['read'] },
-    { resource: 'campaigns', actions: ['read'] },
     { resource: 'analytics', actions: ['read'] },
     { resource: 'ai', actions: ['create', 'read'] },
     { resource: 'approvals', actions: ['create', 'read'] }, // Can request approval
@@ -55,7 +52,6 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   analyst: [
     { resource: 'posts', actions: ['read'] },
     { resource: 'accounts', actions: ['read'] },
-    { resource: 'campaigns', actions: ['read'] },
     { resource: 'analytics', actions: ['read'] },
     { resource: 'strategy', actions: ['read'] },
   ],
@@ -148,12 +144,7 @@ export function canViewAnalytics(role: UserRole): boolean {
   return hasPermission(role, 'analytics', 'read');
 }
 
-/**
- * Check if user can manage campaigns
- */
-export function canManageCampaigns(role: UserRole): boolean {
-  return hasPermission(role, 'campaigns', 'create');
-}
+
 
 /**
  * Get user's workspace membership and check permissions

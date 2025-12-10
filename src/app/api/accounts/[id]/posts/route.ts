@@ -8,6 +8,7 @@ import {
 import { createClient } from '@/lib/supabase/server';
 import { decryptToken } from '@/lib/encryption';
 import { getYouTubeChannelVideos, getYouTubeVideoStats } from '@/lib/oauth/youtube';
+import { getTwitterUserTweets } from '@/lib/platforms/twitter';
 
 /**
  * GET /api/accounts/[id]/posts - Fetch all posts for a specific social account
@@ -98,14 +99,14 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         throw new APIError(500, postsError.message, 'DATABASE_ERROR');
     }
 
-    // Fallback: If no stored posts yet and platform supports external fetch, hydrate from API for display
-    let hydratedRows = postsRows || [];
-    if ((!hydratedRows || hydratedRows.length === 0) && platform === 'youtube') {
-        // Attempt lightweight hydration from YouTube for all-time view
+    // Fetch fresh data from APIs to ensure realtime accuracy
+    let freshPosts: any[] = [];
+
+    // YouTube: Fetch fresh videos
+    if (platform === 'youtube') {
         try {
             const accessToken = decryptToken(account.access_token);
-            const videos = await getYouTubeChannelVideos(accessToken, account.account_id, limit);
-            const enriched = [] as any[];
+            const videos = await getYouTubeChannelVideos(accessToken, account.account_id, 20); // Fetch top 20 fresh
             for (const item of videos) {
                 const vid = (item.id as any)?.videoId;
                 if (!vid) continue;
@@ -121,8 +122,8 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
                         return h * 3600 + mi * 60 + s;
                     })();
                     const isShort = durationSec > 0 && durationSec <= 60;
-                    enriched.push({
-                        id: vid,
+                    freshPosts.push({
+                        id: vid, // Temporary ID matching external
                         content: { caption: details.snippet.title },
                         media: [{ type: 'video', url: details.snippet.thumbnails?.high?.url || details.snippet.thumbnails?.default?.url }],
                         platforms: ['youtube'],
@@ -133,12 +134,93 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
                         scheduled_at: null,
                         created_at: details.snippet.publishedAt,
                         external_post_id: vid,
+                        metrics: {
+                            likes: parseInt(details.statistics?.likeCount || '0'),
+                            comments: parseInt(details.statistics?.commentCount || '0'),
+                            shares: 0,
+                            saves: 0,
+                            views: parseInt(details.statistics?.viewCount || '0'),
+                        }
                     });
-                } catch {}
+                } catch { }
             }
-            hydratedRows = enriched;
-        } catch {}
+        } catch (e) {
+            console.error('[YouTube] Failed to fetch fresh videos:', e);
+        }
     }
+
+    // Twitter: Fetch fresh tweets
+    if (platform === 'twitter') {
+        try {
+            const accessToken = decryptToken(account.access_token);
+            const tweets = await getTwitterUserTweets(accessToken, account.account_id, 20); // Fetch top 20 fresh
+
+            freshPosts = tweets.map((tweet: any) => {
+                const mediaItems = (tweet.media || []).map((m: any) => ({
+                    type: m.type === 'video' || m.type === 'animated_gif' ? 'video' : 'image',
+                    url: m.url || m.preview_image_url,
+                }));
+
+                return {
+                    id: tweet.id, // Temporary ID
+                    content: {
+                        caption: tweet.text,
+                        text: tweet.text,
+                    },
+                    media: mediaItems,
+                    platforms: ['twitter'],
+                    workspace_id: account.workspace_id,
+                    metadata: { post_type: 'tweet' },
+                    status: 'published',
+                    published_at: tweet.created_at,
+                    scheduled_at: null,
+                    created_at: tweet.created_at,
+                    external_post_id: tweet.id,
+                    metrics: tweet.public_metrics ? {
+                        likes: tweet.public_metrics.like_count || 0,
+                        comments: tweet.public_metrics.reply_count || 0,
+                        shares: (tweet.public_metrics.retweet_count || 0) + (tweet.public_metrics.quote_count || 0),
+                        views: tweet.public_metrics.impression_count || 0,
+                        saves: tweet.public_metrics.bookmark_count || 0,
+                    } : undefined,
+                };
+            });
+            console.log(`[Twitter] Fetched ${freshPosts.length} fresh tweets`);
+        } catch (err: any) {
+            console.error('[Twitter] Failed to fetch fresh tweets:', err.message);
+        }
+    }
+
+    // Merge fresh posts with DB posts
+    // Priority: Fresh posts > DB posts (for same external_post_id)
+    const dbPosts = postsRows || [];
+    const mergedPostsMap = new Map<string, any>();
+
+    // 1. Add fresh posts first (they are latest source of truth)
+    freshPosts.forEach(p => {
+        if (p.external_post_id) {
+            mergedPostsMap.set(p.external_post_id, p);
+        }
+    });
+
+    // 2. Add DB posts if not already present
+    dbPosts.forEach((p: any) => {
+        const extId = p.external_post_id;
+        if (!extId || !mergedPostsMap.has(extId)) {
+            // Keep DB post if no fresh equivalent found
+            // Use ID as key if no external ID, or generate unique
+            mergedPostsMap.set(extId || `db_${p.id}`, p);
+        } else {
+            // If already have fresh post, might want to populate DB ID for internal references
+            const fresh = mergedPostsMap.get(extId);
+            fresh.id = p.id; // Keep DB ID for consistency if it exists
+        }
+    });
+
+    // Convert map to array and sort
+    let hydratedRows = Array.from(mergedPostsMap.values()).sort((a, b) =>
+        new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
+    );
 
     const postIds = (hydratedRows || []).map((p: any) => p.id).filter(Boolean);
 
@@ -168,6 +250,11 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
             saves: analytics.saves || 0,
         } : undefined;
 
+        // Use pre-hydrated metrics from Twitter if available
+        if (!metrics && post.metrics) {
+            metrics = post.metrics;
+        }
+
         if (!metrics && platform === 'youtube') {
             const vid = post.external_post_id || (Array.isArray(post.media) ? (post.media[0]?.videoId || post.media[0]?.id) : undefined);
             if (vid && account.access_token) {
@@ -184,7 +271,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
                     if (!post.media || post.media.length === 0) {
                         post.media = [{ type: 'video', url: details.snippet.thumbnails?.high?.url || details.snippet.thumbnails?.default?.url }];
                     }
-                } catch {}
+                } catch { }
             }
         }
 
@@ -202,7 +289,15 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
             post_type: extractedPostType,
             content: post?.content || {},
             media: post?.media || [],
-            metrics,
+            post_analytics: [{
+                likes: metrics.likes || 0,
+                comments: metrics.comments || 0,
+                shares: metrics.shares || 0,
+                impressions: metrics.views || 0, // Map views to impressions for UI
+                saves: metrics.saves || 0,
+                platform: platform,
+                post_id: post.id
+            }],
             published_at: post.published_at,
             scheduled_at: post.scheduled_at,
             created_at: post.created_at,

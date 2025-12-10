@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,32 @@ interface YouTubeAccountCardProps {
 export function YouTubeAccountCard({ account, onDisconnect, onSync }: YouTubeAccountCardProps) {
     const [isSyncing, setIsSyncing] = useState(false);
     const [isDisconnecting, setIsDisconnecting] = useState(false);
+    const [stats, setStats] = useState<{
+        subscriber_count: number;
+        video_count: number;
+        view_count: number;
+    } | null>(null);
+    const [loadingStats, setLoadingStats] = useState(false);
+
+    const fetchStats = async () => {
+        setLoadingStats(true);
+        try {
+            const response = await fetch(`/api/youtube/${account.id}/stats`);
+            if (response.ok) {
+                const data = await response.json();
+                setStats(data);
+            }
+        } catch (error) {
+            console.error('Failed to fetch YouTube stats:', error);
+        } finally {
+            setLoadingStats(false);
+        }
+    };
+
+    // Fetch stats on mount
+    useEffect(() => {
+        fetchStats();
+    }, [account.id]);
 
     // Check token expiration status
     const tokenExpiresAt = new Date(account.token_expires_at);
@@ -81,6 +107,8 @@ export function YouTubeAccountCard({ account, onDisconnect, onSync }: YouTubeAcc
 
             toast.success('YouTube data synced successfully');
             onSync?.(account.id);
+            // Refresh stats after sync
+            fetchStats();
         } catch (error) {
             console.error('Sync error:', error);
             toast.error('Failed to sync YouTube data');
@@ -114,9 +142,9 @@ export function YouTubeAccountCard({ account, onDisconnect, onSync }: YouTubeAcc
         }
     };
 
-    const subscriberCount = account.metadata?.subscriber_count || account.follower_count;
-    const videoCount = account.metadata?.video_count || 0;
-    const viewCount = account.metadata?.view_count || 0;
+    const subscriberCount = stats?.subscriber_count ?? account.metadata?.subscriber_count ?? account.follower_count;
+    const videoCount = stats?.video_count ?? account.metadata?.video_count ?? 0;
+    const viewCount = stats?.view_count ?? account.metadata?.view_count ?? 0;
 
     return (
         <Card className="hover:shadow-md transition-shadow">

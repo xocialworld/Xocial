@@ -14,7 +14,8 @@ export const dynamic = 'force-dynamic';
  * DELETE /api/team/members/:id
  * Remove a member from the current workspace (admin or owner only)
  */
-export const DELETE = withErrorHandler(async (request: NextRequest, { params }: { params: { id: string } }) => {
+export const DELETE = withErrorHandler(async (request: NextRequest, props: { params: Promise<{ id: string }> }) => {
+  const params = await props.params;
   const { user, supabase } = await requireAuth(request);
   const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
 

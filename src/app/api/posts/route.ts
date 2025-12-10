@@ -19,6 +19,7 @@ import {
   extractExternalIds,
 } from '@/lib/platforms/publish-utils';
 import { normalizeMetadata } from '@/lib/platforms/post-publish-helpers';
+import { getCompatiblePlatforms } from '@/lib/platforms/capabilities';
 
 /**
  * Validation schemas
@@ -155,16 +156,22 @@ async function ensureMediaOwnership(
   }
 
   const { data, error } = await supabase
-    .from('media')
+    .from('media_assets')
     .select('id')
     .eq('workspace_id', workspaceId)
     .in('id', mediaIds);
 
   if (error) {
+    console.error('[ensureMediaOwnership] Database error:', error);
     throw new APIError(500, error.message, 'DATABASE_ERROR');
   }
 
   if (!data || data.length !== mediaIds.length) {
+    console.error('[ensureMediaOwnership] Media validation failed:', {
+      expected: mediaIds.length,
+      found: data?.length || 0,
+      mediaIds,
+    });
     throw new APIError(400, 'One or more media items are invalid', 'INVALID_MEDIA');
   }
 }
@@ -192,6 +199,39 @@ function shouldPublishImmediately(input: ValidatedPostInput) {
   return input.status === 'published' && !input.scheduled_at;
 }
 
+/**
+ * Validate that the content is compatible with all selected platforms
+ */
+function validateContentForPlatforms(
+  platforms: Platform[],
+  input: ValidatedPostInput
+): void {
+  const media = input.media || [];
+  const hasText = Object.values(input.content).some(c => c?.text?.trim());
+  const hasImages = media.some(m => m.type === 'image');
+  const hasVideos = media.some(m => m.type === 'video');
+  const imageCount = media.filter(m => m.type === 'image').length;
+  const videoCount = media.filter(m => m.type === 'video').length;
+
+  const { incompatible } = getCompatiblePlatforms(platforms, {
+    hasText,
+    hasImages,
+    hasVideos,
+    imageCount,
+    videoCount,
+  });
+
+  if (incompatible.length > 0) {
+    const errorMessages = incompatible.map(i => `${i.platform}: ${i.reason}`);
+    throw new APIError(
+      400,
+      `Content not supported for: ${errorMessages.join('; ')}`,
+      'INCOMPATIBLE_CONTENT',
+      { incompatiblePlatforms: incompatible }
+    );
+  }
+}
+
 async function publishImmediately({
   supabase,
   post,
@@ -204,12 +244,24 @@ async function publishImmediately({
   platformAccounts: Partial<Record<Platform, string>>;
 }) {
   const platforms = (post.platforms || []) as Platform[];
+
+  console.log('[publishImmediately] Starting publish for platforms:', platforms);
+  console.log('[publishImmediately] Input content keys:', Object.keys(input.content || {}));
+  console.log('[publishImmediately] Media count:', input.media?.length || 0);
+
+  // Validate content compatibility before attempting to publish
+  validateContentForPlatforms(platforms, input);
+
   const contentMap = buildPlatformContentMap(input.content, platforms);
   const mediaUrls =
     input.media?.map((item) => item.url).filter((url) => Boolean(url)) ?? undefined;
 
   const primaryPlatform = platforms[0];
   const fallbackText = primaryPlatform ? contentMap[primaryPlatform]?.text || '' : '';
+
+  console.log('[publishImmediately] Content map:', contentMap);
+  console.log('[publishImmediately] Fallback text length:', fallbackText.length);
+  console.log('[publishImmediately] Media URLs:', mediaUrls);
 
   const publishResults = await platformPublisher.publishToAll({
     platforms,
@@ -226,6 +278,8 @@ async function publishImmediately({
     }, {} as Partial<Record<Platform, { text: string; mediaUrls?: string[] }>>),
     accountIds: platformAccounts,
   });
+
+  console.log('[publishImmediately] Publish results:', publishResults);
 
   const metadata = normalizeMetadata(post.metadata);
   const allSucceeded = publishResults.every((result) => result.success);
@@ -308,6 +362,8 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   const status = searchParams.get('status');
   const accountId = searchParams.get('account_id');
   const campaignId = searchParams.get('campaign_id');
+  const from = searchParams.get('from');
+  const to = searchParams.get('to');
 
   // Build query
   let query = supabase
@@ -328,6 +384,14 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   }
   if (campaignId) {
     query = query.eq('campaign_id', campaignId);
+  }
+
+  // Date range filtering for calendar view
+  if (from) {
+    query = query.or(`scheduled_at.gte.${from},published_at.gte.${from},created_at.gte.${from}`);
+  }
+  if (to) {
+    query = query.or(`scheduled_at.lte.${to},published_at.lte.${to},created_at.lte.${to}`);
   }
 
   // Apply pagination
@@ -455,8 +519,8 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
           platform: platform,
           caption: platformContent?.text || '',
           media_ids: normalizedData.mediaIds || [],
-          status: normalizedData.status === 'published' ? 'published' : 
-                 normalizedData.status === 'scheduled' ? 'scheduled' : 'draft',
+          status: normalizedData.status === 'published' ? 'published' :
+            normalizedData.status === 'scheduled' ? 'scheduled' : 'draft',
           scheduled_at: normalizedData.scheduled_at,
           published_at: normalizedData.status === 'published' ? new Date().toISOString() : null,
         };
@@ -465,7 +529,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       const { error: variantError } = await supabase
         .from('content_variants')
         .insert(variants);
-      
+
       if (variantError) {
         console.warn('[SRS Sync] Failed to create content_variants:', variantError);
       }

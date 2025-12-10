@@ -3,6 +3,51 @@ import { createClient } from '@/lib/supabase/server';
 import { checkRateLimit, getWorkspaceFromRequest } from '@/lib/api-middleware';
 import { logger } from '@/lib/logger';
 
+// Platform-specific metric keys for proper data mapping
+const PLATFORM_METRIC_KEYS: Record<string, string[]> = {
+  youtube: ['views', 'subscribers', 'likes', 'comments', 'watchTime'],
+  tiktok: ['views', 'likes', 'comments', 'shares', 'profileViews'],
+  instagram: ['reach', 'impressions', 'likes', 'comments', 'saves'],
+  facebook: ['reach', 'impressions', 'likes', 'comments', 'shares'],
+  twitter: ['impressions', 'likes', 'retweets', 'replies', 'profileClicks'],
+  linkedin: ['impressions', 'likes', 'comments', 'shares', 'clicks'],
+};
+
+// Platform-specific primary metric for engagement calculation
+const PRIMARY_METRIC_BY_PLATFORM: Record<string, string> = {
+  youtube: 'views',
+  tiktok: 'views',
+  instagram: 'reach',
+  facebook: 'reach',
+  twitter: 'impressions',
+  linkedin: 'impressions',
+};
+
+interface PlatformMetrics {
+  views?: number;
+  reach?: number;
+  impressions?: number;
+  saves?: number;
+  retweets?: number;
+  replies?: number;
+  clicks?: number;
+  watchTime?: number;
+  profileViews?: number;
+  profileClicks?: number;
+}
+
+interface PlatformStat {
+  platform: string;
+  followers: number;
+  engagement: number;
+  posts: number;
+  engagementRate: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  platformMetrics: PlatformMetrics;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -55,69 +100,134 @@ export async function GET(request: NextRequest) {
       return map;
     }, new Map());
 
+    // Fetch posts with all analytics fields for platform-specific metrics
     const { data: posts } = await supabase
       .from('posts')
-      .select('platforms, post_analytics(platform, likes, comments, shares)')
+      .select(`
+        platforms,
+        post_analytics(
+          platform,
+          likes,
+          comments,
+          shares,
+          impressions,
+          reach,
+          saves,
+          clicks,
+          video_views,
+          engagement_rate
+        )
+      `)
       .eq('workspace_id', workspace.id)
       .gte('published_at', from)
       .lte('published_at', to)
       .eq('status', 'published');
 
-    const statsMap = new Map<
-      string,
-      { platform: string; followers: number; engagement: number; posts: number; engagementRate: number }
-    >();
+    const statsMap = new Map<string, PlatformStat>();
 
     posts?.forEach((post) => {
       const platforms = Array.isArray(post.platforms) ? post.platforms : [];
       const analytics = (post.post_analytics as any[]) || [];
 
       platforms.forEach((platform: string) => {
-        const entry =
-          statsMap.get(platform) ||
-          {
-            platform,
-            followers: followerMap.get(platform) || 0,
-            engagement: 0,
-            posts: 0,
-            engagementRate: 0,
-          };
+        const platformLower = platform.toLowerCase();
+        const entry: PlatformStat = statsMap.get(platformLower) || {
+          platform: platformLower,
+          followers: followerMap.get(platformLower) || 0,
+          engagement: 0,
+          posts: 0,
+          engagementRate: 0,
+          likes: 0,
+          comments: 0,
+          shares: 0,
+          platformMetrics: {},
+        };
 
         const platformAnalytics = analytics.filter(
-          (metric) => metric?.platform === platform
+          (metric) => metric?.platform?.toLowerCase() === platformLower
         );
 
-        const engagementDelta = platformAnalytics.reduce(
-          (sum, metric) =>
-            sum + (metric?.likes || 0) + (metric?.comments || 0) + (metric?.shares || 0),
-          0
-        );
+        platformAnalytics.forEach((metric: any) => {
+          // Core engagement metrics
+          entry.likes += metric?.likes || 0;
+          entry.comments += metric?.comments || 0;
+          entry.shares += metric?.shares || 0;
 
+          // Platform-specific metrics
+          const pm = entry.platformMetrics;
+
+          // Views (YouTube, TikTok)
+          if (platformLower === 'youtube' || platformLower === 'tiktok') {
+            pm.views = (pm.views || 0) + (metric?.video_views || metric?.impressions || 0);
+          }
+
+          // Reach (Instagram, Facebook)
+          if (platformLower === 'instagram' || platformLower === 'facebook') {
+            pm.reach = (pm.reach || 0) + (metric?.reach || 0);
+            pm.impressions = (pm.impressions || 0) + (metric?.impressions || 0);
+          }
+
+          // Impressions (Twitter, LinkedIn)
+          if (platformLower === 'twitter' || platformLower === 'linkedin') {
+            pm.impressions = (pm.impressions || 0) + (metric?.impressions || 0);
+          }
+
+          // Saves (Instagram)
+          if (platformLower === 'instagram') {
+            pm.saves = (pm.saves || 0) + (metric?.saves || 0);
+          }
+
+          // Clicks (LinkedIn)
+          if (platformLower === 'linkedin') {
+            pm.clicks = (pm.clicks || 0) + (metric?.clicks || 0);
+          }
+        });
+
+        // Calculate total engagement
+        entry.engagement = entry.likes + entry.comments + entry.shares;
         entry.posts += 1;
-        entry.engagement += engagementDelta;
-        statsMap.set(platform, entry);
+        statsMap.set(platformLower, entry);
       });
     });
 
+    // Add platforms with no posts but have connected accounts
     followerMap.forEach((followers, platform) => {
-      if (!statsMap.has(platform)) {
-        statsMap.set(platform, {
-          platform,
+      const platformLower = platform.toLowerCase();
+      if (!statsMap.has(platformLower)) {
+        statsMap.set(platformLower, {
+          platform: platformLower,
           followers,
           engagement: 0,
           posts: 0,
           engagementRate: 0,
+          likes: 0,
+          comments: 0,
+          shares: 0,
+          platformMetrics: {},
         });
       }
     });
 
-    const platformStats = Array.from(statsMap.values()).map((stat) => ({
-      ...stat,
-      engagementRate:
-        stat.followers > 0 && stat.posts > 0
-          ? (stat.engagement / (stat.followers * stat.posts)) * 100
-          : 0,
-    }));
+    // Calculate engagement rate using platform-appropriate base metric
+    const platformStats = Array.from(statsMap.values()).map((stat) => {
+      const primaryMetric = PRIMARY_METRIC_BY_PLATFORM[stat.platform] || 'followers';
+      let baseValue = stat.followers;
+
+      // Use platform-specific primary metric for engagement rate calculation
+      if (primaryMetric === 'views' && stat.platformMetrics.views) {
+        baseValue = stat.platformMetrics.views;
+      } else if (primaryMetric === 'reach' && stat.platformMetrics.reach) {
+        baseValue = stat.platformMetrics.reach;
+      } else if (primaryMetric === 'impressions' && stat.platformMetrics.impressions) {
+        baseValue = stat.platformMetrics.impressions;
+      }
+
+      return {
+        ...stat,
+        engagementRate: baseValue > 0 ? (stat.engagement / baseValue) * 100 : 0,
+        metricKeys: PLATFORM_METRIC_KEYS[stat.platform] || [],
+      };
+    });
 
     platformStats.sort((a, b) => b.followers - a.followers);
 

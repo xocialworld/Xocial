@@ -93,7 +93,7 @@ export class PlatformPublisher {
             backoffMultiplier: 2,
           }
         );
-        
+
         results.push({
           platform,
           accountId,
@@ -131,11 +131,11 @@ export class PlatformPublisher {
       if (this.shouldRefreshToken(error)) {
         logger.info(`[Publisher] Attempting token refresh for ${platform} account ${accountId}`, { error: error.message });
         const refreshed = await this.refreshAccountToken(platform, accountId);
-        
+
         if (refreshed) {
-           logger.info(`[Publisher] Token refreshed, retrying publish...`);
-           // Retry once
-           return await this._executePublish(platform, accountId, content, scheduledFor);
+          logger.info(`[Publisher] Token refreshed, retrying publish...`);
+          // Retry once
+          return await this._executePublish(platform, accountId, content, scheduledFor);
         }
       }
       throw error;
@@ -151,22 +151,22 @@ export class PlatformPublisher {
     switch (platform) {
       case 'facebook':
         return await this.publishToFacebook(accountId, content, scheduledFor);
-      
+
       case 'instagram':
         return await this.publishToInstagram(accountId, content);
-      
+
       case 'twitter':
         return await this.publishToTwitter(accountId, content);
-      
+
       case 'linkedin':
         return await this.publishToLinkedIn(accountId, content);
-      
+
       case 'youtube':
         return await this.publishToYouTube(accountId, content, scheduledFor);
-      
+
       case 'tiktok':
         return await this.publishToTikTok(accountId, content);
-      
+
       default:
         throw new Error(`Unsupported platform: ${platform}`);
     }
@@ -191,7 +191,7 @@ export class PlatformPublisher {
         const result = await refreshMetaToken(accountId);
         return result.success;
       }
-      
+
       if (platform === 'youtube') {
         const supabase = await createClient();
         const { data: account } = await supabase
@@ -199,36 +199,36 @@ export class PlatformPublisher {
           .select('refresh_token')
           .eq('id', accountId)
           .single();
-          
+
         if (!account?.refresh_token) return false;
-        
+
         const decryptedRefreshToken = decryptToken(account.refresh_token);
         const config = {
-            clientId: process.env.YOUTUBE_CLIENT_ID!,
-            clientSecret: process.env.YOUTUBE_CLIENT_SECRET!,
-            redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/api/oauth/youtube/callback`,
+          clientId: process.env.YOUTUBE_CLIENT_ID!,
+          clientSecret: process.env.YOUTUBE_CLIENT_SECRET!,
+          redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/api/oauth/youtube/callback`,
         };
-        
+
         const tokenResponse = await refreshYouTubeToken(config, decryptedRefreshToken);
-        
+
         const encryptedAccessToken = encryptToken(tokenResponse.access_token);
         const encryptedRefreshToken = tokenResponse.refresh_token
-            ? encryptToken(tokenResponse.refresh_token)
-            : account.refresh_token;
+          ? encryptToken(tokenResponse.refresh_token)
+          : account.refresh_token;
 
         await supabase
-            .from('social_accounts')
-            .update({
-              access_token: encryptedAccessToken,
-              refresh_token: encryptedRefreshToken,
-              token_expires_at: new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', accountId);
-            
+          .from('social_accounts')
+          .update({
+            access_token: encryptedAccessToken,
+            refresh_token: encryptedRefreshToken,
+            token_expires_at: new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', accountId);
+
         return true;
       }
-      
+
       return false;
     } catch (e) {
       logger.error(`[Publisher] Token refresh failed for ${platform}`, e as Error);
@@ -249,10 +249,10 @@ export class PlatformPublisher {
     // Handle multiple photos (carousel/album) - NEW in v24.0
     if (hasMedia && content.mediaUrls.length > 1) {
       // Check if any are videos (can't mix in album)
-      const hasVideo = content.mediaUrls.some((url: string) => 
+      const hasVideo = content.mediaUrls.some((url: string) =>
         url.includes('.mp4') || url.includes('video')
       );
-      
+
       if (hasVideo) {
         // If there are videos, just post the first one
         const result = await client.publishVideo({
@@ -275,7 +275,7 @@ export class PlatformPublisher {
     // Existing single media logic remains unchanged
     if (hasMedia) {
       const isVideo = content.mediaUrls[0].includes('.mp4') || content.mediaUrls[0].includes('video');
-      
+
       if (isVideo) {
         const result = await client.publishVideo({
           message: content.text,
@@ -338,20 +338,41 @@ export class PlatformPublisher {
 
     if (content.mediaUrls && content.mediaUrls.length > 0) {
       // Upload media first (max 4 images or 1 video for Twitter)
-      const uploadPromises = content.mediaUrls.slice(0, 4).map((url: string) => {
-        const isVideo = url.includes('.mp4') || url.includes('video');
-        return client.uploadMedia(url, isVideo ? 'video' : 'image');
-      });
+      // Note: Twitter's media upload v1.1 API requires OAuth 1.0a, not OAuth 2.0
+      // We'll try to upload but fall back to text-only if it fails
+      try {
+        const uploadPromises = content.mediaUrls.slice(0, 4).map(async (url: string) => {
+          const isVideo = url.includes('.mp4') || url.includes('video');
+          return client.uploadMedia(url, isVideo ? 'video' : 'image');
+        });
 
-      mediaIds = await Promise.all(uploadPromises);
+        mediaIds = await Promise.all(uploadPromises);
+        logger.info('[Twitter] Media upload successful', { mediaIds });
+      } catch (mediaError: any) {
+        // Media upload failed - Twitter's v2 media API is still rolling out
+        // Fall back to text-only posting as agreed with user
+        logger.warn('[Twitter] Media upload failed, posting text-only as fallback', {
+          error: mediaError.message,
+          note: 'Twitter v2 media API rollout in progress. User has been warned in UI.'
+        });
+
+        // Continue with text-only tweet (user has been warned in UI)
+        mediaIds = [];
+      }
     }
 
-    const result = await client.publishTweet({
-      text: content.text,
-      media_ids: mediaIds.length > 0 ? mediaIds : undefined,
-    });
+    try {
+      const result = await client.publishTweet({
+        text: content.text,
+        media_ids: mediaIds.length > 0 ? mediaIds : undefined,
+      });
 
-    return { id: result.data.id };
+      logger.info('[Twitter] Tweet published successfully', { tweetId: result.data.id });
+      return { id: result.data.id };
+    } catch (tweetError: any) {
+      logger.error('[Twitter] Failed to publish tweet', tweetError);
+      throw tweetError;
+    }
   }
 
   private async publishToLinkedIn(
@@ -378,16 +399,48 @@ export class PlatformPublisher {
     content: any,
     scheduledFor?: Date
   ): Promise<{ id: string }> {
+    // YouTube API only supports video uploads
+    // - No image-only posts (YouTube doesn't have this feature)
+    // - No text-only posts (Community Posts are not supported via API)
+    // - Videos can be regular videos or Shorts (< 60 sec, 9:16 aspect ratio)
+
     if (!content.mediaUrls || content.mediaUrls.length === 0) {
-      throw new Error('YouTube requires a video file');
+      throw new Error(
+        'YouTube requires a video file. Text-only posts and images are not supported via the YouTube API. ' +
+        'Please upload a video to post to YouTube.'
+      );
     }
+
+    // Check if the media is a video
+    const mediaUrl = content.mediaUrls[0];
+    const isVideo = mediaUrl.includes('.mp4') ||
+      mediaUrl.includes('.mov') ||
+      mediaUrl.includes('.avi') ||
+      mediaUrl.includes('.webm') ||
+      mediaUrl.includes('video');
+
+    if (!isVideo) {
+      throw new Error(
+        'YouTube only supports video uploads. The uploaded media appears to be an image. ' +
+        'Please upload a video file (.mp4, .mov, .webm) to post to YouTube, or deselect YouTube from the target platforms.'
+      );
+    }
+
+    // Use the text as both title and description for simplicity
+    // In a more complete implementation, we'd have separate title/description fields
+    const title = content.text?.substring(0, 100)?.trim() || 'Untitled Video';
+    const description = content.text || '';
+
+    // Check if this might be a Short (based on description containing #Shorts)
+    const isShort = description.toLowerCase().includes('#shorts');
 
     const result = await publishToYouTube({
       accountId,
-      videoUrl: content.mediaUrls[0],
-      title: content.text.substring(0, 100) || 'Untitled Video',
-      description: content.text || '',
+      videoUrl: mediaUrl,
+      title,
+      description,
       tags: this.extractHashtags(content.text),
+      categoryId: isShort ? '10' : '22', // 10 for Shorts, 22 for People & Blogs
       privacyStatus: scheduledFor ? 'private' : 'public',
       thumbnailUrl: content.mediaUrls[1], // Second media item as thumbnail if available
     });

@@ -7,6 +7,7 @@ import {
 } from '@/lib/api-middleware';
 import { getYouTubeChannelVideos, getYouTubeVideoStats, refreshYouTubeToken } from '@/lib/oauth/youtube';
 import { decryptToken, encryptToken } from '@/lib/encryption';
+import { syncTwitterTweets } from '@/lib/twitter-sync';
 
 /**
  * POST /api/accounts/[id]/sync-posts - Trigger sync to fetch historical posts from platform
@@ -59,6 +60,10 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
         if (platform === 'youtube') {
             // REAL SYNC for YouTube
             syncedCount = await syncYouTubePosts(account, supabase);
+        } else if (platform === 'twitter') {
+            // REAL SYNC for Twitter
+            const result = await syncTwitterTweets(account.id, { maxTweets: 50 });
+            syncedCount = result.synced;
         } else {
             // MOCK SYNC for other platforms (for demo purposes)
             const mockPosts = generateMockPosts(account, 50);

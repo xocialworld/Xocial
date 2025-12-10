@@ -144,6 +144,14 @@ export async function storeOAuthState(
     ...(options?.pkceVerifier ? { pkceVerifier: options.pkceVerifier } : {}),
   };
 
+  console.log(`${FALLBACK_LOG_PREFIX} Storing OAuth state for ${platform}:`, {
+    userId: userId.substring(0, 8) + '...',
+    platform,
+    stateLength: state.length,
+    hasPkceVerifier: !!options?.pkceVerifier,
+    pkceVerifierLength: options?.pkceVerifier?.length,
+  });
+
   clearFallbackState(userId, platform);
 
   const { error } = await supabase
@@ -164,6 +172,8 @@ export async function storeOAuthState(
 
     throw new Error(`Failed to store OAuth state: ${error.message}`);
   }
+
+  console.log(`${FALLBACK_LOG_PREFIX} Successfully stored OAuth state in database`);
 }
 
 /**
@@ -174,7 +184,15 @@ export async function verifyOAuthState(
   platform: string,
   state: string
 ): Promise<{ valid: boolean; redirectUrl?: string; pkceVerifier?: string; error?: string }> {
+  console.log(`${FALLBACK_LOG_PREFIX} Verifying OAuth state for ${platform}:`, {
+    userId: userId.substring(0, 8) + '...',
+    platform,
+    stateLength: state.length,
+    statePrefix: state.substring(0, 10) + '...',
+  });
+
   if (!state) {
+    console.log(`${FALLBACK_LOG_PREFIX} State parameter is missing`);
     return { valid: false, error: 'State parameter is missing' };
   }
 
@@ -187,7 +205,9 @@ export async function verifyOAuthState(
     .single();
 
   if (error) {
+    console.log(`${FALLBACK_LOG_PREFIX} Database query error:`, error.message);
     if (isMissingOAuthColumn(error)) {
+      console.log(`${FALLBACK_LOG_PREFIX} oauth_state column missing, trying fallback store`);
       return verifyWithFallback(userId, platform, state);
     }
 
@@ -197,15 +217,27 @@ export async function verifyOAuthState(
   const storedState = profile.oauth_state as OAuthState | null;
 
   if (!storedState) {
+    console.log(`${FALLBACK_LOG_PREFIX} No stored state in database, trying fallback store`);
     return verifyWithFallback(userId, platform, state);
   }
+
+  console.log(`${FALLBACK_LOG_PREFIX} Found stored state in database:`, {
+    storedPlatform: storedState.platform,
+    storedStateLength: storedState.state?.length,
+    storedStatePrefix: storedState.state?.substring(0, 10) + '...',
+    hasPkceVerifier: !!storedState.pkceVerifier,
+    createdAt: new Date(storedState.createdAt).toISOString(),
+    ageMs: Date.now() - storedState.createdAt,
+  });
 
   const validation = validateStateRecord(storedState, platform, state);
 
   if (!validation.valid) {
+    console.log(`${FALLBACK_LOG_PREFIX} State validation failed:`, validation.error);
     return validation;
   }
 
+  console.log(`${FALLBACK_LOG_PREFIX} State verified successfully, clearing stored state`);
   await clearDatabaseState(supabase, userId);
   clearFallbackState(userId, platform);
 

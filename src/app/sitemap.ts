@@ -28,7 +28,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     route('/blog'),
     route('/resources'),
     route('/resources/guides'),
-    route('/resources/templates'),
     route('/resources/calculators'),
     route('/resources/quizzes'),
     route('/customers'),

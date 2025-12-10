@@ -15,10 +15,11 @@ import { rateLimitMiddleware } from '@/lib/api/rate-limit';
 // GET - Fetch a specific post
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  props: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
+    const params = await props.params;
+    const id = params.id;
     const supabase = await createClient();
 
     // 1. Verify authentication
@@ -64,10 +65,11 @@ export async function GET(
 // PATCH - Update a post
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  props: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
+    const params = await props.params;
+    const id = params.id;
     const supabase = await createClient();
 
     // 1. Verify authentication
@@ -137,10 +139,11 @@ export async function PATCH(
 // DELETE - Delete a post
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  props: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
+    const params = await props.params;
+    const id = params.id;
     const supabase = await createClient();
 
     // 1. Verify authentication

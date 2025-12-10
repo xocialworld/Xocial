@@ -2,9 +2,9 @@
 
 import { useMemo, useState, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { RefreshCcw, MousePointerClick, Activity, Users } from "lucide-react";
+import { RefreshCcw, MousePointerClick, Activity, Users, BarChart3 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import { PageHeader } from "@/components/shared/page-header";
+import { PageHeader, PageContainer, ContentCard } from "@/components/shared/page-components";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -143,60 +143,63 @@ export default function AnalyticsPage() {
 
   if (loading || workspaceLoading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <Spinner size="lg" />
-      </div>
+      <PageContainer>
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <Spinner size="lg" />
+        </div>
+      </PageContainer>
     );
   }
 
   const showEmptyState = !loading && overview && overview.totalPosts === 0;
 
   return (
-    <div className="space-y-8 p-6 md:p-8">
+    <PageContainer>
       <PageHeader
-        title="A — Analyze"
+        shortCode="A"
+        title="Analyze"
         description="Multi-platform analytics with visual dashboards and AI summaries."
-        breadcrumbs={[
-          { label: "Dashboard", href: "/x" },
-          { label: "Analytics" },
-        ]}
-      />
-
-      <div className="rounded-xl border bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <DateRangeSelector value={dateRange} onChange={setDateRange} />
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center space-x-2 mr-4">
-              <Switch
-                id="live-mode"
-                checked={isLive}
-                onCheckedChange={setIsLive}
-              />
-              <Label htmlFor="live-mode" className="flex items-center gap-2 cursor-pointer">
-                Live Mode
-                {isLive && (
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                  </span>
-                )}
-              </Label>
-            </div>
+        icon={BarChart3}
+        iconColor="text-orange-500"
+        badge={isLive ? { label: 'Live', variant: 'success' } : undefined}
+        actions={
+          <div className="flex items-center gap-3">
+            <ExportButton dateRange={dateRange} />
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               onClick={handleRefresh}
               disabled={isRefreshing || isLive}
+              className="gap-2"
             >
-              <RefreshCcw
-                className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
-              />
-              {isRefreshing ? "Refreshing" : "Refresh data"}
+              <RefreshCcw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">{isRefreshing ? "Refreshing" : "Refresh"}</span>
             </Button>
-            <ExportButton dateRange={dateRange} />
+          </div>
+        }
+      />
+
+      <ContentCard className="mb-6" padding="md">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <DateRangeSelector value={dateRange} onChange={setDateRange} />
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="live-mode"
+              checked={isLive}
+              onCheckedChange={setIsLive}
+            />
+            <Label htmlFor="live-mode" className="flex items-center gap-2 cursor-pointer">
+              Live Mode
+              {isLive && (
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                </span>
+              )}
+            </Label>
           </div>
         </div>
-      </div>
+      </ContentCard>
 
       {(error || workspaceError) && (
         <Alert variant="destructive">
@@ -297,12 +300,12 @@ export default function AnalyticsPage() {
       </Tabs>
 
       {showEmptyState && (
-        <div className="rounded-xl bg-gray-50 py-12 text-center">
-          <p className="text-lg font-medium text-gray-700">No analytics data available yet</p>
-          <p className="mt-2 text-sm text-gray-500">Start publishing posts to unlock insights and recommendations.</p>
-        </div>
+        <ContentCard className="text-center py-12">
+          <p className="text-lg font-medium text-secondary-700">No analytics data available yet</p>
+          <p className="mt-2 text-sm text-secondary-500">Start publishing posts to unlock insights and recommendations.</p>
+        </ContentCard>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

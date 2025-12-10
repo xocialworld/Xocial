@@ -6,6 +6,7 @@ import { PlatformSelector } from './platform-selector';
 import { PlatformPreviews } from './platform-previews';
 import { MediaLibraryModal } from './media-library-modal';
 import { SchedulingControls } from './scheduling-controls';
+import { ContentCompatibilityWarning } from './content-compatibility-warning';
 import type { Platform, MediaFile } from '@/types';
 import { toast } from 'sonner';
 import { useAccounts } from '@/app/(dashboard)/x/hooks/useAccounts';
@@ -77,6 +78,15 @@ export function UnifiedPostComposer() {
         });
     }, []);
 
+    // Handle removing a platform (for content compatibility warnings)
+    const handleRemovePlatform = useCallback((platform: Platform) => {
+        setContent(prev => ({
+            ...prev,
+            platforms: prev.platforms.filter(p => p !== platform),
+        }));
+        toast.info(`Removed ${platform} from selection`);
+    }, []);
+
     // Handle AI generation
     const handleAIGenerate = useCallback(async () => {
         if (!content.text.trim()) {
@@ -131,9 +141,9 @@ export function UnifiedPostComposer() {
                 Object.entries(data.platformContent).forEach(([key, val]) => {
                     const cleanKey = key.toLowerCase().trim();
                     normalizedResponse[cleanKey] = val;
-                    
+
                     // Map fuzzy keys
-                     content.platforms.forEach(target => {
+                    content.platforms.forEach(target => {
                         if (cleanKey.includes(target) && !normalizedResponse[target]) {
                             normalizedResponse[target] = val;
                         }
@@ -143,10 +153,10 @@ export function UnifiedPostComposer() {
                 content.platforms.forEach(platform => {
                     // Try exact or fuzzy match
                     let platformData = normalizedResponse[platform];
-                    
+
                     if (!platformData) {
-                         const fuzzyKey = Object.keys(normalizedResponse).find(k => k.includes(platform));
-                         if (fuzzyKey) platformData = normalizedResponse[fuzzyKey];
+                        const fuzzyKey = Object.keys(normalizedResponse).find(k => k.includes(platform));
+                        if (fuzzyKey) platformData = normalizedResponse[fuzzyKey];
                     }
 
                     if (platformData && platformData.text) {
@@ -159,13 +169,13 @@ export function UnifiedPostComposer() {
             if (!hasGeneratedContent) {
                 // Final fallback: If we have any content at all in the data object, try to use it
                 if (data.platformContent && Object.values(data.platformContent).length > 0) {
-                     const firstValue = Object.values(data.platformContent)[0] as any;
-                     if (firstValue && firstValue.text) {
-                         content.platforms.forEach(p => {
-                             platformContent[p] = firstValue.text;
-                         });
-                         hasGeneratedContent = true;
-                     }
+                    const firstValue = Object.values(data.platformContent)[0] as any;
+                    if (firstValue && firstValue.text) {
+                        content.platforms.forEach(p => {
+                            platformContent[p] = firstValue.text;
+                        });
+                        hasGeneratedContent = true;
+                    }
                 }
             }
 
@@ -686,7 +696,15 @@ export function UnifiedPostComposer() {
                 />
             )}
 
-
+            {/* Content Compatibility Warning */}
+            {content.platforms.length > 0 && (content.media.length > 0 || content.text.trim()) && (
+                <ContentCompatibilityWarning
+                    selectedPlatforms={content.platforms}
+                    media={content.media}
+                    hasText={content.text.trim().length > 0}
+                    onRemovePlatform={handleRemovePlatform}
+                />
+            )}
 
             <MediaLibraryModal
                 isOpen={showMediaLibrary}

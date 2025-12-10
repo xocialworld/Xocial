@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,32 @@ export function TwitterAccountCard({
     const router = useRouter();
     const [syncing, setSyncing] = useState(false);
     const [disconnecting, setDisconnecting] = useState(false);
+    const [stats, setStats] = useState<{
+        tweet_count: number;
+        followers_count: number;
+        following_count: number;
+    } | null>(null);
+    const [loadingStats, setLoadingStats] = useState(false);
+
+    const fetchStats = async () => {
+        setLoadingStats(true);
+        try {
+            const response = await fetch(`/api/twitter/${account.id}/stats`);
+            if (response.ok) {
+                const data = await response.json();
+                setStats(data);
+            }
+        } catch (error) {
+            console.error('Failed to fetch Twitter stats:', error);
+        } finally {
+            setLoadingStats(false);
+        }
+    };
+
+    // Fetch stats on mount
+    useEffect(() => {
+        fetchStats();
+    }, [account.id]);
 
     const handleSync = async () => {
         setSyncing(true);
@@ -49,6 +75,8 @@ export function TwitterAccountCard({
             if (!response.ok) throw new Error('Sync failed');
             toast.success('Twitter account synced successfully');
             onSync?.(account.id);
+            // Refresh stats after sync
+            fetchStats();
         } catch (error) {
             toast.error('Failed to sync Twitter account');
         } finally {
@@ -95,6 +123,10 @@ export function TwitterAccountCard({
         return num.toString();
     };
 
+    const tweetCount = stats?.tweet_count ?? account.metadata?.tweet_count ?? 0;
+    const followersCount = stats?.followers_count ?? account.metadata?.followers_count ?? account.follower_count;
+    const followingCount = stats?.following_count ?? account.metadata?.following_count ?? 0;
+
     return (
         <Card className={className}>
             <CardHeader>
@@ -125,21 +157,21 @@ export function TwitterAccountCard({
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="grid grid-cols-3 gap-4 text-center">
-                    <div>
+                    <div className={loadingStats ? "opacity-50" : ""}>
                         <p className="text-2xl font-bold">
-                            {formatNumber(account.metadata?.tweet_count || 0)}
+                            {formatNumber(tweetCount)}
                         </p>
                         <p className="text-xs text-muted-foreground">Tweets</p>
                     </div>
-                    <div>
+                    <div className={loadingStats ? "opacity-50" : ""}>
                         <p className="text-2xl font-bold">
-                            {formatNumber(account.metadata?.followers_count || account.follower_count)}
+                            {formatNumber(followersCount)}
                         </p>
                         <p className="text-xs text-muted-foreground">Followers</p>
                     </div>
-                    <div>
+                    <div className={loadingStats ? "opacity-50" : ""}>
                         <p className="text-2xl font-bold">
-                            {formatNumber(account.metadata?.following_count || 0)}
+                            {formatNumber(followingCount)}
                         </p>
                         <p className="text-xs text-muted-foreground">Following</p>
                     </div>

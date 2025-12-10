@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, LinkIcon } from "lucide-react";
+import { Plus, LinkIcon, Users, RefreshCw } from "lucide-react";
 import { AccountCard } from "./components/account-card";
 import { PostsDrawer } from "./components/posts-drawer";
 import { CommentsPanel } from "./components/comments-panel";
@@ -10,6 +10,13 @@ import { MultiSelect, type MultiSelectOption } from "./components/multi-select";
 import { AccountGridSkeleton } from "./components/account-grid-skeleton";
 import { ErrorBoundary } from "@/components/shared/error-boundary";
 import { ErrorState } from "@/components/shared/error-state";
+import {
+  PageHeader,
+  PageContainer,
+  ContentCard,
+  EmptyState,
+  FilterChip
+} from "@/components/shared/page-components";
 import { useAccounts } from "./hooks/useAccounts";
 import { useAccountSync } from "@/hooks/use-account-sync";
 import { useAccountsStore } from "@/store/accounts-store";
@@ -53,13 +60,13 @@ export default function XPage() {
   } = useAccountsStore();
 
   // Fetch accounts with filters
-  const { 
-    accounts, 
-    loading: accountsLoading, 
+  const {
+    accounts,
+    loading: accountsLoading,
     error: accountsError,
     refetch: refetchAccounts,
-    syncAccount, 
-    disconnectAccount 
+    syncAccount,
+    disconnectAccount
   } = useAccounts(undefined, {
     platform: filterPlatform.length > 0 ? filterPlatform.join(',') : undefined,
     status: filterStatus.length > 0 ? (filterStatus[0] as any) : undefined,
@@ -101,31 +108,47 @@ export default function XPage() {
   const activeAccounts = accounts.filter((a) => a.is_active).length;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <PageContainer>
       {/* Enhanced Header */}
-      <header className="mb-8">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-primary-600 to-primary-400 bg-clip-text text-transparent">
-              X &ndash; Accounts
-            </h1>
-            <p className="mt-2 text-base sm:text-lg text-muted-foreground">
-              Command center for all connected social accounts
-            </p>
+      <PageHeader
+        shortCode="X"
+        title="Accounts"
+        description="Command center for all connected social accounts"
+        icon={Users}
+        iconColor="text-blue-500"
+        badge={accountsLoading ? undefined : {
+          label: `${activeAccounts} active`,
+          variant: activeAccounts > 0 ? 'success' : 'default'
+        }}
+        actions={
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetchAccounts()}
+              className="gap-2"
+              aria-label="Refresh accounts"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
+            <Button
+              size="default"
+              className="gap-2"
+              onClick={() => setShowConnectDialog(true)}
+              aria-label="Connect new social media account"
+            >
+              <Plus className="h-5 w-5" aria-hidden="true" />
+              <span className="hidden sm:inline">Connect Account</span>
+              <span className="sm:hidden">Connect</span>
+            </Button>
           </div>
-          <Button
-            size="lg"
-            className="gap-2 w-full sm:w-auto"
-            onClick={() => setShowConnectDialog(true)}
-            aria-label="Connect new social media account"
-          >
-            <Plus className="h-5 w-5" aria-hidden="true" />
-            Connect Account
-          </Button>
-        </div>
+        }
+      />
 
-        {/* Enhanced Filters */}
-        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3">
+      {/* Enhanced Filters */}
+      <ContentCard className="mb-6" padding="md">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-4">
           {/* Platform multi-select */}
           <MultiSelect
             label="Platforms"
@@ -139,7 +162,7 @@ export default function XPage() {
           <div className="flex-shrink-0">
             <label
               htmlFor="status-filter"
-              className="text-sm font-medium text-muted-foreground mb-2 block"
+              className="text-sm font-medium text-secondary-600 mb-2 block"
             >
               Status
             </label>
@@ -160,71 +183,59 @@ export default function XPage() {
 
           {/* Quick stats */}
           <div
-            className="sm:ml-auto flex items-center gap-4 text-sm text-muted-foreground pt-2 sm:pt-0"
+            className="sm:ml-auto flex items-center gap-4 text-sm text-secondary-500 py-2"
             role="status"
             aria-live="polite"
           >
-            <span className="font-medium" aria-label={`${accounts.length} total accounts`}>
-              {accounts.length} {accounts.length === 1 ? 'account' : 'accounts'}
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-secondary-400" />
+              <span className="font-medium">{accounts.length}</span> total
             </span>
-            <span aria-hidden="true">•</span>
-            <span aria-label={`${activeAccounts} active accounts`}>
-              {activeAccounts} active
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-green-500" />
+              <span className="font-medium">{activeAccounts}</span> active
             </span>
           </div>
         </div>
-      </header>
+      </ContentCard>
 
       {/* Accounts Grid with Error Boundary */}
       <ErrorBoundary onReset={refetchAccounts}>
         <section aria-label="Connected social media accounts">
           {accountsError ? (
-            <ErrorState 
-              message={accountsError} 
-              onRetry={refetchAccounts}
-            />
+            <ContentCard>
+              <ErrorState
+                message={accountsError}
+                onRetry={refetchAccounts}
+              />
+            </ContentCard>
           ) : accountsLoading ? (
             <div role="status" aria-label="Loading accounts">
               <AccountGridSkeleton count={6} />
             </div>
           ) : accounts.length === 0 ? (
-            /* Enhanced Empty State */
-            <div className="flex flex-col items-center justify-center py-16 sm:py-24 px-4" role="status">
-              <div className="rounded-full bg-muted p-6 mb-6" aria-hidden="true">
-                <LinkIcon className="h-12 w-12 text-muted-foreground" />
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold mb-2 text-center">No Accounts Connected</h2>
-              <p className="text-muted-foreground mb-8 text-center max-w-md text-sm sm:text-base">
-                Connect your first social media account to start managing your content from one place
-              </p>
-              <Button
-                size="lg"
-                className="gap-2 w-full sm:w-auto"
-                onClick={() => setShowConnectDialog(true)}
-                aria-label="Connect your first account"
-              >
-                <Plus className="h-5 w-5" aria-hidden="true" />
-                Connect Your First Account
-              </Button>
-            </div>
+            <ContentCard>
+              <EmptyState
+                icon={LinkIcon}
+                title="No Accounts Connected"
+                description="Connect your first social media account to start managing your content from one place"
+                action={{
+                  label: "Connect Your First Account",
+                  onClick: () => setShowConnectDialog(true),
+                  icon: Plus
+                }}
+              />
+            </ContentCard>
           ) : (
-            <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" role="list">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 auto-rows-fr" role="list">
               {accounts.map((account) => (
-                <div key={account.id} className="space-y-2" role="listitem">
-                  <AccountCard
-                    account={account}
-                    onSync={syncAccount}
-                    onDisconnect={disconnectAccount}
-                  />
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => openPostsDrawer(account)}
-                    aria-label={`View posts from ${account.account_name}`}
-                  >
-                    View Posts
-                  </Button>
-                </div>
+                <AccountCard
+                  key={account.id}
+                  account={account}
+                  onSync={syncAccount}
+                  onDisconnect={disconnectAccount}
+                  onViewPosts={openPostsDrawer}
+                />
               ))}
             </div>
           )}
@@ -254,6 +265,6 @@ export default function XPage() {
         onClose={closeComments}
         platform={(selectedAccount?.platform as any) || 'instagram'}
       />
-    </div>
+    </PageContainer>
   );
 }

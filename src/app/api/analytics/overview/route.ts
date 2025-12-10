@@ -98,8 +98,30 @@ export async function GET(request: NextRequest) {
       ? (prevEngagement / totalFollowers) * 100
       : 0;
 
-    // Calculate percentage changes
-    const followersChange = 0; // We don't track historical follower counts yet
+    // Try to get historical follower counts for accurate change calculation
+    let prevFollowers = totalFollowers; // Default to current if no history
+    try {
+      const { data: historyData } = await supabase
+        .from('social_account_history')
+        .select('follower_count, recorded_at')
+        .eq('workspace_id', workspace.id)
+        .gte('recorded_at', prevFromDate.toISOString())
+        .lt('recorded_at', fromDate.toISOString())
+        .order('recorded_at', { ascending: false })
+        .limit(1);
+
+      if (historyData && historyData.length > 0) {
+        prevFollowers = historyData[0].follower_count || totalFollowers;
+      }
+    } catch {
+      // Table might not exist yet, use current followers
+      prevFollowers = totalFollowers;
+    }
+
+    // Calculate percentage changes with proper historical comparison
+    const followersChange = prevFollowers > 0
+      ? ((totalFollowers - prevFollowers) / prevFollowers) * 100
+      : 0;
     const engagementChange = prevEngagement > 0
       ? ((currentEngagement - prevEngagement) / prevEngagement) * 100
       : 0;

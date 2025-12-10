@@ -80,22 +80,22 @@ export function PlatformComparison({ data }: PlatformComparisonProps) {
             className="w-3 h-3 rounded-full"
             style={{ backgroundColor: entry.color }}
           />
-          <span className="text-sm text-gray-600">{entry.value}</span>
+          <span className="text-sm text-gray-600 dark:text-gray-400">{entry.value}</span>
         </div>
       ))}
     </div>
   );
 
   return (
-    <Card className="relative overflow-hidden border-0 shadow-lg bg-white/80 backdrop-blur-sm p-6" role="region" aria-label="Platform comparison chart">
+    <Card className="relative overflow-hidden border-0 shadow-lg bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm p-6" role="region" aria-label="Platform comparison chart">
       {/* Decorative gradient */}
-      <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-purple-100/50 to-transparent rounded-full blur-3xl -z-10" />
+      <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-purple-100/50 dark:from-purple-900/30 to-transparent rounded-full blur-3xl -z-10" />
 
       <div className="mb-6">
-        <h3 className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+        <h3 className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400 bg-clip-text text-transparent">
           Platform Comparison
         </h3>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
           Compare performance across different social media platforms
         </p>
       </div>

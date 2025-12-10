@@ -11,24 +11,8 @@
   },
   "crons": [
     {
-      "path": "/api/cron/publish",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/sync-metrics",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/refresh-youtube-tokens",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/sync-youtube-analytics",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/refresh-tokens",
-      "schedule": "0 0 * * *"
+      "path": "/api/cron/daily-tasks",
+      "schedule": "0 6 * * *"
     }
   ],
   "headers": [

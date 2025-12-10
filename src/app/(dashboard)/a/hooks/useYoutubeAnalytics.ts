@@ -96,14 +96,25 @@ export function useYoutubeAnalytics(dateRange: { from: Date; to: Date }): UseYou
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload?.error || 'Failed to load YouTube analytics');
+        const errorMessage = typeof payload?.error === 'string'
+          ? payload.error
+          : payload?.message || 'Failed to load YouTube analytics';
+        throw new Error(errorMessage);
       }
 
       setMetrics(payload.data?.metrics || null);
       setDaily(payload.data?.daily || []);
     } catch (err) {
-      console.error('YouTube analytics fetch error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load YouTube analytics');
+      const errorMessage = err instanceof Error
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : 'Failed to load YouTube analytics';
+      // Only log as warning since this can happen when no YouTube accounts are connected
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('YouTube analytics:', errorMessage);
+      }
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

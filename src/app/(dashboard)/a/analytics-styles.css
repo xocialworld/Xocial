@@ -1,0 +1,356 @@
+/* Analytics Page Premium Styles */
+/* Dark mode compatible glassmorphism and gradient utilities */
+
+/* CSS Custom Properties for consistent theming */
+:root {
+    /* Light mode colors */
+    --analytics-bg-primary: 255, 255, 255;
+    --analytics-bg-secondary: 249, 250, 251;
+    --analytics-text-primary: 17, 24, 39;
+    --analytics-text-secondary: 107, 114, 128;
+    --analytics-border: 229, 231, 235;
+
+    /* Platform colors */
+    --platform-facebook: 24, 119, 242;
+    --platform-instagram: 228, 64, 95;
+    --platform-twitter: 29, 161, 242;
+    --platform-linkedin: 10, 102, 194;
+    --platform-youtube: 255, 0, 0;
+    --platform-tiktok: 0, 242, 234;
+
+    /* Gradient accent colors */
+    --accent-blue: 59, 130, 246;
+    --accent-purple: 139, 92, 246;
+    --accent-pink: 236, 72, 153;
+    --accent-green: 16, 185, 129;
+    --accent-orange: 245, 158, 11;
+}
+
+/* Dark mode overrides */
+.dark {
+    --analytics-bg-primary: 17, 24, 39;
+    --analytics-bg-secondary: 31, 41, 55;
+    --analytics-text-primary: 255, 255, 255;
+    --analytics-text-secondary: 156, 163, 175;
+    --analytics-border: 55, 65, 81;
+}
+
+/* Glassmorphism Card */
+.analytics-card-glass {
+    background: rgba(var(--analytics-bg-primary), 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(var(--analytics-border), 0.5);
+    box-shadow:
+        0 4px 6px -1px rgba(0, 0, 0, 0.1),
+        0 2px 4px -1px rgba(0, 0, 0, 0.06),
+        inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.analytics-card-glass:hover {
+    box-shadow:
+        0 20px 25px -5px rgba(0, 0, 0, 0.1),
+        0 10px 10px -5px rgba(0, 0, 0, 0.04),
+        inset 0 1px 0 0 rgba(255, 255, 255, 0.15);
+    transform: translateY(-2px);
+}
+
+.dark .analytics-card-glass {
+    background: rgba(var(--analytics-bg-primary), 0.7);
+    border: 1px solid rgba(var(--analytics-border), 0.3);
+    box-shadow:
+        0 4px 6px -1px rgba(0, 0, 0, 0.3),
+        0 2px 4px -1px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Animated Gradient Background */
+.analytics-gradient-bg {
+    position: relative;
+    overflow: hidden;
+}
+
+.analytics-gradient-bg::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(from 0deg at 50% 50%,
+            rgba(var(--accent-blue), 0.1) 0deg,
+            rgba(var(--accent-purple), 0.1) 90deg,
+            rgba(var(--accent-pink), 0.1) 180deg,
+            rgba(var(--accent-blue), 0.1) 270deg,
+            rgba(var(--accent-blue), 0.1) 360deg);
+    animation: analytics-gradient-rotate 20s linear infinite;
+    z-index: -1;
+}
+
+@keyframes analytics-gradient-rotate {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* Platform Badge Styles */
+.platform-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.platform-badge-facebook {
+    background: rgba(var(--platform-facebook), 0.1);
+    color: rgb(var(--platform-facebook));
+}
+
+.platform-badge-instagram {
+    background: rgba(var(--platform-instagram), 0.1);
+    color: rgb(var(--platform-instagram));
+}
+
+.platform-badge-twitter {
+    background: rgba(var(--platform-twitter), 0.1);
+    color: rgb(var(--platform-twitter));
+}
+
+.platform-badge-linkedin {
+    background: rgba(var(--platform-linkedin), 0.1);
+    color: rgb(var(--platform-linkedin));
+}
+
+.platform-badge-youtube {
+    background: rgba(var(--platform-youtube), 0.1);
+    color: rgb(var(--platform-youtube));
+}
+
+.platform-badge-tiktok {
+    background: rgba(0, 0, 0, 0.1);
+    color: #000;
+}
+
+.dark .platform-badge-tiktok {
+    background: rgba(var(--platform-tiktok), 0.1);
+    color: rgb(var(--platform-tiktok));
+}
+
+/* Micro-animations */
+@keyframes analytics-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes analytics-bounce {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-4px);
+    }
+}
+
+@keyframes analytics-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-analytics-pulse {
+    animation: analytics-pulse 2s ease-in-out infinite;
+}
+
+.animate-analytics-bounce {
+    animation: analytics-bounce 1s ease-in-out infinite;
+}
+
+.animate-analytics-fade-in {
+    animation: analytics-fade-in 0.3s ease-out forwards;
+}
+
+/* Live indicator */
+.live-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.live-indicator::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    animation: analytics-pulse 1.5s ease-in-out infinite;
+}
+
+/* Sparkline container */
+.sparkline-container {
+    position: relative;
+    height: 60px;
+    width: 100%;
+}
+
+.sparkline-container svg {
+    overflow: visible;
+}
+
+/* Metric value with gradient text */
+.metric-value-gradient {
+    background: linear-gradient(135deg, rgb(var(--accent-blue)), rgb(var(--accent-purple)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Trend indicators */
+.trend-up {
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.1);
+}
+
+.trend-down {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.trend-neutral {
+    color: rgb(var(--analytics-text-secondary));
+    background: rgba(var(--analytics-text-secondary), 0.1);
+}
+
+/* Table enhancements */
+.analytics-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.analytics-table thead th {
+    background: rgba(var(--analytics-bg-secondary), 0.5);
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgb(var(--analytics-text-secondary));
+    border-bottom: 1px solid rgba(var(--analytics-border), 0.5);
+}
+
+.analytics-table tbody tr {
+    transition: background 0.15s ease;
+}
+
+.analytics-table tbody tr:hover {
+    background: rgba(var(--analytics-bg-secondary), 0.5);
+}
+
+.analytics-table tbody td {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(var(--analytics-border), 0.3);
+}
+
+/* Skeleton loading states */
+.analytics-skeleton {
+    background: linear-gradient(90deg,
+            rgba(var(--analytics-bg-secondary), 0.5) 0%,
+            rgba(var(--analytics-bg-secondary), 0.8) 50%,
+            rgba(var(--analytics-bg-secondary), 0.5) 100%);
+    background-size: 200% 100%;
+    animation: analytics-skeleton-shimmer 1.5s ease-in-out infinite;
+    border-radius: 0.375rem;
+}
+
+@keyframes analytics-skeleton-shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Chart tooltip styling */
+.analytics-tooltip {
+    background: rgba(17, 24, 39, 0.95) !important;
+    backdrop-filter: blur(8px);
+    border: none !important;
+    border-radius: 0.75rem !important;
+    padding: 0.75rem 1rem !important;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+}
+
+.dark .analytics-tooltip {
+    background: rgba(255, 255, 255, 0.95) !important;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive grid for analytics cards */
+.analytics-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(1, 1fr);
+}
+
+@media (min-width: 640px) {
+    .analytics-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .analytics-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+/* Section headers */
+.analytics-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+}
+
+.analytics-section-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, rgb(var(--analytics-text-primary)), rgb(var(--analytics-text-secondary)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.analytics-section-subtitle {
+    font-size: 0.875rem;
+    color: rgb(var(--analytics-text-secondary));
+    margin-top: 0.25rem;
+}

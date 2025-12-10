@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, Component, ReactNode } from "react";
 import dynamic from "next/dynamic";
-import { RefreshCcw, MousePointerClick, Activity, Users, BarChart3 } from "lucide-react";
+import { RefreshCcw, MousePointerClick, Activity, Users, BarChart3, AlertTriangle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { PageHeader, PageContainer, ContentCard } from "@/components/shared/page-components";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -20,6 +20,44 @@ import { useAnalytics } from "./hooks/useAnalytics";
 import { useYoutubeAnalytics } from "./hooks/useYoutubeAnalytics";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { getNavigationTiming } from "@/lib/performance-monitoring";
+import "./analytics-styles.css";
+
+// Error Boundary for graceful error handling
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+class ChartErrorBoundary extends Component<{ children: ReactNode; fallback?: ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: ReactNode; fallback?: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div className="flex flex-col items-center justify-center h-[300px] bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700">
+          <AlertTriangle className="h-10 w-10 text-amber-500 mb-3" />
+          <p className="text-sm text-gray-600 dark:text-gray-400">Failed to load component</p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2"
+            onClick={() => this.setState({ hasError: false })}
+          >
+            Try again
+          </Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const EngagementChart = dynamic(
   () => import("./components/engagement-chart").then((m) => m.EngagementChart),
@@ -71,7 +109,7 @@ export default function AnalyticsPage() {
     loading,
     error,
     refetch,
-  } = useAnalytics(dateRange, isLive ? 5000 : false);
+  } = useAnalytics(dateRange, false); // Never auto-refetch - Live Mode only affects RealtimeMetrics component
 
   const {
     workspace,
@@ -261,7 +299,7 @@ export default function AnalyticsPage() {
               </div>
             )}
 
-            {workspace?.id && <RealtimeMetrics workspaceId={workspace.id} />}
+            {workspace?.id && <RealtimeMetrics workspaceId={workspace.id} isLive={isLive} />}
 
             {youtubeAnalytics.accounts.length > 0 && (
               <YoutubeAnalyticsSection

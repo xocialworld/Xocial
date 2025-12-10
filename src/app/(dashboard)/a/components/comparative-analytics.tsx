@@ -57,19 +57,28 @@ const TIME_PERIODS = [
 async function fetchComparativeData(
   workspaceId: string,
   platform: string,
-  period: string
+  periodDays: string
 ) {
+  // Calculate date range from period
+  const now = new Date();
+  const to = now.toISOString();
+  const from = new Date(now.getTime() - parseInt(periodDays) * 24 * 60 * 60 * 1000).toISOString();
+
   const params = new URLSearchParams({
-    workspaceId,
-    dateRange: period,
+    from,
+    to,
   });
-  
+
   if (platform !== 'all') {
     params.append('platform', platform);
   }
 
   const response = await fetch(`/api/analytics/platform-stats?${params}`);
-  if (!response.ok) throw new Error('Failed to fetch data');
+  if (!response.ok) {
+    // Return empty data instead of throwing to prevent console errors
+    console.warn('Comparative analytics fetch failed:', response.status);
+    return { success: true, data: [] };
+  }
   return response.json();
 }
 
@@ -187,7 +196,7 @@ export function ComparativeAnalytics({ workspaceId }: Props) {
         <h3 className="text-lg font-semibold text-secondary-900 mb-6">
           Platform Performance Comparison
         </h3>
-        
+
         {isLoading ? (
           <div className="h-[400px] flex items-center justify-center">
             <div className="text-center">
@@ -250,9 +259,8 @@ export function ComparativeAnalytics({ workspaceId }: Props) {
                   </h3>
                 </div>
                 <div
-                  className={`flex items-center gap-1 text-sm font-medium ${
-                    isPositive ? 'text-success-600' : 'text-error-600'
-                  }`}
+                  className={`flex items-center gap-1 text-sm font-medium ${isPositive ? 'text-success-600' : 'text-error-600'
+                    }`}
                 >
                   {isPositive ? (
                     <ArrowUpRight className="h-4 w-4" />

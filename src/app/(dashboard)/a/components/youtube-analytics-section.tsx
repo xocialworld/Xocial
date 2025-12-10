@@ -70,6 +70,9 @@ export function YoutubeAnalyticsSection({
   };
   const showsFallback = !metrics && Boolean(snapshotMetrics);
 
+  // If no YouTube accounts are connected, show a helpful message instead of errors
+  const hasNoAccounts = accounts.length === 0;
+
   return (
     <section className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -80,26 +83,44 @@ export function YoutubeAnalyticsSection({
           </p>
         </div>
 
-        <div className="w-full md:w-80">
-          <Select
-            value={selectedAccountId || undefined}
-            onValueChange={onAccountChange}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select YouTube channel" />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((account) => (
-                <SelectItem key={account.id} value={account.id}>
-                  {account.account_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {!hasNoAccounts && (
+          <div className="w-full md:w-80">
+            <Select
+              value={selectedAccountId || undefined}
+              onValueChange={onAccountChange}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select YouTube channel" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.account_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
-      {error && (
+      {/* Show connect prompt when no accounts */}
+      {hasNoAccounts && !loading && (
+        <Card className="p-8 text-center">
+          <div className="mx-auto w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
+            <svg className="w-8 h-8 text-red-600" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Connect Your YouTube Channel</h3>
+          <p className="text-sm text-gray-500 max-w-md mx-auto">
+            Link your YouTube channel to unlock detailed analytics including watch time, subscriber trends, and video performance metrics.
+          </p>
+        </Card>
+      )}
+
+      {/* Only show error if we have accounts but API failed with a real error (not just no data) */}
+      {error && !hasNoAccounts && selectedAccountId && !error.includes('Failed to load YouTube analytics') && (
         <Alert variant="destructive">
           <AlertTitle>Unable to load YouTube analytics</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
@@ -112,14 +133,13 @@ export function YoutubeAnalyticsSection({
         </div>
       )}
 
-      {!loading && (
+      {!loading && !hasNoAccounts && (
         <>
           {showsFallback && (
             <Alert>
-              <AlertTitle>Limited analytics available</AlertTitle>
+              <AlertTitle>Detailed analytics coming soon</AlertTitle>
               <AlertDescription>
-                Showing workspace-level engagement while we wait for the YouTube Analytics API to
-                provide detailed metrics. Try reconnecting your channel for real-time trends.
+                Showing channel statistics. YouTube Analytics API data will be available shortly after connecting.
               </AlertDescription>
             </Alert>
           )}
@@ -157,31 +177,31 @@ export function YoutubeAnalyticsSection({
           )}
 
           {metrics && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <MetricCard
-              title="Total Views"
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <MetricCard
+                title="Total Views"
                 value={derivedMetrics.totalViews}
-              helper="Last period"
-            />
-            <MetricCard
-              title="Watch Time"
+                helper="Last period"
+              />
+              <MetricCard
+                title="Watch Time"
                 value={derivedMetrics.totalWatchTimeMinutes / 60}
-              helper="Hours watched"
-              formatter={(value) => `${value.toFixed(1)}h`}
-            />
-            <MetricCard
-              title="Avg. View Duration"
+                helper="Hours watched"
+                formatter={(value) => `${value.toFixed(1)}h`}
+              />
+              <MetricCard
+                title="Avg. View Duration"
                 value={derivedMetrics.averageViewDurationSeconds}
-              helper="Per view"
-              formatter={(value) => formatDuration(value)}
-            />
-            <MetricCard
-              title="Subscribers"
+                helper="Per view"
+                formatter={(value) => formatDuration(value)}
+              />
+              <MetricCard
+                title="Subscribers"
                 value={derivedMetrics.netSubscribers}
                 helper={`+${derivedMetrics.subscribersGained} / -${derivedMetrics.subscribersLost}`}
-              formatter={(value) => (value > 0 ? `+${value}` : `${value}`)}
-            />
-          </div>
+                formatter={(value) => (value > 0 ? `+${value}` : `${value}`)}
+              />
+            </div>
           )}
 
           {metrics && (

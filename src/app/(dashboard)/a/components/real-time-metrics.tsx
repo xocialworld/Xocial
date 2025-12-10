@@ -13,6 +13,7 @@ import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tool
 
 interface RealtimeMetricsProps {
   workspaceId?: string | null;
+  isLive?: boolean;
 }
 
 interface Snapshot {
@@ -53,7 +54,7 @@ interface PreviousTotals {
   timestamp: number;
 }
 
-export function RealtimeMetrics({ workspaceId }: RealtimeMetricsProps) {
+export function RealtimeMetrics({ workspaceId, isLive = false }: RealtimeMetricsProps) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -115,10 +116,15 @@ export function RealtimeMetrics({ workspaceId }: RealtimeMetricsProps) {
   useEffect(() => {
     if (!workspaceId) return;
 
+    // Always fetch once on mount
     fetchSnapshot();
-    const interval = setInterval(fetchSnapshot, 15_000);
-    return () => clearInterval(interval);
-  }, [workspaceId, fetchSnapshot]);
+
+    // Only set up interval if Live Mode is enabled
+    if (isLive) {
+      const interval = setInterval(fetchSnapshot, 15_000);
+      return () => clearInterval(interval);
+    }
+  }, [workspaceId, fetchSnapshot, isLive]);
 
   const metricCards = useMemo(() => {
     if (!snapshot) return [];

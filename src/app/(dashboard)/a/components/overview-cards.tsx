@@ -59,16 +59,16 @@ export function OverviewCards({ metrics, loading }: OverviewCardsProps) {
                 return (
                     <Card
                         key={index}
-                        className="group relative overflow-hidden border-0 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1 bg-white/80 backdrop-blur-sm"
+                        className="group relative overflow-hidden border-0 shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm"
                     >
                         {/* Gradient accent line */}
                         <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${colors.gradient}`} />
 
                         {/* Subtle background pattern */}
-                        <div className={`absolute inset-0 opacity-[0.03] bg-gradient-to-br ${colors.light}`} />
+                        <div className={`absolute inset-0 opacity-[0.03] dark:opacity-[0.1] bg-gradient-to-br ${colors.light}`} />
 
                         <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium text-gray-600">
+                            <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
                                 {metric.label}
                             </CardTitle>
                             <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${colors.gradient} flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300`}>
@@ -77,12 +77,12 @@ export function OverviewCards({ metrics, loading }: OverviewCardsProps) {
                         </CardHeader>
                         <CardContent className="relative">
                             <div className="flex items-baseline gap-3">
-                                <div className="text-3xl font-bold text-gray-900 tracking-tight">{metric.value}</div>
+                                <div className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{metric.value}</div>
                                 <div
                                     className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${metric.trend === "up"
-                                            ? "bg-green-100 text-green-700"
+                                            ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
                                             : metric.trend === "down"
-                                                ? "bg-red-100 text-red-700"
+                                                ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
                                                 : "bg-gray-100 text-gray-600"
                                         }`}
                                 >

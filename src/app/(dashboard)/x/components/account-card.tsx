@@ -220,17 +220,19 @@ export function AccountCard({ account, onDisconnect, onSync, onViewPosts, classN
                   : "—"}
             </span>
           </p>
-          {youtubeStats && (
-            <p className="text-center pt-1.5 text-secondary-500">
-              {youtubeStats.videoCount
-                ? `${Number(youtubeStats.videoCount).toLocaleString()} videos • `
-                : ""}
-              {youtubeStats.viewCount
-                ? `${Number(youtubeStats.viewCount).toLocaleString()} lifetime views`
-                : ""}
-            </p>
-          )}
         </div>
+
+        {/* YouTube stats */}
+        {youtubeStats && (
+          <p className="text-center pt-1.5 text-secondary-500">
+            {youtubeStats.videoCount
+              ? `${Number(youtubeStats.videoCount).toLocaleString()} videos • `
+              : ""}
+            {youtubeStats.viewCount
+              ? `${Number(youtubeStats.viewCount).toLocaleString()} lifetime views`
+              : ""}
+          </p>
+        )}
       </div>
 
       {/* View Posts Button - Always at bottom */}

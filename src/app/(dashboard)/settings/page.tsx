@@ -14,8 +14,9 @@ import {
   Shield,
 } from "lucide-react";
 import { AccountForm } from "@/components/settings/account-form";
+import { useSelectedWorkspace } from "@/store/workspaceStore";
 import { WorkspaceForm } from "@/components/settings/workspace-form";
-import { TeamMembers } from "@/components/settings/team-members";
+import { TeamManagement } from "@/components/settings/team-management";
 import { IntegrationsList } from "@/components/settings/integrations-list";
 import { BillingSettings } from "@/components/settings/billing-settings";
 import { NotificationsForm } from "@/components/settings/notifications-form";
@@ -118,6 +119,7 @@ function SettingsContent() {
   const [workspace, setWorkspace] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const supabase = useMemo(() => createClient(), []);
+  const selectedWorkspace = useSelectedWorkspace();
 
   // Sync activeTab from URL when tabParam changes
   useEffect(() => {
@@ -130,7 +132,6 @@ function SettingsContent() {
     setActiveTab(tabId);
     router.push(`/settings?tab=${tabId}`, { scroll: false });
   };
-
   const fetchData = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -148,22 +149,49 @@ function SettingsContent() {
         }
 
         // Fetch workspace
-        const { data: workspaceData } = await supabase
-          .from("workspaces")
-          .select("*")
-          .eq("owner_id", user.id)
-          .single();
+        let workspaceData = null;
 
-        if (workspaceData) {
-          setWorkspace(workspaceData);
+        // 1. Try fetching the selected workspace if we have an ID
+        if (selectedWorkspace?.id) {
+          const { data } = await supabase
+            .from("workspaces")
+            .select("*")
+            .eq("id", selectedWorkspace.id)
+            .maybeSingle(); // Use maybeSingle to avoid throwing error on 0 rows
+
+          if (data) {
+            workspaceData = data;
+          }
         }
+
+        // 2. Fallback: If no selection or selection invalid (deleted), fetch list from API
+        if (!workspaceData) {
+          try {
+            const res = await fetch('/api/workspaces?include_members=false&t=' + Date.now(), { cache: 'no-store' });
+            if (res.ok) {
+              const { data } = await res.json();
+              const firstSpace = data?.workspaces?.[0]?.workspace;
+              if (firstSpace) {
+                workspaceData = firstSpace;
+                // Ideally we should sync this back to the global store, 
+                // but for now this fixes the local view.
+                // The WorkspaceSwitcher (via its own mount) will likely sync the store properly too.
+              }
+            }
+          } catch (e) {
+            console.error('Failed to fetch fallback workspace', e);
+          }
+        }
+
+        setWorkspace(workspaceData);
       }
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+
+  }, [supabase, selectedWorkspace?.id]);
 
   useEffect(() => {
     fetchData();
@@ -182,7 +210,7 @@ function SettingsContent() {
       case "workspace":
         return <WorkspaceForm workspace={workspace} onUpdate={fetchData} />;
       case "team":
-        return <TeamMembers workspaceId={workspace?.id} />;
+        return <TeamManagement />;
       case "integrations":
         return <IntegrationsList workspaceId={workspace?.id} />;
       case "notifications":
@@ -228,7 +256,7 @@ function SettingsContent() {
             {/* Sessions Section */}
             <div className="border border-secondary-200 rounded-xl p-5">
               <h3 className="font-medium text-secondary-900 mb-1">Active Sessions</h3>
-              <p className="text-sm text-secondary-500 mb-4">Manage devices where you're currently logged in</p>
+              <p className="text-sm text-secondary-500 mb-4">Manage devices where you&apos;re currently logged in</p>
               <div className="space-y-3 mb-4">
                 <div className="flex items-center justify-between p-3 bg-secondary-50 rounded-lg">
                   <div className="flex items-center gap-3">
@@ -302,7 +330,7 @@ function SettingsContent() {
                         isActive ? item.color : "text-secondary-500"
                       )} />
                     </div>
-                    <div className="hidden lg:block min-w-0">
+                    <div className="min-w-0">
                       <p className={cn(
                         "text-sm font-medium truncate",
                         isActive ? "text-secondary-900" : "text-secondary-700"

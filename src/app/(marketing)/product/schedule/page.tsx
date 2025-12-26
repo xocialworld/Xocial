@@ -24,7 +24,7 @@ const features = [
   {
     icon: CalendarCheck,
     title: 'Queue Management',
-    description: 'Visualize your upcoming pipeline. Pause, shuffle, or rush posts with a click. You\'re in control.',
+    description: 'Visualize your upcoming pipeline. Pause, shuffle, or rush posts with a click. You&apos;re in control.',
     color: 'blue',
     points: ['Visual list view', 'Bulk actions', 'Priority ordering']
   },
@@ -38,7 +38,7 @@ const features = [
   {
     icon: Shield,
     title: 'Reliability First',
-    description: 'If a platform API hiccups, we handle retries automatically so you don\'t miss a beat.',
+    description: 'If a platform API hiccups, we handle retries automatically so you don&apos;t miss a beat.',
     color: 'indigo',
     points: ['Auto-retries', 'Failure alerts', '99.9% uptime']
   },
@@ -239,7 +239,7 @@ export default function SchedulePage() {
                 What happens if a post fails?
               </AccordionTrigger>
               <AccordionContent className="text-secondary-600 text-base leading-relaxed pb-5">
-                You get an instant notification, and the post is moved to a "Failed" tab where you can retry it with one click.
+                You get an instant notification, and the post is moved to a &quot;Failed&quot; tab where you can retry it with one click.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="q2" className="border border-secondary-200 rounded-xl px-6 data-[state=open]:bg-secondary-50">
@@ -260,7 +260,7 @@ export default function SchedulePage() {
             </AccordionItem>
             <AccordionItem value="q4" className="border border-secondary-200 rounded-xl px-6 data-[state=open]:bg-secondary-50">
               <AccordionTrigger className="text-base sm:text-lg font-medium text-secondary-900 py-5 hover:no-underline">
-                What's your scheduling uptime?
+                What&apos;s your scheduling uptime?
               </AccordionTrigger>
               <AccordionContent className="text-secondary-600 text-base leading-relaxed pb-5">
                 We maintain 99.9% uptime for our scheduling service with automatic failover and retry mechanisms.

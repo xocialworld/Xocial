@@ -287,7 +287,7 @@ export function calculateProration(params: {
     return Math.max(0, Math.round(costForRemaining - creditRemaining));
 }
 
-export default {
+const razorpayUtils = {
     createOrder,
     createSubscription,
     createCustomer,
@@ -302,3 +302,5 @@ export default {
     PLAN_DETAILS,
     RAZORPAY_PLAN_IDS,
 };
+
+export default razorpayUtils;

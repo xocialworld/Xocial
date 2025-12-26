@@ -41,10 +41,10 @@ export function DateRangeSelector({ value, onChange }: DateRangeSelectorProps) {
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <div className="flex items-center gap-2">
-        <Calendar className="w-4 h-4 text-gray-500" />
-        <span className="text-sm font-medium text-gray-700">Period:</span>
+        <Calendar className="w-4 h-4 text-secondary-500" />
+        <span className="text-sm font-medium text-secondary-700">Period:</span>
       </div>
-      
+
       {presets.map((preset) => (
         <Button
           key={preset.label}
@@ -71,7 +71,7 @@ export function DateRangeSelector({ value, onChange }: DateRangeSelectorProps) {
             onChange={(date) => date && onChange({ ...value, from: date })}
             placeholder="From"
           />
-          <span className="text-gray-500">to</span>
+          <span className="text-secondary-500">to</span>
           <DatePicker
             value={value.to}
             onChange={(date) => date && onChange({ ...value, to: date })}

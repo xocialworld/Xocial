@@ -7,6 +7,7 @@ import {
     getFacebookPostComments,
 } from '@/lib/oauth/facebook';
 import { logger } from '@/lib/logger';
+import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
 
 interface SyncResult {
     synced: number;
@@ -54,22 +55,22 @@ export async function syncFacebookPosts(
                     published_at: post.created_time ? new Date(post.created_time).toISOString() : new Date().toISOString(),
                 };
 
-                await supabase.from('posts').upsert(postData, {
-                    onConflict: 'workspace_id,external_post_id',
+                const { id: postId } = await upsertPostByExternalId(supabase as any, {
+                    workspace_id: postData.workspace_id,
+                    social_account_id: postData.social_account_id,
+                    external_post_id: postData.external_post_id,
+                    platforms: postData.platforms,
+                    content: postData.content,
+                    status: postData.status,
+                    published_at: postData.published_at,
                 });
 
                 // Fetch insights
                 try {
                     const insights = await getFacebookPostInsights(accessToken, post.id);
-                    const { data: dbPost } = await supabase
-                        .from('posts')
-                        .select('id')
-                        .eq('external_post_id', post.id)
-                        .single();
-
-                    if (dbPost) {
+                    if (postId) {
                         const analyticsData = {
-                            post_id: dbPost.id,
+                            post_id: postId,
                             platform: 'facebook',
                             impressions: insights.find((i: any) => i.name === 'post_impressions')?.values?.[0]?.value || 0,
                             reach: insights.find((i: any) => i.name === 'post_reach')?.values?.[0]?.value || 0,

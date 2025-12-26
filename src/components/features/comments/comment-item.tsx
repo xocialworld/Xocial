@@ -1,5 +1,7 @@
 "use client";
 
+
+import Image from "next/image";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -140,9 +142,11 @@ export function CommentItem({
         >
             {/* Avatar */}
             {comment.author?.avatar_url ? (
-                <img
+                <Image
                     src={comment.author.avatar_url}
                     alt={authorName}
+                    width={isReply ? 24 : 32}
+                    height={isReply ? 24 : 32}
                     className={cn(
                         "rounded-full object-cover flex-shrink-0",
                         isReply ? "h-6 w-6" : "h-8 w-8"

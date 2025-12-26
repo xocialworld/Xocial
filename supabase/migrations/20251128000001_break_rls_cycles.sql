@@ -20,7 +20,14 @@ END $$;
 DROP POLICY IF EXISTS "Users can view own membership" ON public.workspace_members;
 CREATE POLICY "Users can view own membership"
   ON public.workspace_members FOR SELECT TO authenticated
-  USING (user_id = auth.uid());
+  USING (
+    user_id = auth.uid() OR
+    EXISTS (
+        SELECT 1 FROM public.workspace_members AS wm
+        WHERE wm.workspace_id = workspace_members.workspace_id 
+        AND wm.user_id = auth.uid()
+    )
+  );
 
 -- Note: management of workspace_members is handled by service_role policies
 -- defined in 20251128000000_fix_rls_service_role.sql

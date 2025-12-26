@@ -261,17 +261,17 @@ export function SchedulingControls({
                 )}
 
                 {/* Action Buttons */}
-                <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm text-secondary-600">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="text-xs sm:text-sm text-secondary-600 w-full sm:w-auto text-center sm:text-left">
                         {selectedPlatforms.length === 0 ? (
                             'Select platforms to continue'
                         ) : !hasContent ? (
                             'Add content to continue'
                         ) : missingAccounts.length > 0 ? (
-                            `Connect accounts for: ${missingAccounts.join(', ')}`
+                            `Connect accounts: ${missingAccounts.join(', ')}`
                         ) : inactiveAccounts.length > 0 ? (
                             <span className="text-amber-600">
-                                {inactiveAccounts.length} account(s) offline
+                                {inactiveAccounts.length} offline
                                 {anyActive ? ' - Will be scheduled' : ' - Schedule only'}
                             </span>
                         ) : (
@@ -279,15 +279,16 @@ export function SchedulingControls({
                         )}
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 w-full sm:w-auto">
                         <Button
                             variant="outline"
                             onClick={() => onSaveDraft(accountSelections as Record<Platform, string>)}
                             disabled={!hasContent || isLoading}
-                            className="gap-2"
+                            className="gap-2 flex-1 sm:flex-none"
+                            size="sm"
                         >
                             <Save className="h-4 w-4" />
-                            Save Draft
+                            <span className="hidden sm:inline">Save</span> Draft
                         </Button>
 
                         {onRequestApproval && (
@@ -295,7 +296,8 @@ export function SchedulingControls({
                                 variant="outline"
                                 onClick={() => onRequestApproval(accountSelections as Record<Platform, string>)}
                                 disabled={!canSchedule || isLoading}
-                                className="gap-2 border-purple-200 text-purple-700 hover:bg-purple-50"
+                                className="gap-2 border-purple-200 text-purple-700 hover:bg-purple-50 flex-1 sm:flex-none"
+                                size="sm"
                             >
                                 Request Approval
                             </Button>
@@ -306,13 +308,14 @@ export function SchedulingControls({
                                 <Button
                                     variant="secondary"
                                     disabled={!canSchedule || isLoading}
-                                    className="gap-2"
+                                    className="gap-2 flex-1 sm:flex-none"
+                                    size="sm"
                                 >
                                     <Calendar className="h-4 w-4" />
                                     Schedule
                                 </Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-80 p-4" align="end">
+                            <PopoverContent className="w-80 p-4" align="end" sideOffset={5}>
                                 <div className="space-y-4">
                                     <div className="space-y-2">
                                         <h4 className="font-medium leading-none">Schedule Post</h4>
@@ -359,13 +362,14 @@ export function SchedulingControls({
                                 <PopoverTrigger asChild>
                                     <Button
                                         disabled={!canPublish || isLoading}
-                                        className="gap-2 min-w-[100px]"
+                                        className="gap-2 min-w-[100px] flex-1 sm:flex-none"
+                                        size="sm"
                                     >
                                         <Send className="h-4 w-4" />
                                         Publish & Schedule
                                     </Button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-80 p-4" align="end">
+                                <PopoverContent className="w-80 p-4" align="end" sideOffset={5}>
                                     <div className="space-y-4">
                                         <div className="space-y-2">
                                             <h4 className="font-medium leading-none">Mixed Publishing</h4>
@@ -413,10 +417,11 @@ export function SchedulingControls({
                                 onClick={() => onPublish(accountSelections as Record<Platform, string>)}
                                 disabled={!canPublish || isLoading}
                                 className={cn(
-                                    "gap-2 min-w-[100px]",
+                                    "gap-2 min-w-[100px] flex-1 sm:flex-none",
                                     !canPublish && canSchedule && "opacity-50 cursor-not-allowed bg-secondary-300 text-secondary-600 hover:bg-secondary-300"
                                 )}
                                 title={!canPublish && canSchedule ? "Some selected accounts are offline. You can only schedule posts." : "Publish immediately"}
+                                size="sm"
                             >
                                 <Send className="h-4 w-4" />
                                 Publish

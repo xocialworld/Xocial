@@ -10,17 +10,21 @@ import {
   useSelectedWorkspace,
   WorkspaceSummary,
 } from '@/store/workspaceStore';
+import { createClient } from '@/lib/supabase/client';
 
 type ApiResponse = {
-  workspaces: {
-    workspace: {
-      id: string;
-      name: string;
-      slug: string;
-      logo_url: string | null;
-    };
-    role: string;
-  }[];
+  success: boolean;
+  data: {
+    workspaces: {
+      workspace: {
+        id: string;
+        name: string;
+        slug: string;
+        logo_url: string | null;
+      };
+      role: string;
+    }[];
+  };
 };
 
 export function WorkspaceSwitcher() {
@@ -28,56 +32,106 @@ export function WorkspaceSwitcher() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const _hasHydrated = useWorkspaceStore((state) => state._hasHydrated);
   const setWorkspaces = useWorkspaceStore((state) => state.setWorkspaces);
+  const touchLastFetched = useWorkspaceStore((state) => state.touchLastFetched);
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
   const selected = useSelectedWorkspace();
+  const supabase = createClient();
 
-  useEffect(() => {
-    if (workspaces.length > 0 || loading) {
-      return;
-    }
-
-    let cancelled = false;
+  const fetchWorkspaces = async () => {
     setLoading(true);
-    fetch('/api/workspaces?include_members=false')
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Request failed with status ${response.status}`);
-        }
-        const payload = (await response.json()) as ApiResponse;
-        if (cancelled) return;
-        // Guard against missing workspaces field
-        const ws = payload?.workspaces ?? [];
-        if (!Array.isArray(ws) || ws.length === 0) {
-          setError('No workspaces available');
-          setLoading(false);
-          return;
-        }
-        const entries: WorkspaceSummary[] = ws.map((entry) => ({
-          id: entry.workspace.id,
-          name: entry.workspace.name,
-          slug: entry.workspace.slug,
-          role: entry.role,
-          logo_url: entry.workspace.logo_url as string | null,
-        }));
-        setWorkspaces(entries);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err.message || 'Failed to load workspaces');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
+    try {
+      const response = await fetch(`/api/workspaces?include_members=false&t=${Date.now()}`, {
+        cache: 'no-store',
       });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      const payload = (await response.json()) as ApiResponse;
+      const ws = payload?.data?.workspaces ?? [];
+      if (!Array.isArray(ws) || ws.length === 0) {
+        setError('No workspaces available');
+        setWorkspaces([]); // Clear if none
+        return;
+      }
+      const entries: WorkspaceSummary[] = ws.map((entry) => ({
+        id: entry.workspace.id,
+        name: entry.workspace.name,
+        slug: entry.workspace.slug,
+        role: entry.role,
+        logo_url: entry.workspace.logo_url as string | null,
+      }));
+      setWorkspaces(entries);
 
-    return () => {
-      cancelled = true;
+      // Validate that the currently selected workspace still exists
+      const currentSelectedId = useWorkspaceStore.getState().selectedWorkspace?.id;
+      const isValid = entries.some(w => w.id === currentSelectedId);
+
+      if (!isValid && entries.length > 0) {
+        // Auto-select the first available workspace if current one is invalid/missing
+        selectWorkspace(entries[0].id);
+      } else if (entries.length === 0) {
+        // If no workspaces left (should trigger existing 'No workspaces' UI), ensure store is clear
+        // selectWorkspace handles undefined/null reset implicitly via logic or we can rely on setWorkspaces doing it?
+        // setWorkspaces already handles clearing if entries is empty.
+      }
+
+      setError(null);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load workspaces');
+      touchLastFetched(); // Prevent immediate retry loops on error
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const lastFetchedAt = useWorkspaceStore((state) => state.lastFetchedAt);
+
+  // Wait for hydration before fetching
+  useEffect(() => {
+    // Only fetch if hydrated and not loading
+    // We removed the stale check to force consistency with the DB on mount
+    if (!_hasHydrated || loading) return;
+
+    fetchWorkspaces();
+  }, [_hasHydrated]); // Run once when hydrated
+
+  // Also validate selection after fetch in fetchWorkspaces function above (need to modify that too)
+
+  // Realtime subscription for workspace membership changes
+  useEffect(() => {
+    const setupSubscription = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const channel = supabase
+        .channel(`user-workspaces:${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'workspace_members',
+            filter: `user_id=eq.${user.id}`,
+          },
+          () => {
+            fetchWorkspaces();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     };
-  }, [loading, setWorkspaces, workspaces.length]);
+
+    const cleanupPromise = setupSubscription();
+    return () => {
+      cleanupPromise.then(cleanup => cleanup && cleanup());
+    };
+  }, [supabase]);
+
 
   const buttonLabel = useMemo(() => {
     if (loading && !selected) {
@@ -93,7 +147,7 @@ export function WorkspaceSwitcher() {
   }, [error, loading, selected]);
 
   const handleToggle = () => {
-    if (loading || workspaces.length === 0) return;
+    if (loading && workspaces.length === 0) return; // Allow opening if we have workspaces even if loading (refreshing)
     setOpen((prev) => !prev);
   };
 
@@ -104,8 +158,7 @@ export function WorkspaceSwitcher() {
 
   const handleRetry = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setLoading(true);
-    setError(null);
+    fetchWorkspaces();
   };
 
   return (
@@ -114,10 +167,10 @@ export function WorkspaceSwitcher() {
         variant="outline"
         size="sm"
         onClick={error ? handleRetry : handleToggle}
-        disabled={loading}
+        disabled={loading && workspaces.length === 0}
         className={cn(
-            "w-56 justify-between",
-            error && "border-error-300 text-error-600 hover:bg-error-50"
+          "w-56 justify-between",
+          error && "border-error-300 text-error-600 hover:bg-error-50"
         )}
       >
         <div className="flex items-center gap-2 truncate text-left">
@@ -131,7 +184,14 @@ export function WorkspaceSwitcher() {
             </div>
           )}
           {loading && !selected && <Loader2 className="h-4 w-4 animate-spin" />}
-          <span className="truncate text-sm">{buttonLabel}</span>
+          <div className="flex flex-col overflow-hidden">
+            <span className="truncate text-sm font-medium">{buttonLabel}</span>
+            {selected && (
+              <span className="text-[10px] text-secondary-400 font-mono leading-none">
+                {selected.id.slice(0, 8)}...
+              </span>
+            )}
+          </div>
         </div>
         <ChevronsUpDown className="h-4 w-4 text-secondary-500" />
       </Button>
@@ -156,7 +216,12 @@ export function WorkspaceSwitcher() {
                   )}
                 </div>
                 <div>
-                  <p className="font-medium">{workspace.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{workspace.name}</p>
+                    <span className="text-[10px] text-secondary-400 font-mono" title="Workspace ID">
+                      {workspace.id.slice(0, 8)}...
+                    </span>
+                  </div>
                   <p className="text-xs text-secondary-500">
                     {workspace.role === 'owner' ? 'Owner' : workspace.role}
                   </p>

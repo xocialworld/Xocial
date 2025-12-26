@@ -425,7 +425,8 @@ export async function getYouTubeChannelVideos(
   channelId: string,
   maxResults: number = 25
 ): Promise<YouTubeVideo[]> {
-  const params = new URLSearchParams({
+  // Primary approach: Search API (fast, but can return empty for some channels/content visibility)
+  const searchParams = new URLSearchParams({
     part: 'snippet',
     channelId,
     maxResults: maxResults.toString(),
@@ -433,8 +434,51 @@ export async function getYouTubeChannelVideos(
     type: 'video',
   });
 
+  const searchResponse = await fetch(
+    `https://www.googleapis.com/youtube/v3/search?${searchParams.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  if (!searchResponse.ok) {
+    const { APIError } = await import('@/lib/api-middleware');
+    throw new APIError(
+      searchResponse.status || 400,
+      'Failed to fetch YouTube channel videos',
+      'YOUTUBE_API_ERROR'
+    );
+  }
+
+  const searchData = await searchResponse.json();
+  const searchItems = Array.isArray(searchData?.items) ? searchData.items : [];
+
+  if (searchItems.length > 0) {
+    return searchItems;
+  }
+
+  // Fallback approach (more reliable for connected accounts):
+  // Use the channel's "Uploads" playlist and list videos via playlistItems.
+  try {
+    const uploadsPlaylistId = await getYouTubeUploadsPlaylistId(accessToken, channelId);
+    const playlistItems = await getYouTubePlaylistVideos(accessToken, uploadsPlaylistId, maxResults);
+    return playlistItems;
+  } catch (e) {
+    // If fallback fails, return empty list rather than throwing (sync callers will handle 0 items).
+    return [];
+  }
+}
+
+async function getYouTubeUploadsPlaylistId(accessToken: string, channelId: string): Promise<string> {
+  const params = new URLSearchParams({
+    part: 'contentDetails',
+    id: channelId,
+  });
+
   const response = await fetch(
-    `https://www.googleapis.com/youtube/v3/search?${params.toString()}`,
+    `https://www.googleapis.com/youtube/v3/channels?${params.toString()}`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -443,12 +487,57 @@ export async function getYouTubeChannelVideos(
   );
 
   if (!response.ok) {
-    const { APIError } = await import('@/lib/api-middleware');
-    throw new APIError(response.status || 400, 'Failed to fetch YouTube channel videos', 'YOUTUBE_API_ERROR');
+    throw new Error(`Failed to fetch YouTube channel contentDetails: ${response.status}`);
   }
 
   const data = await response.json();
-  return data.items || [];
+  const item = Array.isArray(data?.items) ? data.items[0] : null;
+  const uploads = item?.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploads) {
+    throw new Error('YouTube uploads playlist not found for channel');
+  }
+  return uploads as string;
+}
+
+async function getYouTubePlaylistVideos(
+  accessToken: string,
+  playlistId: string,
+  maxResults: number
+): Promise<any[]> {
+  const params = new URLSearchParams({
+    part: 'snippet',
+    playlistId,
+    maxResults: maxResults.toString(),
+  });
+
+  const response = await fetch(
+    `https://www.googleapis.com/youtube/v3/playlistItems?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch YouTube uploads playlist items: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const items = Array.isArray(data?.items) ? data.items : [];
+
+  // Normalize to the same shape our code expects from /search:
+  // item.id.videoId + item.snippet
+  return items
+    .map((it: any) => {
+      const videoId = it?.snippet?.resourceId?.videoId;
+      if (!videoId) return null;
+      return {
+        id: { videoId },
+        snippet: it.snippet,
+      };
+    })
+    .filter(Boolean);
 }
 
 /**

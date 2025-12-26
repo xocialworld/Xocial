@@ -83,12 +83,12 @@ interface MultiPlatformCounterProps {
 }
 
 export function MultiPlatformCounter({ platforms, text, className }: MultiPlatformCounterProps) {
-    if (platforms.length === 0) return null;
-
     // Find the most restrictive limit
     const mostRestrictive = useMemo(() => {
         let minLimit = Infinity;
         let platform: Platform | null = null;
+
+        if (platforms.length === 0) return { platform: null, limit: 0 };
 
         platforms.forEach((p) => {
             const limit = PLATFORM_LIMITS[p]?.caption || 2200;
@@ -100,6 +100,9 @@ export function MultiPlatformCounter({ platforms, text, className }: MultiPlatfo
 
         return { platform, limit: minLimit };
     }, [platforms]);
+
+    if (platforms.length === 0) return null;
+
 
     const count = text.length;
     const remaining = mostRestrictive.limit - count;

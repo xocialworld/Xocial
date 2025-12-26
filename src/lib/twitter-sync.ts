@@ -1,11 +1,13 @@
 import { createClient } from '@/lib/supabase/server';
-import { decryptToken } from '@/lib/encryption';
+import { decryptToken, encryptToken } from '@/lib/encryption';
 import {
     getTwitterUserTweets,
     getTwitterTweetMetrics,
     getTwitterUserProfile,
 } from '@/lib/platforms/twitter';
+import { refreshTwitterToken, type TwitterOAuthConfig } from '@/lib/platforms/twitter';
 import { logger } from '@/lib/logger';
+import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
 
 interface SyncResult {
     synced: number;
@@ -30,10 +32,86 @@ export async function syncTwitterTweets(
 
         if (!account) throw new Error('Twitter account not found');
 
-        const accessToken = decryptToken(account.access_token);
+        let accessToken = decryptToken(account.access_token);
         const userId = account.account_id;
 
-        const tweets = await getTwitterUserTweets(accessToken, userId, options.maxTweets);
+        // Refresh token if expired/expiring (common source of 401s during sync)
+        const expiresAtMs = account.token_expires_at ? new Date(account.token_expires_at).getTime() : 0;
+        const hasRefresh = !!account.refresh_token;
+        if (hasRefresh && expiresAtMs > 0 && Date.now() >= (expiresAtMs - 5 * 60 * 1000)) {
+            try {
+                const refreshToken = decryptToken(account.refresh_token);
+                const config: TwitterOAuthConfig = {
+                    clientId: process.env.TWITTER_CLIENT_ID!,
+                    clientSecret: process.env.TWITTER_CLIENT_SECRET!,
+                    redirectUri: '', // not needed for refresh
+                };
+                const tokenResponse = await refreshTwitterToken(config, refreshToken);
+
+                accessToken = tokenResponse.access_token;
+                await supabase
+                    .from('social_accounts')
+                    .update({
+                        access_token: encryptToken(tokenResponse.access_token),
+                        refresh_token: tokenResponse.refresh_token
+                            ? encryptToken(tokenResponse.refresh_token)
+                            : account.refresh_token, // keep old if not rotated
+                        token_expires_at: new Date(Date.now() + (tokenResponse.expires_in * 1000)).toISOString(),
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', accountId);
+
+                result.details?.push('[Twitter] Access token refreshed');
+            } catch (e: any) {
+                result.details?.push(`[Twitter] Token refresh failed, will try existing token: ${e?.message || String(e)}`);
+            }
+        }
+
+        let tweets: any[] = [];
+        try {
+            tweets = await getTwitterUserTweets(accessToken, userId, options.maxTweets);
+        } catch (e: any) {
+            // If we got a 401 and have a refresh token, try refreshing once and retry.
+            const message = e?.message || String(e);
+            const looksUnauthorized = message.includes('401') || message.toLowerCase().includes('unauthorized');
+            if (looksUnauthorized && hasRefresh) {
+                try {
+                    const refreshToken = decryptToken(account.refresh_token);
+                    const config: TwitterOAuthConfig = {
+                        clientId: process.env.TWITTER_CLIENT_ID!,
+                        clientSecret: process.env.TWITTER_CLIENT_SECRET!,
+                        redirectUri: '',
+                    };
+                    const tokenResponse = await refreshTwitterToken(config, refreshToken);
+                    accessToken = tokenResponse.access_token;
+                    await supabase
+                        .from('social_accounts')
+                        .update({
+                            access_token: encryptToken(tokenResponse.access_token),
+                            refresh_token: tokenResponse.refresh_token
+                                ? encryptToken(tokenResponse.refresh_token)
+                                : account.refresh_token,
+                            token_expires_at: new Date(Date.now() + (tokenResponse.expires_in * 1000)).toISOString(),
+                            updated_at: new Date().toISOString(),
+                        })
+                        .eq('id', accountId);
+
+                    result.details?.push('[Twitter] Refreshed token after 401, retrying tweets fetch');
+                    tweets = await getTwitterUserTweets(accessToken, userId, options.maxTweets);
+                } catch (retryErr: any) {
+                    throw retryErr;
+                }
+            } else {
+                throw e;
+            }
+        }
+        result.details?.push(`[Twitter] Fetched ${tweets.length} tweets from API`);
+
+        if (tweets.length === 0) {
+            result.details?.push(
+                '[Twitter] API returned 0 tweets. This can happen if the account has no original tweets, is protected, or the token lacks tweet.read permissions.'
+            );
+        }
 
         for (const tweet of tweets) {
             try {
@@ -51,21 +129,21 @@ export async function syncTwitterTweets(
                     published_at: tweet.created_at ? new Date(tweet.created_at).toISOString() : new Date().toISOString(),
                 };
 
-                await supabase.from('posts').upsert(postData, {
-                    onConflict: 'workspace_id,external_post_id',
+                const { id: postId } = await upsertPostByExternalId(supabase as any, {
+                    workspace_id: postData.workspace_id,
+                    social_account_id: postData.social_account_id,
+                    external_post_id: postData.external_post_id,
+                    platforms: postData.platforms,
+                    content: postData.content,
+                    status: postData.status,
+                    published_at: postData.published_at,
                 });
 
                 // Store metrics
                 try {
-                    const { data: dbPost } = await supabase
-                        .from('posts')
-                        .select('id')
-                        .eq('external_post_id', tweet.id)
-                        .single();
-
-                    if (dbPost && tweet.public_metrics) {
+                    if (postId && tweet.public_metrics) {
                         const analyticsData = {
-                            post_id: dbPost.id,
+                            post_id: postId,
                             platform: 'twitter',
                             impressions: tweet.public_metrics.impression_count || 0,
                             likes: tweet.public_metrics.like_count || 0,

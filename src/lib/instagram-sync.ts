@@ -7,6 +7,7 @@ import {
     getInstagramComments,
 } from '@/lib/oauth/instagram';
 import { logger } from '@/lib/logger';
+import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
 
 /**
  * Instagram Data Synchronization Library
@@ -69,30 +70,23 @@ export async function syncInstagramPosts(
                     published_at: item.timestamp ? new Date(item.timestamp).toISOString() : new Date().toISOString(),
                 };
 
-                const { error: upsertError } = await supabase
-                    .from('posts')
-                    .upsert(postData, {
-                        onConflict: 'workspace_id,external_post_id',
-                    });
-
-                if (upsertError) {
-                    throw upsertError;
-                }
+                const { id: postId } = await upsertPostByExternalId(supabase as any, {
+                    workspace_id: postData.workspace_id,
+                    social_account_id: postData.social_account_id,
+                    external_post_id: postData.external_post_id,
+                    platforms: postData.platforms,
+                    content: postData.content,
+                    status: postData.status,
+                    published_at: postData.published_at,
+                });
 
                 // Fetch and store insights
                 if (item.media_type !== 'CAROUSEL_ALBUM') {
                     try {
                         const insights = await getInstagramMediaInsights(item.id, accessToken);
-
-                        const { data: post } = await supabase
-                            .from('posts')
-                            .select('id')
-                            .eq('external_post_id', item.id)
-                            .single();
-
-                        if (post) {
+                        if (postId) {
                             const analyticsData = {
-                                post_id: post.id,
+                                post_id: postId,
                                 platform: 'instagram',
                                 impressions: insights.find((i: any) => i.name === 'impressions')?.values?.[0]?.value || 0,
                                 reach: insights.find((i: any) => i.name === 'reach')?.values?.[0]?.value || 0,

@@ -25,6 +25,9 @@ This section provides a concise, structured overview of all essential and advanc
 - Multi‑workspace or multi‑client management  
 - Role-based access & permissions  
 - Evergreen content recycling & rescheduling  
+- **Engagement Predictor** – AI-powered post performance prediction based on current trends and cross-platform search keywords; advanced version analyzes follower activity patterns to predict engagement scores and follower interaction likelihood  
+- **Workspace Concept** – Tab-based multi-account management system where each workspace represents a different user identity, enabling simultaneous login and management of multiple social media platforms (e.g., Workspace 1: vlogger's YouTube, Instagram, Facebook, Twitter, LinkedIn; Workspace 2: agency's review channels across all platforms)  
+- **Platform-Specific Content Generation** – Intelligent content adaptation tool that generates platform-optimized content formats (Instagram Reels/Stories, YouTube long-form videos with descriptions, Facebook posts with hashtags/captions, Twitter threads, LinkedIn articles) based on platform-specific culture and requirements  
 
 ### **Advanced Features**
 - Real-time monitoring & sentiment detection  
@@ -190,7 +193,7 @@ Assume:
 
 ### 2.1 Pricing Tiers
 
-**Currency assumption:** USD; billing via Stripe.
+**Currency assumption:** INR/USD; billing via Razorpay.
 
 | Plan       | Target Segment                | Price (Monthly) | Price (Yearly) | Users Included | Workspaces | Social Profiles | Key Features |
 |-----------|--------------------------------|-----------------|----------------|----------------|-----------|-----------------|--------------|
@@ -220,19 +223,19 @@ Assume:
 
 ### 2.3 Billing Logic
 
-#### Stripe Object Model
+#### Razorpay Object Model
 
 - **Customer** – maps to a **team / billing owner**.
 - **Subscriptions** – one subscription per **billing plan**.
-- **Subscription items** – base workspace, extra seats, extra workspaces.
-- **Metering (future)** – optional for advanced overages (e.g., AI tokens, high volume analytics).
+- **Subscription items** – supported via Razorpay Subscriptions API for addons.
+- **Metering (future)** – optional usage-based billing.
 
 #### Proration
 
-- Use Stripe’s **built-in proration**:
-  - When upgrading (Free → Pro, Pro → Growth): proration on next invoice.
-  - When adding seats: proration from date of seat activation.
-  - When removing seats: adjust at period end (safer than mid-cycle refunds).
+- Use Razorpay’s **proration** logic or handle via custom billing cycles:
+  - When upgrading (Free → Pro, Pro → Growth): Handle immediate upgrade via API.
+  - When adding seats: Create new subscription or update existing quantity.
+  - When removing seats: Schedule update for end of billing cycle.
 
 #### Credits & Coupons
 
@@ -240,7 +243,7 @@ Assume:
   - Fixed amount off (e.g., $100 off).
   - Percentage off (e.g., 20% off first year).
 - **Credits**:
-  - Use **Stripe customer balance** for service credits (bug incidents, goodwill).
+  - Use **credits** system stored in Supabase for service credits (bug incidents, goodwill).
 - **Logic**:
   - Coupons applied at checkout or via unique URL.
   - Credits applied automatically on next invoice.
@@ -267,18 +270,13 @@ Assume:
 
 ### 3.1 Tech Architecture Overview (Final Version)
 
-- **Frontend**: Next.js 14+ (App Router), React Server Components, ShadCN UI, Tailwind CSS.
-- **Backend**: Next.js API routes; Supabase (Postgres + Auth + RLS + Realtime).
-- **AI Layer**: Vercel AI Gateway → large language models for content, analysis & summaries.
-- **Hosting**: Vercel (production + preview deployments).
-- **Background Jobs**:
-  - CRON-like schedules via Vercel Cron + Supabase Edge Functions or external worker.
-  - Queues with Upstash Redis (or Supabase functions) for scheduling & analytics fetch.
-- **File Storage**: Supabase Storage (media library) + CDN (Supabase edge CDN).
-- **Observability**:
-  - Vercel Analytics.
-  - Supabase logs.
-  - Sentry or similar for error tracking.
+- **Framework**: Next.js.
+- **DB/Auth/Storage**: Supabase (Postgres + Auth + Storage + Edge Functions).
+- **Hosting**: Vercel.
+- **AI**: Vercel AI Gateway.
+- **Design**: Shadcn + Tailwind.
+- **Backups/Review**: GitHub.
+- **Revenue/Billing**: Razorpay.
 
 The SRS already specifies much of this; here we extend and finalize at system level.
 
@@ -307,9 +305,8 @@ flowchart LR
 
   subgraph External
     SMAPIs[Social Media APIs (FB, IG, X, LI, TT)]
-    Stripe[Stripe Billing]
+    Razorpay[Razorpay Billing]
     VAG[Vercel AI Gateway]
-    Redis[(Upstash Redis Queue)]
   end
 
   UI -->|HTTPS| API
@@ -317,13 +314,11 @@ flowchart LR
   API --> DB
   API --> Storage
   API --> Realtime
-  API --> Stripe
+  API --> Razorpay
   API --> VAG
   CRON --> EdgeFunc
   EdgeFunc --> SMAPIs
   EdgeFunc --> DB
-  CRON --> Redis
-  Redis --> EdgeFunc
 ```
 
 ---
@@ -358,7 +353,7 @@ flowchart LR
 - **Branching model:** `main` for production, feature branches for work-in-progress.
 - **GitHub + Vercel**:
   - Every PR → preview deployment.
-  - Automated linting (ESLint), type-check (TS), tests (Jest/Playwright) on PR.
+  - Automated linting, type-check, and tests on PR.
 - Manual QA on preview for new features before merging to `main`.
 
 ---
@@ -1005,7 +1000,7 @@ Each article structure:
 - Full calendar (month/week/day).
 - Post previews.
 - Media library.
-- Stripe billing integration.
+- Razorpay billing integration.
 
 #### Q3 – Analytics + Engagement
 
@@ -1029,8 +1024,7 @@ Each article structure:
 - Use:
   - **ShadCN** for UI kit.
   - **Supabase** for auth, DB, storage, RLS.
-  - **Stripe** checkout & customer portal.
-  - **Upstash Redis** for queueing (no custom infra).
+  - **Razorpay** checkout & subscriptions.
 - Avoid:
   - Building custom auth.
   - Building custom queue systems early.
@@ -1047,7 +1041,6 @@ Each article structure:
   - Regularly rotate API keys.
   - Minimize data retention for PII.
 - **Scalability:**
-  - Use Upstash Redis caching for common queries.
   - Use Supabase connection pooling and indexes.
 - **Competitor parity:**
   - Focus on a few differentiators:
@@ -1125,8 +1118,8 @@ Handled by Supabase Auth + Next.js middleware.
 
 ### 9.6 Webhooks
 
-- Stripe:
-  - `POST /api/webhooks/stripe` – handle invoices, subscription changes, failed payments.
+- Razorpay:
+  - `POST /api/webhooks/razorpay` – handle invoices, subscription changes, failed payments.
 - Social platforms (future):
   - `POST /api/webhooks/facebook`
   - `POST /api/webhooks/instagram`

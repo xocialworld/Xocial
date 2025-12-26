@@ -52,8 +52,12 @@ export const updateProfileSchema = z.object({
 
 // Workspace validation schemas
 export const createWorkspaceSchema = z.object({
-  name: z.string().min(2, "Workspace name must be at least 2 characters"),
-  logo_url: z.string().url().optional(),
+  name: z.string().min(2, "Workspace name must be at least 2 characters").max(80, "Workspace name must be less than 80 characters"),
+  slug: z.string().regex(/^[a-z0-9-]+$/, "Slug must only contain lowercase letters, numbers, and hyphens").min(3, "Slug must be at least 3 characters").max(100).optional().or(z.literal('')),
+  logoUrl: z.string().url("Invalid logo URL").optional().or(z.literal('')),
+  timezone: z.string().optional(),
+  color_theme: z.string().optional(),
+  settings: z.record(z.any()).optional(),
 });
 
 export const updateWorkspaceSchema = createWorkspaceSchema.partial();

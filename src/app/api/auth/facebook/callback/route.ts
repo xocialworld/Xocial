@@ -80,9 +80,16 @@ export async function GET(request: NextRequest) {
             throw new APIError(404, 'No Facebook pages found for this account', 'NO_PAGES');
         }
 
-        // Get user's workspace
-        const workspace = await getUserWorkspace(user.id, supabase);
-        logger.info(`[Facebook Callback] User workspace: ${workspace.id}`);
+        // Get user's workspace context from state
+        let workspaceId = stateVerification.workspaceId;
+
+        if (!workspaceId) {
+            logger.warn('[Facebook Callback] No workspaceId in state, falling back to default workspace');
+            const workspace = await getUserWorkspace(user.id, supabase);
+            workspaceId = workspace.id;
+        }
+
+        logger.info(`[Facebook Callback] Target workspace ID: ${workspaceId}`);
 
         // Store each Facebook page as a separate social account
         const accounts = await Promise.all(
@@ -95,7 +102,7 @@ export async function GET(request: NextRequest) {
                     .from('social_accounts')
                     .upsert(
                         {
-                            workspace_id: workspace.id,
+                            workspace_id: workspaceId,
                             platform: 'facebook',
                             assigned_user_id: user.id,
                             account_id: page.id,

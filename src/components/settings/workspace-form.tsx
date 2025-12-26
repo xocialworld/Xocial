@@ -6,8 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Building2, Loader2, Check, Copy, Users, Calendar, Link2, AlertCircle } from "lucide-react";
+import { Building2, Loader2, Check, Copy, Users, Calendar, Link2, AlertCircle, ShieldCheck } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useRouter } from "next/navigation";
+import { useWorkspaceStore } from "@/store/workspaceStore";
 
 interface WorkspaceFormProps {
     workspace: any;
@@ -57,12 +70,18 @@ export function WorkspaceForm({ workspace, onUpdate }: WorkspaceFormProps) {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [workspaceName, setWorkspaceName] = useState(workspace?.name || "");
+    const [requireApproval, setRequireApproval] = useState(workspace?.settings?.require_approval || false);
     const [copied, setCopied] = useState(false);
+    const [userId, setUserId] = useState<string | null>(null);
+    const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
     const supabase = createClient();
+    const router = useRouter();
+    const setWorkspaces = useWorkspaceStore((state) => state.setWorkspaces);
 
     // Reset form when workspace changes
     useEffect(() => {
         setWorkspaceName(workspace?.name || "");
+        setRequireApproval(workspace?.settings?.require_approval || false);
     }, [workspace]);
 
     const handleWorkspaceUpdate = useCallback(async () => {
@@ -85,6 +104,10 @@ export function WorkspaceForm({ workspace, onUpdate }: WorkspaceFormProps) {
                     .from("workspaces")
                     .update({
                         name: workspaceName.trim(),
+                        settings: {
+                            ...workspace.settings,
+                            require_approval: requireApproval
+                        },
                         updated_at: new Date().toISOString(),
                     })
                     .eq("id", workspace.id);
@@ -92,25 +115,31 @@ export function WorkspaceForm({ workspace, onUpdate }: WorkspaceFormProps) {
                 if (error) throw error;
                 toast.success("Workspace updated successfully!");
             } else {
-                // Create new workspace
-                const slug = workspaceName.toLowerCase()
-                    .replace(/[^a-z0-9\s-]/g, '')
-                    .replace(/\s+/g, "-")
-                    .replace(/-+/g, '-');
-
-                const { error } = await supabase
-                    .from("workspaces")
-                    .insert({
+                // Create new workspace via API to ensure proper setup (memberships, etc.)
+                const response = await fetch("/api/workspaces", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
                         name: workspaceName.trim(),
-                        slug,
-                        owner_id: user.id,
-                    });
+                        settings: {
+                            require_approval: requireApproval
+                        }
+                    }),
+                });
 
-                if (error) throw error;
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || "Failed to create workspace");
+                }
+
                 toast.success("Workspace created successfully!");
             }
 
             setSaved(true);
+
+            // Force stale to ensure switcher refreshes
+            useWorkspaceStore.getState().invalidateWorkspaces();
+
             onUpdate();
             setTimeout(() => setSaved(false), 2000);
         } catch (error: any) {
@@ -118,7 +147,7 @@ export function WorkspaceForm({ workspace, onUpdate }: WorkspaceFormProps) {
         } finally {
             setSaving(false);
         }
-    }, [supabase, workspace, workspaceName, onUpdate]);
+    }, [supabase, workspace, workspaceName, onUpdate, requireApproval]);
 
     const copyWorkspaceId = () => {
         if (workspace?.id) {
@@ -129,7 +158,38 @@ export function WorkspaceForm({ workspace, onUpdate }: WorkspaceFormProps) {
         }
     };
 
-    const hasChanges = workspaceName !== (workspace?.name || "");
+    const handleDeleteWorkspace = async () => {
+        if (!workspace?.id) return;
+
+        try {
+            const { error } = await supabase
+                .from("workspaces")
+                .delete()
+                .eq("id", workspace.id);
+
+            if (error) throw error;
+
+            toast.success("Workspace deleted successfully");
+
+            // Clear workspaces in store to force refresh or handling
+            setWorkspaces([]);
+
+            router.push("/settings/workspace/create");
+        } catch (error: any) {
+            toast.error(error.message || "Failed to delete workspace");
+        }
+    };
+
+    useEffect(() => {
+        supabase.auth.getUser().then(({ data: { user } }) => {
+            if (user) setUserId(user.id);
+        });
+    }, [supabase]);
+
+    // Check for changes (name or settings)
+    const hasChanges =
+        workspaceName !== (workspace?.name || "") ||
+        requireApproval !== (workspace?.settings?.require_approval || false);
 
     return (
         <div className="space-y-6">
@@ -216,6 +276,37 @@ export function WorkspaceForm({ workspace, onUpdate }: WorkspaceFormProps) {
                 </div>
             )}
 
+            {/* Workflow Settings Section - Only show for teams */}
+            {workspace && (workspace.member_count > 1) && (
+                <div className="pt-6 border-t border-secondary-100 space-y-4">
+                    <div className="pb-2">
+                        <h3 className="font-medium text-secondary-900 flex items-center gap-2">
+                            <ShieldCheck className="h-4 w-4 text-secondary-500" />
+                            Workflow Settings
+                        </h3>
+                        <p className="text-sm text-secondary-500 mt-1">
+                            Manage approval requirements for your team members
+                        </p>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-white border border-secondary-200 rounded-lg">
+                        <div className="space-y-0.5">
+                            <label className="text-sm font-medium text-secondary-900">
+                                Require Approval for Posts
+                            </label>
+                            <p className="text-xs text-secondary-500">
+                                When enabled, Editors must request approval before publishing.
+                                Only Admins and Owners can publish directly.
+                            </p>
+                        </div>
+                        <Switch
+                            checked={requireApproval}
+                            onCheckedChange={setRequireApproval}
+                        />
+                    </div>
+                </div>
+            )}
+
             {/* Save Button */}
             <div className="flex items-center justify-between pt-4 border-t border-secondary-100">
                 <div className="text-sm text-secondary-500">
@@ -243,6 +334,46 @@ export function WorkspaceForm({ workspace, onUpdate }: WorkspaceFormProps) {
                     )}
                 </Button>
             </div>
-        </div>
+
+
+            {/* Danger Zone */}
+            {
+                workspace && userId && workspace.owner_id === userId && (
+                    <div className="border border-red-100 bg-red-50/50 rounded-xl p-5 mt-8">
+                        <h3 className="font-medium text-red-900 mb-1">Danger Zone</h3>
+                        <p className="text-sm text-red-600 mb-4">
+                            Permanently delete this workspace and all associated data. This action cannot be undone.
+                        </p>
+                        <Button
+                            variant="destructive"
+                            onClick={() => setIsDeleteAlertOpen(true)}
+                        >
+                            Delete Workspace
+                        </Button>
+                        <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        This action cannot be undone. This will permanently delete the workspace
+                                        <strong> {workspace.name} </strong>
+                                        and remove all data associated with it.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel onClick={() => setIsDeleteAlertOpen(false)}>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                        onClick={handleDeleteWorkspace}
+                                        className="bg-red-600 hover:bg-red-700"
+                                    >
+                                        Delete Workspace
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                    </div>
+                )
+            }
+        </div >
     );
 }

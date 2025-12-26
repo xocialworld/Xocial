@@ -4,6 +4,8 @@
  */
 
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { NotificationPreferences, NotificationChannelPreferences } from '@/types';
 
 export type NotificationType =
   | 'post_published'
@@ -13,9 +15,14 @@ export type NotificationType =
   | 'team_invitation'
   | 'team_member_joined'
   | 'comment_received'
+  | 'comment_reply'
+  | 'mention'
   | 'milestone_reached'
   | 'strategy_recommendation'
-  | 'system_alert';
+  | 'system_alert'
+  | 'post_approval_requested'
+  | 'post_approved'
+  | 'post_rejected';
 
 export interface Notification {
   id: string;
@@ -38,12 +45,97 @@ export interface NotificationPayload {
   data?: Record<string, any>;
 }
 
+// Map notification types to preference categories
+const TYPE_TO_CATEGORY: Record<NotificationType, keyof NotificationPreferences> = {
+  'post_published': 'publishing',
+  'post_failed': 'publishing',
+  'account_connected': 'marketing', // System updates/marketing
+  'account_disconnected': 'marketing',
+  'team_invitation': 'approvals', // Treated as important admin action
+  'team_member_joined': 'marketing',
+  'comment_received': 'comments',
+  'comment_reply': 'comments',
+  'mention': 'comments',
+  'milestone_reached': 'analytics',
+  'strategy_recommendation': 'analytics',
+  'system_alert': 'marketing',
+  'post_approval_requested': 'approvals',
+  'post_approved': 'approvals',
+  'post_rejected': 'approvals'
+};
+
+const defaultPreferences: NotificationPreferences = {
+  approvals: { email: true, push: true, in_app: true },
+  comments: { email: true, push: true, in_app: true },
+  publishing: { email: true, push: false, in_app: true },
+  analytics: { email: true, push: false, in_app: false },
+  marketing: { email: true, push: false, in_app: false },
+  digest_frequency: 'weekly'
+};
+
+/**
+ * Check if a user should be notified based on their preferences
+ */
+async function shouldNotify(
+  userId: string,
+  type: NotificationType,
+  channel: keyof NotificationChannelPreferences = 'in_app'
+): Promise<boolean> {
+  try {
+    const category = TYPE_TO_CATEGORY[type];
+    if (!category) return true; // Default to allow if no category mapping
+
+    // Use admin client to bypass RLS and read other user's profile
+    const supabase = createAdminClient();
+
+    // We only need the specific preference category, but fetching the whole object is safer JSON parsing
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('notification_preferences')
+      .eq('id', userId)
+      .single();
+
+    if (!profile?.notification_preferences) {
+      // If no preferences set, use defaults
+      const defaultCategory = defaultPreferences[category];
+      if (typeof defaultCategory === 'string') return true; // Should not happen based on TYPE_TO_CATEGORY
+      return defaultCategory[channel];
+    }
+
+    const preferences = profile.notification_preferences as unknown as NotificationPreferences;
+    const categoryPrefs = preferences[category];
+
+    if (!categoryPrefs) {
+      const defaultCategory = defaultPreferences[category];
+      if (typeof defaultCategory === 'string') return true;
+      return defaultCategory[channel];
+    }
+
+    if (typeof categoryPrefs === 'string') return true; // Should not happen
+    return categoryPrefs[channel];
+  } catch (error) {
+    console.error('[Notifications] Error checking preferences:', error);
+    // Fail safe: allow notification if check fails
+    return true;
+  }
+}
+
 /**
  * Create a notification
  */
+// channel argument allows us to check for specific channels (email, push) later
+// for now we only check for in-app notifications creation
 export async function createNotification(payload: NotificationPayload): Promise<Notification | null> {
   try {
-    const supabase = await createClient();
+    // Check if user wants to receive this notification
+    const shouldSend = await shouldNotify(payload.userId, payload.type, 'in_app');
+
+    if (!shouldSend) {
+      console.log(`[Notifications] Skipped ${payload.type} notification for ${payload.userId} based on preferences`);
+      return null;
+    }
+
+    const supabase = createAdminClient();
 
     const { data, error } = await supabase
       .from('notifications')

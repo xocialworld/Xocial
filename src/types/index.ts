@@ -11,11 +11,19 @@ export interface Profile {
   updated_at: string;
 }
 
-export interface NotificationPreferences {
-  push: boolean;
+export interface NotificationChannelPreferences {
   email: boolean;
+  push: boolean;
   in_app: boolean;
-  digest_frequency: 'daily' | 'weekly' | 'monthly';
+}
+
+export interface NotificationPreferences {
+  approvals: NotificationChannelPreferences;
+  comments: NotificationChannelPreferences;
+  publishing: NotificationChannelPreferences;
+  analytics: NotificationChannelPreferences;
+  marketing: NotificationChannelPreferences;
+  digest_frequency: 'daily' | 'weekly' | 'monthly' | 'never';
 }
 
 export interface Workspace {
@@ -71,7 +79,7 @@ export interface SocialAccount {
   metrics?: SocialAccountMetrics;
 }
 
-export type PostStatus = 'draft' | 'pending_approval' | 'approved' | 'scheduled' | 'published' | 'failed';
+export type PostStatus = 'draft' | 'pending_approval' | 'approved' | 'scheduled' | 'published' | 'failed' | 'rejected';
 
 export interface Post {
   id: string;
@@ -196,21 +204,21 @@ export interface ContentApprovalAction {
 
 export type AISentiment = 'positive' | 'neutral' | 'negative';
 export type AIReadability = 'easy' | 'moderate' | 'difficult';
-export type AITone = 
-  | 'professional' 
-  | 'casual' 
-  | 'friendly' 
-  | 'enthusiastic' 
-  | 'informative' 
-  | 'playful' 
-  | 'inspirational' 
+export type AITone =
+  | 'professional'
+  | 'casual'
+  | 'friendly'
+  | 'enthusiastic'
+  | 'informative'
+  | 'playful'
+  | 'inspirational'
   | 'educational';
 
-export type AIStyle = 
-  | 'informative' 
-  | 'storytelling' 
-  | 'educational' 
-  | 'promotional' 
+export type AIStyle =
+  | 'informative'
+  | 'storytelling'
+  | 'educational'
+  | 'promotional'
   | 'playful';
 
 export type AILength = 'short' | 'medium' | 'long';
@@ -333,4 +341,95 @@ export interface MediaFile {
   type: 'image' | 'video';
   name: string;
   size: number;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Calendar Entry Types
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Source of a calendar entry
+ * - internal: Created in the app (content_items/content_variants)
+ * - external: Imported from a platform (external_posts)
+ */
+export type CalendarEntrySource = 'internal' | 'external';
+
+/**
+ * Status for calendar entries
+ */
+export type CalendarEntryStatus =
+  | 'draft'
+  | 'in_review'
+  | 'pending_approval'
+  | 'approved'
+  | 'scheduled'
+  | 'published'
+  | 'failed'
+  | 'rejected';
+
+/**
+ * Content variant for a specific platform (internal entries only)
+ */
+export interface CalendarVariant {
+  id: string;
+  platform: string;
+  socialAccountId?: string;
+  caption?: string;
+  status: string;
+  scheduledAt?: string;
+  publishedAt?: string;
+}
+
+/**
+ * Unified calendar entry representing both internal and external content
+ */
+export interface CalendarEntry {
+  id: string;
+  source: CalendarEntrySource;
+  /** Date used for calendar placement (status-aware bucketing) */
+  calendarDate: string;
+  // Content
+  title?: string;
+  brief?: string;
+  caption?: string;
+  content?: Record<string, unknown>;
+  media?: unknown[];
+  // Status
+  status: CalendarEntryStatus | string;
+  // Platforms
+  platforms: string[];
+  // Timestamps
+  draftedAt?: string;
+  scheduledAt?: string;
+  publishedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+  // References
+  workspaceId: string;
+  socialAccountId?: string;
+  externalPostId?: string;
+  permalink?: string;
+  // For internal items
+  contentItemId?: string;
+  variants?: CalendarVariant[];
+  // Approval
+  approvalWorkflowId?: string;
+  approvalStatus?: string;
+  // Metrics (for external)
+  metrics?: Record<string, unknown>;
+  postType?: string;
+}
+
+/**
+ * Response from /api/calendar
+ */
+export interface CalendarAPIResponse {
+  entries: CalendarEntry[];
+  count: number;
+  meta: {
+    workspaceId: string;
+    from?: string;
+    to?: string;
+    platformFilter?: string;
+  };
 }

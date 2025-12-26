@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { YouTubeChannelStats } from '@/lib/youtube-sync';
 
 interface UseYouTubeStatsReturn {
     stats: YouTubeChannelStats | null;
     loading: boolean;
     error: Error | null;
-    refetch: () => Promise<void>;
+    refetch: () => void;
 }
 
 /**
@@ -13,16 +13,15 @@ interface UseYouTubeStatsReturn {
  * Auto-refreshes every 5 minutes
  */
 export function useYouTubeStats(accountId: string): UseYouTubeStatsReturn {
-    const [stats, setStats] = useState<YouTubeChannelStats | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<Error | null>(null);
-
-    const fetchStats = useCallback(async () => {
-        if (!accountId) return;
-
-        try {
-            setLoading(true);
-            setError(null);
+    const {
+        data: stats = null,
+        isLoading: loading,
+        error,
+        refetch,
+    } = useQuery({
+        queryKey: ['youtube-stats', accountId],
+        queryFn: async () => {
+            if (!accountId) return null;
 
             const response = await fetch('/api/accounts/youtube/sync', {
                 method: 'POST',
@@ -38,28 +37,18 @@ export function useYouTubeStats(accountId: string): UseYouTubeStatsReturn {
             }
 
             const { data } = await response.json();
-            setStats(data);
-        } catch (err) {
-            console.error('[useYouTubeStats] Error:', err);
-            setError(err instanceof Error ? err : new Error('Failed to fetch YouTube stats'));
-        } finally {
-            setLoading(false);
-        }
-    }, [accountId]);
-
-    useEffect(() => {
-        fetchStats();
-
-        // Auto-refresh every 5 minutes
-        const interval = setInterval(fetchStats, 5 * 60 * 1000);
-
-        return () => clearInterval(interval);
-    }, [fetchStats]);
+            return data as YouTubeChannelStats;
+        },
+        enabled: !!accountId,
+        refetchInterval: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+        staleTime: 60 * 1000, // cache for 1 min
+    });
 
     return {
         stats,
         loading,
-        error,
-        refetch: fetchStats,
+        error: error as Error | null,
+        refetch,
     };
 }

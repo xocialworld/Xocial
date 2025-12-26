@@ -1,26 +1,25 @@
 import { createBrowserClient } from '@supabase/ssr';
-import logger from '@/lib/logger';
 
-function validateSupabaseConfig() {
-  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/+$/, '');
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
-
-  const isValidUrl = /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url);
-  if (!isValidUrl) {
-    const msg = 'Invalid NEXT_PUBLIC_SUPABASE_URL. Expected https://<project-ref>.supabase.co';
-    logger.error(msg, undefined, { url });
-  }
-
-  if (!key || key.length < 20) {
-    const msg = 'Invalid NEXT_PUBLIC_SUPABASE_ANON_KEY.';
-    logger.error(msg, undefined, { keyLength: key ? key.length : 0 });
-  }
-}
+let client: ReturnType<typeof createBrowserClient> | undefined;
 
 export function createClient() {
-  validateSupabaseConfig();
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  if (client) {
+    return client;
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("Supabase credentials missing. Check .env.local");
+    }
+  }
+
+  client = createBrowserClient(
+    supabaseUrl || '',
+    supabaseAnonKey || ''
   );
+
+  return client;
 }

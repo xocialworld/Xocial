@@ -17,6 +17,7 @@ export interface OAuthState {
   createdAt: number;
   redirectUrl?: string;
   pkceVerifier?: string;
+  workspaceId?: string;
 }
 
 /**
@@ -81,7 +82,7 @@ function validateStateRecord(
   storedState: OAuthState | null,
   platform: string,
   state: string
-): { valid: boolean; redirectUrl?: string; pkceVerifier?: string; error?: string } {
+): { valid: boolean; redirectUrl?: string; pkceVerifier?: string; workspaceId?: string; error?: string } {
   if (!storedState) {
     return { valid: false, error: 'No OAuth state found' };
   }
@@ -102,6 +103,7 @@ function validateStateRecord(
     valid: true,
     redirectUrl: storedState.redirectUrl,
     pkceVerifier: storedState.pkceVerifier,
+    workspaceId: storedState.workspaceId,
   };
 }
 
@@ -131,6 +133,7 @@ export async function storeOAuthState(
   redirectUrl?: string,
   options?: {
     pkceVerifier?: string;
+    workspaceId?: string;
   }
 ): Promise<void> {
   const supabase = await getSupabaseClient();
@@ -142,6 +145,7 @@ export async function storeOAuthState(
     createdAt: Date.now(),
     redirectUrl,
     ...(options?.pkceVerifier ? { pkceVerifier: options.pkceVerifier } : {}),
+    ...(options?.workspaceId ? { workspaceId: options.workspaceId } : {}),
   };
 
   console.log(`${FALLBACK_LOG_PREFIX} Storing OAuth state for ${platform}:`, {
@@ -183,7 +187,7 @@ export async function verifyOAuthState(
   userId: string,
   platform: string,
   state: string
-): Promise<{ valid: boolean; redirectUrl?: string; pkceVerifier?: string; error?: string }> {
+): Promise<{ valid: boolean; redirectUrl?: string; pkceVerifier?: string; workspaceId?: string; error?: string }> {
   console.log(`${FALLBACK_LOG_PREFIX} Verifying OAuth state for ${platform}:`, {
     userId: userId.substring(0, 8) + '...',
     platform,
@@ -265,7 +269,7 @@ function verifyWithFallback(
   userId: string,
   platform: string,
   state: string
-): { valid: boolean; redirectUrl?: string; pkceVerifier?: string; error?: string } {
+): { valid: boolean; redirectUrl?: string; pkceVerifier?: string; workspaceId?: string; error?: string } {
   const cachedState = getFallbackState(userId, platform);
 
   if (!cachedState) {

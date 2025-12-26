@@ -247,15 +247,15 @@ export default function PlanPage() {
                 Does drag-and-drop update the scheduled time?
               </AccordionTrigger>
               <AccordionContent className="text-secondary-600 text-base leading-relaxed pb-5">
-                Yes, dragging to a new slot automatically updates the schedule time. You'll be asked to confirm if the post is already approved to prevent accidental changes.
+                Yes, dragging to a new slot automatically updates the schedule time. You&apos;ll be asked to confirm if the post is already approved to prevent accidental changes.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="q3" className="border border-secondary-200 rounded-xl px-6 data-[state=open]:bg-secondary-50">
               <AccordionTrigger className="text-base sm:text-lg font-medium text-secondary-900 py-5 hover:no-underline">
-                Can I see my team's drafts?
+                Can I see my team&apos;s drafts?
               </AccordionTrigger>
               <AccordionContent className="text-secondary-600 text-base leading-relaxed pb-5">
-                Yes, based on your role and permissions. Managers and admins can see everyone's drafts, while creators only see their own.
+                Yes, based on your role and permissions. Managers and admins can see everyone&apos;s drafts, while creators only see their own.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="q4" className="border border-secondary-200 rounded-xl px-6 data-[state=open]:bg-secondary-50">

@@ -58,7 +58,7 @@ export function ContentCompatibilityWarning({
                             </h4>
                             <p className="text-sm text-blue-700 mt-1">
                                 <strong>Media will not be posted to Twitter.</strong> Your text will be posted, but images/videos
-                                won't be included due to Twitter API limitations. To include media, please post manually through the Twitter app.
+                                won&apos;t be included due to Twitter API limitations. To include media, please post manually through the Twitter app.
                             </p>
                             <p className="text-xs text-blue-600 mt-2">
                                 This is a temporary limitation. Twitter is updating their API (expected Q1 2025).
@@ -87,7 +87,7 @@ export function ContentCompatibilityWarning({
                                 Content not compatible with all platforms
                             </h4>
                             <p className="text-sm text-amber-700 mt-1">
-                                Some platforms can't publish the current content type.
+                                Some platforms can&apos;t publish the current content type.
                                 Remove them or adjust your content.
                             </p>
                         </div>

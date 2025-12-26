@@ -59,4 +59,68 @@ export const DELETE = withErrorHandler(async (request: NextRequest, props: { par
   return successResponse({ message: 'Member removed' });
 });
 
+/**
+ * PATCH /api/team/members/:id
+ * Update a member's role (admin or owner only)
+ */
+export const PATCH = withErrorHandler(async (request: NextRequest, props: { params: Promise<{ id: string }> }) => {
+  const params = await props.params;
+  const { user, supabase } = await requireAuth(request);
+  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+
+  const body = await request.json();
+  const { role: newRole } = body;
+
+  if (!['admin', 'manager', 'creator', 'analyst'].includes(newRole)) {
+    throw new APIError(400, 'Invalid role', 'VALIDATION_ERROR');
+  }
+
+  // Require at least admin
+  const currentUserRole = await checkWorkspaceAccess(user.id, workspace.id);
+  if (!['owner', 'admin'].includes(currentUserRole)) {
+    throw new APIError(403, 'Only owners and admins can update roles', 'FORBIDDEN');
+  }
+
+  const memberId = params.id;
+  if (!memberId) {
+    throw new APIError(400, 'Member ID is required', 'VALIDATION_ERROR');
+  }
+
+  // Fetch target member
+  const { data: targetMember, error: fetchErr } = await supabase
+    .from('workspace_members')
+    .select('id, user_id, role')
+    .eq('id', memberId)
+    .eq('workspace_id', workspace.id)
+    .single();
+
+  if (fetchErr || !targetMember) {
+    throw new APIError(404, 'Member not found', 'NOT_FOUND');
+  }
+
+  // Cannot modify Owner's role
+  if (targetMember.role === 'owner') {
+    throw new APIError(400, 'Cannot change the workspace owner\'s role', 'INVALID_OPERATION');
+  }
+
+  // Only Owner can promote/demote to/from Admin (Optional restriction, but good for security)
+  // Let's allow Admins to manage other Admins for now to keep it simple, but maybe prevent Admin from demoting Owner (already covered)
+  // or Admin modifying another Admin?
+  // Let's say Admins can manage anyone below Owner.
+
+  const { data: updatedMember, error: updateErr } = await supabase
+    .from('workspace_members')
+    .update({ role: newRole })
+    .eq('id', memberId)
+    .eq('workspace_id', workspace.id)
+    .select()
+    .single();
+
+  if (updateErr) {
+    throw new APIError(500, updateErr.message, 'DATABASE_ERROR');
+  }
+
+  return successResponse({ member: updatedMember, message: 'Role updated successfully' });
+});
+
 

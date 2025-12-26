@@ -94,7 +94,7 @@ export default function ApprovePage() {
                 <Clock className="h-6 w-6 text-emerald-600" />
               </div>
               <h3 className="text-xl font-bold text-secondary-900 mb-3">Audit Trail</h3>
-              <p className="text-secondary-600 mb-6 leading-relaxed">Full history of who approved what and when. Accountability built-in, so you're always covered.</p>
+              <p className="text-secondary-600 mb-6 leading-relaxed">Full history of who approved what and when. Accountability built-in, so you&apos;re always covered.</p>
               <ul className="space-y-3">
                 <li className="flex items-center gap-3 text-sm font-medium text-secondary-700"><CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" /> Timestamped logs</li>
                 <li className="flex items-center gap-3 text-sm font-medium text-secondary-700"><CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" /> Version control</li>
@@ -140,7 +140,7 @@ export default function ApprovePage() {
             </AccordionItem>
             <AccordionItem value="q3">
               <AccordionTrigger>What happens if a post is rejected?</AccordionTrigger>
-              <AccordionContent>The creator is notified immediately with feedback, and the post status resets to "Draft" for edits.</AccordionContent>
+              <AccordionContent>The creator is notified immediately with feedback, and the post status resets to &quot;Draft&quot; for edits.</AccordionContent>
             </AccordionItem>
           </Accordion>
           <FaqSchema items={[

@@ -33,7 +33,7 @@ export function AccountCard({ account, onDisconnect, onSync, onViewPosts, classN
   const [showMenu, setShowMenu] = React.useState(false);
   const [syncing, setSyncing] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
-  const metrics = account.metrics ?? DEFAULT_METRICS;
+  const metrics = { ...DEFAULT_METRICS, ...(account.metrics || {}) };
   const youtubeStats =
     account.platform === "youtube"
       ? (account.metadata as any)?.statistics ?? null
@@ -202,6 +202,18 @@ export function AccountCard({ account, onDisconnect, onSync, onViewPosts, classN
           />
         </div>
 
+        {/* YouTube stats */}
+        {youtubeStats && (
+          <p className="text-center pt-1.5 text-secondary-500">
+            {youtubeStats.videoCount
+              ? `${Number(youtubeStats.videoCount).toLocaleString()} videos • `
+              : ""}
+            {youtubeStats.viewCount
+              ? `${Number(youtubeStats.viewCount).toLocaleString()} lifetime views`
+              : ""}
+          </p>
+        )}
+
         {/* Platform-specific insights - Fixed height section */}
         <div className="mt-auto pt-3 border-t border-secondary-100 space-y-1.5 text-xs text-secondary-600 min-h-[60px]">
           <p className="flex items-center justify-between">
@@ -221,18 +233,6 @@ export function AccountCard({ account, onDisconnect, onSync, onViewPosts, classN
             </span>
           </p>
         </div>
-
-        {/* YouTube stats */}
-        {youtubeStats && (
-          <p className="text-center pt-1.5 text-secondary-500">
-            {youtubeStats.videoCount
-              ? `${Number(youtubeStats.videoCount).toLocaleString()} videos • `
-              : ""}
-            {youtubeStats.viewCount
-              ? `${Number(youtubeStats.viewCount).toLocaleString()} lifetime views`
-              : ""}
-          </p>
-        )}
       </div>
 
       {/* View Posts Button - Always at bottom */}

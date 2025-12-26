@@ -5,6 +5,7 @@ import {
     getTikTokUserInfo,
 } from '@/lib/oauth/tiktok';
 import { logger } from '@/lib/logger';
+import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
 
 interface SyncResult {
     synced: number;
@@ -52,21 +53,21 @@ export async function syncTikTokVideos(
                     published_at: video.create_time ? new Date(video.create_time * 1000).toISOString() : new Date().toISOString(),
                 };
 
-                await supabase.from('posts').upsert(postData, {
-                    onConflict: 'workspace_id,external_post_id',
+                const { id: postId } = await upsertPostByExternalId(supabase as any, {
+                    workspace_id: postData.workspace_id,
+                    social_account_id: postData.social_account_id,
+                    external_post_id: postData.external_post_id,
+                    platforms: postData.platforms,
+                    content: postData.content,
+                    status: postData.status,
+                    published_at: postData.published_at,
                 });
 
                 // Store stats
                 try {
-                    const { data: dbPost } = await supabase
-                        .from('posts')
-                        .select('id')
-                        .eq('external_post_id', video.id)
-                        .single();
-
-                    if (dbPost) {
+                    if (postId) {
                         const analyticsData = {
-                            post_id: dbPost.id,
+                            post_id: postId,
                             platform: 'tiktok',
                             views: video.view_count || 0,
                             likes: video.like_count || 0,

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { Heart, MessageCircle, Send, Bookmark, MoreHorizontal } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -74,10 +75,11 @@ export function InstagramPreview({
                             muted
                         />
                     ) : (
-                        <img
+                        <Image
                             src={media[0].url}
                             alt="Post media"
-                            className="w-full h-full object-cover"
+                            fill
+                            className="object-cover"
                         />
                     )}
                     {media.length > 1 && (

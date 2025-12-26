@@ -42,7 +42,7 @@ export function AccountCardSkeleton() {
 
 export function AccountGridSkeleton({ count = 6 }: { count?: number }) {
     return (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 auto-rows-fr">
             {Array.from({ length: count }).map((_, i) => (
                 <AccountCardSkeleton key={i} />
             ))}

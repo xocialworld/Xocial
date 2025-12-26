@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { Heart, MessageCircle, Repeat2, Share, BarChart2, Bookmark, MoreHorizontal, BadgeCheck } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -105,9 +106,11 @@ export function TwitterPreview({
                                         muted
                                     />
                                 ) : (
-                                    <img
+                                    <Image
                                         src={media[0].url}
                                         alt="Post media"
+                                        width={500}
+                                        height={300}
                                         className="w-full max-h-[300px] object-cover"
                                     />
                                 )
@@ -115,10 +118,11 @@ export function TwitterPreview({
                                 <div className="grid grid-cols-2 gap-0.5">
                                     {media.slice(0, 4).map((m, i) => (
                                         <div key={i} className="aspect-square relative">
-                                            <img
+                                            <Image
                                                 src={m.url}
                                                 alt={`Media ${i + 1}`}
-                                                className="w-full h-full object-cover"
+                                                fill
+                                                className="object-cover"
                                             />
                                             {i === 3 && media.length > 4 && (
                                                 <div className="absolute inset-0 bg-black/60 flex items-center justify-center">

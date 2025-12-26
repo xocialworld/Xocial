@@ -64,71 +64,7 @@ interface EngagementAccount {
 }
 
 // Mock data for demonstration
-const mockEngagementItems: EngagementItem[] = [
-    {
-        id: "1",
-        type: "comment",
-        status: "new",
-        platform: "instagram",
-        authorName: "Sarah Johnson",
-        authorHandle: "@sarahjohnson",
-        authorAvatar: null,
-        content: "This is amazing! Love the new product launch 🎉 Can't wait to try it out!",
-        postPreview: "Introducing our new summer collection...",
-        createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-        isStarred: false,
-    },
-    {
-        id: "2",
-        type: "mention",
-        status: "new",
-        platform: "twitter",
-        authorName: "Tech Reviewer",
-        authorHandle: "@techreviewer",
-        authorAvatar: null,
-        content: "@xocial just transformed how we handle our social media. Highly recommend checking it out!",
-        createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-        isStarred: true,
-    },
-    {
-        id: "3",
-        type: "comment",
-        status: "read",
-        platform: "facebook",
-        authorName: "Marketing Lead",
-        authorHandle: "Mike Chen",
-        authorAvatar: null,
-        content: "Great insights! Would love to see more content like this.",
-        postPreview: "5 Tips for Better Social Media Engagement",
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-        isStarred: false,
-    },
-    {
-        id: "4",
-        type: "dm",
-        status: "new",
-        platform: "instagram",
-        authorName: "Potential Customer",
-        authorHandle: "@potential_customer",
-        authorAvatar: null,
-        content: "Hi! I'm interested in your enterprise plan. Can you tell me more about pricing?",
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-        isStarred: true,
-    },
-    {
-        id: "5",
-        type: "like",
-        status: "read",
-        platform: "linkedin",
-        authorName: "Industry Expert",
-        authorHandle: "Jane Smith",
-        authorAvatar: null,
-        content: "Liked your post about social media trends",
-        postPreview: "The Future of Social Media Marketing in 2025",
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-        isStarred: false,
-    },
-];
+
 
 // Platform icon component
 function PlatformIcon({ platform, className }: { platform: Platform; className?: string }) {
@@ -195,12 +131,23 @@ export default function EngagementInboxPage() {
     const { data, isLoading, refetch, isFetching } = useQuery({
         queryKey: ["engagement", workspaceId],
         queryFn: () => fetchEngagement(workspaceId),
+        enabled: !!workspaceId,
     });
 
-    const accounts: EngagementAccount[] = data?.data?.accounts || [];
-
-    // Use mock data for now since API returns empty
-    const items: EngagementItem[] = mockEngagementItems;
+    // Transform API data to component format
+    const items: EngagementItem[] = (data?.data?.items || []).map((item: any) => ({
+        id: item.id,
+        type: item.type as EngagementType,
+        status: item.responded ? 'replied' : (!item.isRead ? 'new' : 'read') as EngagementStatus,
+        platform: item.platform as Platform,
+        authorName: item.user,
+        authorHandle: item.handle,
+        authorAvatar: item.avatar,
+        content: item.content,
+        postPreview: item.postTitle, // Using post title as preview context for now
+        createdAt: item.timestamp,
+        isStarred: false, // Not yet supported by API
+    }));
 
     // Filter items based on folder, platform, and search
     const filteredItems = items.filter((item) => {
@@ -415,7 +362,7 @@ export default function EngagementInboxPage() {
                                 <div className="divide-y divide-secondary-100">
                                     {filteredItems.map((item) => {
                                         const TypeIcon = typeIcons[item.type];
-                                        const colors = platformColors[item.platform];
+                                        const colors = platformColors[item.platform] || platformColors.tiktok;
                                         const isSelected = selectedItem?.id === item.id;
 
                                         return (
@@ -511,9 +458,9 @@ export default function EngagementInboxPage() {
                                                         variant="outline"
                                                         className={cn(
                                                             "text-xs capitalize",
-                                                            platformColors[selectedItem.platform].bg,
-                                                            platformColors[selectedItem.platform].text,
-                                                            platformColors[selectedItem.platform].border
+                                                            (platformColors[selectedItem.platform] || platformColors.tiktok).bg,
+                                                            (platformColors[selectedItem.platform] || platformColors.tiktok).text,
+                                                            (platformColors[selectedItem.platform] || platformColors.tiktok).border
                                                         )}
                                                     >
                                                         <PlatformIcon platform={selectedItem.platform} className="h-3 w-3 mr-1" />
@@ -556,7 +503,7 @@ export default function EngagementInboxPage() {
                                         {selectedItem.postPreview && (
                                             <div className="mb-4 p-3 bg-secondary-50 rounded-lg border border-secondary-100">
                                                 <p className="text-xs text-secondary-500 mb-1">In response to your post:</p>
-                                                <p className="text-sm text-secondary-700 italic">"{selectedItem.postPreview}"</p>
+                                                <p className="text-sm text-secondary-700 italic">&quot;{selectedItem.postPreview}&quot;</p>
                                             </div>
                                         )}
                                         <p className="text-secondary-900 leading-relaxed">{selectedItem.content}</p>

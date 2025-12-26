@@ -3,7 +3,7 @@ import {
     withErrorHandler,
     requireAuth,
     APIError,
-    getUserWorkspace,
+    getWorkspaceFromRequest,
     ensureUserProfile,
 } from '@/lib/api-middleware';
 import { logger } from '@/lib/logger';
@@ -36,9 +36,9 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         throw new APIError(400, `Invalid platform: ${platform}`, 'INVALID_PLATFORM');
     }
 
-    // Ensure user has a workspace before starting OAuth
+    // Ensure user has a workspace (and get the specific one if requested)
     await ensureUserProfile(user, supabase);
-    await getUserWorkspace(user.id, supabase);
+    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
 
     // Generate and store state for CSRF protection
     const state = generateState();
@@ -52,6 +52,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     // Store state in database
     await storeOAuthState(user.id, platform, state, redirectUrl, {
         pkceVerifier: pkce?.verifier,
+        workspaceId: workspace.id,
     });
 
     // Get authorization URL for the platform

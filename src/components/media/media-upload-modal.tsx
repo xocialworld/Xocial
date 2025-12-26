@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback } from "react";
+import Image from "next/image";
 import {
     X,
     Upload,
@@ -252,9 +253,11 @@ export function MediaUploadModal({
                                         >
                                             <div className="h-10 w-10 rounded-lg bg-secondary-200 flex items-center justify-center overflow-hidden flex-shrink-0">
                                                 {isImage ? (
-                                                    <img
+                                                    <Image
                                                         src={URL.createObjectURL(uploadFile.file)}
                                                         alt={uploadFile.file.name}
+                                                        width={40}
+                                                        height={40}
                                                         className="h-full w-full object-cover"
                                                     />
                                                 ) : (

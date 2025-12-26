@@ -17,7 +17,7 @@ import {
   EmptyState,
   FilterChip
 } from "@/components/shared/page-components";
-import { useAccounts } from "./hooks/useAccounts";
+import { useAccounts } from "@/hooks/use-accounts";
 import { useAccountSync } from "@/hooks/use-account-sync";
 import { useAccountsStore } from "@/store/accounts-store";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,7 @@ export default function XPage() {
   } = useAccountsStore();
 
   // Fetch accounts with filters
+  // Fetch accounts with filters
   const {
     accounts,
     loading: accountsLoading,
@@ -67,7 +68,7 @@ export default function XPage() {
     refetch: refetchAccounts,
     syncAccount,
     disconnectAccount
-  } = useAccounts(undefined, {
+  } = useAccounts({
     platform: filterPlatform.length > 0 ? filterPlatform.join(',') : undefined,
     status: filterStatus.length > 0 ? (filterStatus[0] as any) : undefined,
   });
@@ -94,13 +95,13 @@ export default function XPage() {
   useAccountSync({
     workspaceId: accounts[0]?.workspace_id,
     onAccountUpdate: () => {
-      window.location.reload(); // Simple refresh - in production, update state directly
+      refetchAccounts();
     },
     onAccountDelete: () => {
-      window.location.reload();
+      refetchAccounts();
     },
     onAccountInsert: () => {
-      window.location.reload();
+      refetchAccounts();
     },
   });
 
@@ -205,7 +206,7 @@ export default function XPage() {
           {accountsError ? (
             <ContentCard>
               <ErrorState
-                message={accountsError}
+                message={accountsError.message || 'Failed to load accounts'}
                 onRetry={refetchAccounts}
               />
             </ContentCard>

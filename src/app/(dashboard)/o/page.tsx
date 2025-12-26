@@ -1,228 +1,177 @@
 "use client";
 
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus, Calendar, Filter, RefreshCw } from "lucide-react";
 import { CalendarGrid } from "./components/calendar-grid";
+import { CalendarTopBar } from "./components/calendar-top-bar";
 import { DayPostsPanel } from "./components/day-posts-panel";
 import { RescheduleModal } from "./components/reschedule-modal";
 import { EditPostModal } from "./components/edit-post-modal";
-import { usePosts } from "@/hooks/use-posts";
-import { useCalendarPosts } from "@/hooks/use-calendar-posts";
-import { useCalendarShortcuts } from "@/hooks/use-calendar-shortcuts";
+import { GridView } from "./components/grid-view";
+import { WeekView } from "./components/week-view";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useCalendarLogic } from "@/hooks/use-calendar-logic";
+import { useCalendarActions } from "@/hooks/use-calendar-actions";
+import { useLazySync } from "@/hooks/use-lazy-sync";
 import { Spinner } from "@/components/ui/spinner";
 import { ErrorBoundary } from "@/components/shared/error-boundary";
 import { ErrorState } from "@/components/shared/error-state";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
-  PageHeader,
   PageContainer,
   ContentCard,
-  FilterChip
 } from "@/components/shared/page-components";
-import type { Post, Platform } from "@/types";
-import { toast } from "sonner";
-import {
-  platformOptions,
-  statusOptions,
-  useCalendarFiltersStore,
-} from "@/store/calendarFiltersStore";
-import { useRouter } from "next/navigation";
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
+import { statusOptions } from "@/store/calendarFiltersStore";
+import { Calendar, Grid3X3, RefreshCw, Loader2, CalendarDays } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-const platformColors: Record<string, string> = {
-  instagram: 'bg-gradient-to-r from-pink-500 to-purple-500',
-  facebook: 'bg-blue-600',
-  twitter: 'bg-black',
-  linkedin: 'bg-blue-700',
-  tiktok: 'bg-gradient-to-r from-pink-600 to-cyan-400',
-  youtube: 'bg-red-600',
-};
+type ViewMode = 'month' | 'week' | 'grid';
 
 const statusColors: Record<string, { bg: string; text: string }> = {
   draft: { bg: 'bg-secondary-100', text: 'text-secondary-700' },
   pending_approval: { bg: 'bg-yellow-100', text: 'text-yellow-700' },
+  approved: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
   scheduled: { bg: 'bg-blue-100', text: 'text-blue-700' },
   published: { bg: 'bg-green-100', text: 'text-green-700' },
   failed: { bg: 'bg-red-100', text: 'text-red-700' },
+  rejected: { bg: 'bg-red-100', text: 'text-red-700' },
 };
 
-export default function OPage() {
+function OPage() {
   const router = useRouter();
-  const { updatePostAsync, deletePost } = usePosts();
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const searchParams = useSearchParams();
+  const noop = useCallback(() => { }, []);
+  const initialUrlProcessed = useRef(false);
 
-  // Calculate date range for the calendar view (including surrounding weeks)
-  const monthStart = startOfMonth(currentMonth);
-  const monthEnd = endOfMonth(currentMonth);
-  const calendarStart = startOfWeek(monthStart);
-  const calendarEnd = endOfWeek(monthEnd);
+  // View mode state (month, week, or grid)
+  const [viewMode, setViewMode] = useState<ViewMode>('month');
+  const [gridPlatform, setGridPlatform] = useState<string>('instagram');
 
-  // Fetch posts for the current calendar view
+  // Custom hooks to manage logic
   const {
-    data: posts = [],
-    isLoading: loading,
+    selectedDate,
+    setSelectedDate,
+    currentMonth,
+    setCurrentMonth,
+    posts,
+    filteredPosts,
+    selectedDatePosts,
+    loading,
     error,
-    refetch
-  } = useCalendarPosts(calendarStart, calendarEnd);
-
-  const [reschedulePost, setReschedulePost] = useState<{ id: string; date: Date } | null>(null);
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [editingPost, setEditingPost] = useState<Post | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
-
-  const {
-    platforms: platformFilters,
-    statuses: statusFilters,
-    togglePlatform,
+    refetch,
+    showFilters,
+    setShowFilters,
+    statusFilters,
     toggleStatus,
     reset,
-  } = useCalendarFiltersStore();
+    noWorkspace,
+    workspaceId,
+  } = useCalendarLogic();
 
-  const filteredPosts = posts.filter((post) => {
-    const matchesPlatform =
-      platformFilters.length === 0 ||
-      post.platforms.some((platform: Platform) => platformFilters.includes(platform));
-    const matchesStatus = statusFilters.length === 0 || statusFilters.includes(post.status as any);
-    return matchesPlatform && matchesStatus;
-  });
+  // Lazy sync hook for on-demand month-based syncing
+  const { syncMonthRange, isSyncing, syncStatus } = useLazySync();
 
-  // Filter posts for selected date
-  const selectedDatePosts = selectedDate
-    ? filteredPosts.filter((post) => {
-      const postDate = new Date(post.scheduled_at || post.published_at || post.created_at);
-      return (
-        postDate.getFullYear() === selectedDate.getFullYear() &&
-        postDate.getMonth() === selectedDate.getMonth() &&
-        postDate.getDate() === selectedDate.getDate()
-      );
-    })
-    : [];
-
-  const activeFilters = platformFilters.length + statusFilters.length;
-
-  const handleReschedule = async (postId: string) => {
-    const post = posts.find((p) => p.id === postId);
-    if (!post) return;
-
-    const currentDate = new Date(post.scheduled_at || new Date());
-    setReschedulePost({ id: postId, date: currentDate });
-  };
-
-  const handleRescheduleSubmit = async (newDate: Date, newTime: string) => {
-    if (!reschedulePost) return;
-
-    const [hours, minutes] = newTime.split(':');
-    const scheduledDate = new Date(newDate);
-    scheduledDate.setHours(parseInt(hours), parseInt(minutes));
-
-    try {
-      await updatePostAsync(reschedulePost.id, {
-        scheduled_at: scheduledDate.toISOString(),
-      });
-      toast.success('Post rescheduled successfully');
-      setReschedulePost(null);
-    } catch (error) {
-      toast.error('Failed to reschedule post');
+  // Trigger lazy sync when month changes
+  useEffect(() => {
+    if (currentMonth) {
+      syncMonthRange(currentMonth);
     }
-  };
+  }, [currentMonth, syncMonthRange]);
 
-  const handlePostDrop = async (postId: string, targetDate: Date) => {
-    const post = posts.find((p) => p.id === postId);
-    if (!post) return;
+  // Handle URL deep linking: /o?date=2025-12-15
+  useEffect(() => {
+    if (initialUrlProcessed.current) return;
 
-    const referenceDate = new Date(post.scheduled_at || post.published_at || post.created_at);
-    const nextDate = new Date(targetDate);
-    nextDate.setHours(referenceDate.getHours(), referenceDate.getMinutes(), 0, 0);
-
-    try {
-      await updatePostAsync(postId, {
-        scheduled_at: nextDate.toISOString(),
-        status: 'scheduled',
-      });
-      toast.success(`Post moved to ${nextDate.toLocaleDateString()}`);
-    } catch (error) {
-      toast.error('Failed to move post');
-    }
-  };
-
-  const handleDeletePost = async (postId: string) => {
-    if (!confirm('Are you sure you want to delete this post?')) return;
-
-    try {
-      // Generate restore token
-      const restoreToken = `restore_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Store token in post metadata before deleting
-      await updatePostAsync(postId, {
-        metadata: {
-          restore_token: restoreToken,
-          deleted_at: new Date().toISOString(),
-        },
-      });
-
-      await deletePost(postId);
-
-      // Show undo toast
-      toast.success('Post deleted', {
-        description: 'You can undo this action',
-        duration: 5000,
-        action: {
-          label: 'Undo',
-          onClick: async () => {
-            try {
-              const response = await fetch('/api/posts/scheduled/restore', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ post_id: postId, restore_token: restoreToken }),
-              });
-
-              if (response.ok) {
-                toast.success('Post restored');
-                window.location.reload();
-              } else {
-                const error = await response.json();
-                toast.error(error.hint || 'Failed to restore post');
-              }
-            } catch (error) {
-              toast.error('Failed to restore post');
-            }
-          },
-        },
-      });
-    } catch (error) {
-      toast.error('Failed to delete post');
-    }
-  };
-
-  // Keyboard shortcuts
-  useCalendarShortcuts({
-    onPrevMonth: () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1)),
-    onNextMonth: () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1)),
-    onToday: () => {
-      setCurrentMonth(new Date());
-      setSelectedDate(new Date());
-    },
-    onNewPost: () => {
-      const date = selectedDate ?? new Date();
-      const prefillDate = new Date(date);
-      prefillDate.setHours(10, 0, 0, 0);
-      router.push(`/c?date=${encodeURIComponent(prefillDate.toISOString())}`);
-    },
-    onClosePanel: () => setSelectedDate(null),
-    onTogglePlatform: (index) => {
-      if (index < platformOptions.length) {
-        togglePlatform(platformOptions[index]);
+    const dateParam = searchParams.get('date');
+    if (dateParam) {
+      try {
+        const parsedDate = new Date(dateParam);
+        if (!isNaN(parsedDate.getTime())) {
+          setSelectedDate(parsedDate);
+          setCurrentMonth(parsedDate);
+          initialUrlProcessed.current = true;
+        }
+      } catch (e) {
+        console.warn('[Calendar] Invalid date param:', dateParam);
       }
-    },
-  });
+    }
+  }, [searchParams, setSelectedDate, setCurrentMonth]);
 
-  if (loading && posts.length === 0) {
+  // Update URL when date changes (for shareability)
+  useEffect(() => {
+    if (!selectedDate) {
+      // Remove date from URL if no date selected
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('date')) {
+        url.searchParams.delete('date');
+        router.replace(url.pathname + url.search, { scroll: false });
+      }
+    } else {
+      // Add date to URL
+      const dateStr = selectedDate.toISOString().split('T')[0]; // YYYY-MM-DD
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('date') !== dateStr) {
+        url.searchParams.set('date', dateStr);
+        router.replace(url.pathname + url.search, { scroll: false });
+      }
+    }
+  }, [selectedDate, router]);
+
+  const {
+    handleReschedule,
+    handleRescheduleSubmit,
+    handlePostDrop,
+    handleDeletePost,
+    handleApprovePost,
+    handleRejectPost,
+    reschedulePost,
+    setReschedulePost,
+    editingPost,
+    setEditingPost,
+    updatePostAsync,
+    updateStatus
+  } = useCalendarActions(posts);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => refetch(), 75);
+    const handleVisibilityChange = () => {
+      if (globalThis.document?.visibilityState === 'visible') {
+        refetch();
+      }
+    };
+    const handleFocus = () => refetch();
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [refetch]);
+
+  // Only show full-page spinner on first load with no cached data
+  const isInitialLoading = loading && posts.length === 0;
+
+  // Handle case where no workspace is selected
+  if (noWorkspace) {
     return (
       <PageContainer>
-        <div className="flex h-[60vh] items-center justify-center">
-          <Spinner />
-        </div>
+        <ContentCard className="text-center py-12">
+          <div className="max-w-md mx-auto">
+            <Calendar className="h-16 w-16 mx-auto text-secondary-400 mb-4" />
+            <h2 className="text-xl font-semibold text-secondary-900 mb-2">
+              No Workspace Selected
+            </h2>
+            <p className="text-secondary-600 mb-6">
+              Please select a workspace from the sidebar to view your content calendar.
+            </p>
+            <Button onClick={() => router.push('/settings/workspace/create?next=/o')}>
+              Create Your First Workspace
+            </Button>
+          </div>
+        </ContentCard>
       </PageContainer>
     );
   }
@@ -243,148 +192,197 @@ export default function OPage() {
 
   return (
     <ErrorBoundary>
-      <div className="flex h-full">
-        {/* Main Calendar Area */}
-        <div className="flex-1 overflow-auto">
-          <PageContainer>
-            <PageHeader
-              shortCode="O"
-              title="Organize"
-              description="Visual, multi-platform calendar to schedule and manage posts"
-              icon={Calendar}
-              iconColor="text-green-500"
-              badge={{
-                label: `${filteredPosts.length} posts`,
-                variant: 'default'
-              }}
-              actions={
-                <div className="flex items-center gap-3">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowFilters(!showFilters)}
-                    className="gap-2"
-                  >
-                    <Filter className="h-4 w-4" />
-                    <span className="hidden sm:inline">Filters</span>
-                    {activeFilters > 0 && (
-                      <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-primary-100 text-primary-700">
-                        {activeFilters}
-                      </span>
-                    )}
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      const date = selectedDate ?? new Date();
-                      // set default time to 10:00 for convenience
-                      const prefillDate = new Date(date);
-                      prefillDate.setHours(10, 0, 0, 0);
-                      router.push(`/c?date=${encodeURIComponent(prefillDate.toISOString())}`);
-                    }}
-                    className="gap-2"
-                  >
-                    <Plus className="h-5 w-5" />
-                    <span className="hidden sm:inline">Schedule Post</span>
-                    <span className="sm:hidden">New</span>
+      <div className="flex flex-col h-[calc(100dvh-4rem)] min-h-0 bg-secondary-50/50">
+        {/* Top Navigation Bar */}
+        <CalendarTopBar
+          currentMonth={currentMonth}
+          onPrevMonth={() => setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1))}
+          onNextMonth={() => setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1))}
+          onToday={() => {
+            setCurrentMonth(new Date());
+            setSelectedDate(new Date());
+          }}
+          onNewPost={() => {
+            const date = selectedDate ?? new Date();
+            const prefillDate = new Date(date);
+            prefillDate.setHours(10, 0, 0, 0);
+            router.push(`/c?date=${encodeURIComponent(prefillDate.toISOString())}`);
+          }}
+          activeFiltersCount={statusFilters.length}
+          onToggleFilters={() => setShowFilters(!showFilters)}
+          isFiltersOpen={showFilters}
+          onToggleSidebar={noop}
+          isSidebarOpen={false}
+        />
+
+        {/* Filters Panel (Collapsible) */}
+        {showFilters && (
+          <div className="border-b border-secondary-200 bg-white p-4 animate-in slide-in-from-top-2 z-10 shadow-sm relative">
+            <div className="max-w-7xl mx-auto flex flex-wrap gap-6">
+              {/* Statuses Only - Platforms are in top bar now */}
+              <div>
+                <p className="text-xs font-semibold text-secondary-500 uppercase tracking-wider mb-2">Statuses</p>
+                <div className="flex flex-wrap gap-2">
+                  {statusOptions.map((status) => {
+                    const selected = statusFilters.includes(status);
+                    const colors = statusColors[status] || statusColors.draft;
+                    return (
+                      <button
+                        key={status}
+                        onClick={() => toggleStatus(status)}
+                        className={`
+                          px-3 py-1.5 rounded-full text-xs font-medium transition-all capitalize border
+                          ${selected
+                            ? `${colors.bg} ${colors.text} border-transparent ring-1 ring-inset ring-black/5`
+                            : 'bg-white text-secondary-600 border-secondary-200 hover:bg-secondary-50'
+                          }
+                        `}
+                      >
+                        {status.replace(/_/g, ' ')}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {(statusFilters.length > 0) && (
+                <div className="flex items-end">
+                  <Button variant="link" size="sm" onClick={reset} className="text-secondary-500 h-auto p-0 hover:text-secondary-900">
+                    Reset filters
                   </Button>
                 </div>
-              }
-            />
-
-            {/* Filters Panel */}
-            {showFilters && (
-              <ContentCard className="mb-6 animate-in slide-in-from-top-2 fade-in duration-200" padding="md">
-                <div className="space-y-4">
-                  {/* Platforms */}
-                  <div>
-                    <p className="text-sm font-semibold text-secondary-700 mb-3">Platforms</p>
-                    <div className="flex flex-wrap gap-2">
-                      {platformOptions.map((platform) => {
-                        const selected = platformFilters.includes(platform);
-                        return (
-                          <button
-                            key={platform}
-                            onClick={() => togglePlatform(platform)}
-                            className={`
-                              px-3 py-1.5 rounded-lg text-sm font-medium transition-all capitalize
-                              ${selected
-                                ? 'bg-primary-100 text-primary-700 ring-2 ring-primary-500/20'
-                                : 'bg-secondary-100 text-secondary-600 hover:bg-secondary-200'
-                              }
-                            `}
-                          >
-                            {platform}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Statuses */}
-                  <div>
-                    <p className="text-sm font-semibold text-secondary-700 mb-3">Statuses</p>
-                    <div className="flex flex-wrap gap-2">
-                      {statusOptions.map((status) => {
-                        const selected = statusFilters.includes(status);
-                        const colors = statusColors[status] || statusColors.draft;
-                        return (
-                          <button
-                            key={status}
-                            onClick={() => toggleStatus(status)}
-                            className={`
-                              px-3 py-1.5 rounded-lg text-sm font-medium transition-all capitalize
-                              ${selected
-                                ? `${colors.bg} ${colors.text} ring-2 ring-offset-1`
-                                : 'bg-secondary-100 text-secondary-600 hover:bg-secondary-200'
-                              }
-                            `}
-                          >
-                            {status.replace(/_/g, ' ')}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Clear filters */}
-                  {(platformFilters.length > 0 || statusFilters.length > 0) && (
-                    <Button variant="ghost" size="sm" onClick={reset} className="text-secondary-500">
-                      Clear all filters
-                    </Button>
-                  )}
-                </div>
-              </ContentCard>
-            )}
-
-            <ContentCard padding="none" className="overflow-hidden">
-              <CalendarGrid
-                posts={filteredPosts}
-                selectedDate={selectedDate}
-                onDateSelect={setSelectedDate}
-                onPostClick={setSelectedPost}
-                onPostDrop={handlePostDrop}
-                currentMonth={currentMonth}
-                onMonthChange={setCurrentMonth}
-              />
-            </ContentCard>
-          </PageContainer>
-        </div>
-
-        {/* Day Posts Panel */}
-        {selectedDate && (
-          <div className="sm:w-96 w-full fixed sm:relative inset-0 sm:inset-auto z-50 sm:z-auto bg-white border-l border-secondary-200 shadow-xl sm:shadow-none">
-            <DayPostsPanel
-              date={selectedDate}
-              posts={selectedDatePosts}
-              onClose={() => setSelectedDate(null)}
-              onEditPost={setEditingPost}
-              onDeletePost={handleDeletePost}
-              onReschedulePost={handleReschedule}
-            />
+              )}
+            </div>
           </div>
         )}
 
-        {/* Reschedule Modal */}
+        {/* View Mode Toggle Bar */}
+        <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-secondary-200">
+          <div className="flex items-center gap-2">
+            {/* View mode toggle */}
+            <div className="flex items-center gap-0.5 bg-secondary-100 rounded-lg p-0.5">
+              <button
+                onClick={() => setViewMode('month')}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                  viewMode === 'month'
+                    ? "bg-white text-secondary-900 shadow-sm"
+                    : "text-secondary-600 hover:text-secondary-900"
+                )}
+              >
+                <Calendar className="h-4 w-4" />
+                Month
+              </button>
+              <button
+                onClick={() => setViewMode('week')}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                  viewMode === 'week'
+                    ? "bg-white text-secondary-900 shadow-sm"
+                    : "text-secondary-600 hover:text-secondary-900"
+                )}
+              >
+                <CalendarDays className="h-4 w-4" />
+                Week
+              </button>
+              <button
+                onClick={() => setViewMode('grid')}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                  viewMode === 'grid'
+                    ? "bg-white text-secondary-900 shadow-sm"
+                    : "text-secondary-600 hover:text-secondary-900"
+                )}
+              >
+                <Grid3X3 className="h-4 w-4" />
+                Grid
+              </button>
+            </div>
+
+            {/* Sync indicator */}
+            {isSyncing && (
+              <div className="flex items-center gap-1.5 text-xs text-secondary-500 ml-3">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Syncing posts...
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Manual sync button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => syncMonthRange(currentMonth)}
+              disabled={isSyncing}
+              className="text-secondary-600 hover:text-secondary-900"
+            >
+              <RefreshCw className={cn("h-4 w-4 mr-1.5", isSyncing && "animate-spin")} />
+              Sync
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-hidden p-1 sm:p-4">
+          {viewMode === 'month' && (
+            <CalendarGrid
+              posts={filteredPosts}
+              selectedDate={selectedDate}
+              onDateSelect={setSelectedDate}
+              onPostClick={(post) => setEditingPost(post)}
+              onPostDrop={handlePostDrop}
+              currentMonth={currentMonth}
+              onMonthChange={setCurrentMonth}
+              isLoading={isInitialLoading}
+            />
+          )}
+          {viewMode === 'week' && (
+            <WeekView
+              posts={filteredPosts}
+              currentDate={currentMonth}
+              onDateChange={setCurrentMonth}
+              onPostClick={(post) => setEditingPost(post)}
+              onNewPost={(date, hour) => {
+                const prefillDate = new Date(date);
+                prefillDate.setHours(hour, 0, 0, 0);
+                router.push(`/c?date=${encodeURIComponent(prefillDate.toISOString())}`);
+              }}
+            />
+          )}
+          {viewMode === 'grid' && (
+            <GridView
+              posts={filteredPosts}
+              onPostClick={(post) => setEditingPost(post)}
+              selectedPlatform={gridPlatform}
+              onPlatformChange={setGridPlatform}
+            />
+          )}
+        </div>
+
+        {/* Day Posts Panel */}
+        {/* Day Posts Sidebar / Sheet */}
+        <Sheet open={!!selectedDate} onOpenChange={(open) => !open && setSelectedDate(null)}>
+          <SheetContent side="right" className="w-full sm:w-[400px] p-0 border-l border-secondary-200 shadow-2xl">
+            {selectedDate && (
+              <DayPostsPanel
+                date={selectedDate}
+                posts={selectedDatePosts}
+                onClose={() => setSelectedDate(null)}
+                onEditPost={(post) => {
+                  // Close sheet if needed or keep open depending on Edit Modal behavior?
+                  // Usually Edit Modal is top level, so it's fine.
+                  setEditingPost(post);
+                }}
+                onDeletePost={handleDeletePost}
+                onReschedulePost={handleReschedule}
+                onApprovePost={handleApprovePost}
+                onRejectPost={handleRejectPost}
+              />
+            )}
+          </SheetContent>
+        </Sheet>
+
+        {/* Modals */}
         {reschedulePost && (
           <RescheduleModal
             open={!!reschedulePost}
@@ -394,7 +392,6 @@ export default function OPage() {
           />
         )}
 
-        {/* Edit Post Modal */}
         <EditPostModal
           post={editingPost}
           isOpen={!!editingPost}
@@ -403,8 +400,36 @@ export default function OPage() {
             await updatePostAsync(postId, updates);
             setEditingPost(null);
           }}
+          onUpdateStatus={async (postId, status) => {
+            await updateStatus({ id: postId, status });
+            setEditingPost(null);
+          }}
         />
       </div>
     </ErrorBoundary>
   );
 }
+
+/**
+ * Calendar page with deep linking support
+ * URL params:
+ * - date: YYYY-MM-DD - Opens the calendar to this date and selects it
+ * 
+ * Examples:
+ * - /o - Calendar at current month
+ * - /o?date=2025-12-15 - Calendar showing December 2025 with Dec 15 selected
+ */
+export default function CalendarPage() {
+  return (
+    <Suspense fallback={
+      <PageContainer>
+        <div className="flex h-[60vh] items-center justify-center">
+          <Spinner />
+        </div>
+      </PageContainer>
+    }>
+      <OPage />
+    </Suspense>
+  );
+}
+

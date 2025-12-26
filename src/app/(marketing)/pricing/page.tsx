@@ -96,7 +96,7 @@ export default function PricingPage() {
             pricing
           </h1>
           <p className="text-lg sm:text-xl text-secondary-300 mb-10 max-w-2xl mx-auto leading-relaxed">
-            Start for free, upgrade as you grow. No surprise contracts or "contact us" for basic details.
+            Start for free, upgrade as you grow. No surprise contracts or &quot;contact us&quot; for basic details.
           </p>
 
           <div className="flex items-center justify-center gap-4 sm:gap-6">
@@ -345,7 +345,7 @@ export default function PricingPage() {
           <Accordion type="single" collapsible className="w-full space-y-4">
             <AccordionItem value="q1" className="border border-secondary-200 rounded-xl px-6">
               <AccordionTrigger className="text-base sm:text-lg font-medium py-5 hover:no-underline">
-                What counts as a "Workspace"?
+                What counts as a &quot;Workspace&quot;?
               </AccordionTrigger>
               <AccordionContent className="text-secondary-600 pb-5">
                 A workspace is a dedicated environment for a brand or client. It has its own social accounts, media library, team members, and content calendar.

@@ -73,11 +73,7 @@ export default function WorkflowsSettingsPage() {
     const [formSteps, setFormSteps] = useState<WorkflowStep[]>([]);
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => {
-        fetchWorkspaceId();
-    }, []);
-
-    const fetchWorkspaceId = async () => {
+    const fetchWorkspaceId = useCallback(async () => {
         try {
             const res = await fetch('/api/workspaces');
             const data = await res.json();
@@ -87,15 +83,13 @@ export default function WorkflowsSettingsPage() {
         } catch (error) {
             console.error('Failed to get workspace:', error);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        if (workspaceId) {
-            fetchWorkflows();
-        }
-    }, [workspaceId]);
+        fetchWorkspaceId();
+    }, [fetchWorkspaceId]);
 
-    const fetchWorkflows = async () => {
+    const fetchWorkflows = useCallback(async () => {
         if (!workspaceId) return;
 
         try {
@@ -108,7 +102,13 @@ export default function WorkflowsSettingsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [workspaceId]);
+
+    useEffect(() => {
+        if (workspaceId) {
+            fetchWorkflows();
+        }
+    }, [workspaceId, fetchWorkflows]);
 
     const resetForm = () => {
         setFormName("");

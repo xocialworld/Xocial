@@ -92,7 +92,7 @@ export default function SupportPage() {
 
               {status === 'success' && (
                 <div className="bg-green-50 text-green-700 p-3 rounded-md text-center text-sm font-medium">
-                  Message sent! We'll get back to you shortly.
+                  Message sent! We&apos;ll get back to you shortly.
                 </div>
               )}
             </form>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import Image from "next/image";
 import {
     X,
     Image as ImageIcon,
@@ -141,10 +142,11 @@ export function MediaDetailsDrawer({
                                     className="w-full h-full object-contain"
                                 />
                             ) : (
-                                <img
+                                <Image
                                     src={media.thumbnail_url || media.url}
                                     alt={media.filename}
-                                    className="w-full h-full object-contain"
+                                    fill
+                                    className="object-contain"
                                 />
                             )}
                         </div>

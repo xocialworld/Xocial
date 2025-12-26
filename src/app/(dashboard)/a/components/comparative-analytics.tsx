@@ -1,23 +1,17 @@
-/**
- * Comparative Analytics Component
- * Compare metrics across platforms and time periods
- */
+"use client";
 
-'use client';
-
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { ArrowUpRight, ArrowDownRight, TrendingUp } from 'lucide-react';
+} from "@/components/ui/select";
+import { ArrowUpRight, ArrowDownRight, TrendingUp, BarChart3, Calendar } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -27,96 +21,85 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  LineChart,
-  Line,
-} from 'recharts';
+} from "recharts";
+import { Spinner } from "@/components/ui/spinner";
 
 interface Props {
   workspaceId: string;
 }
 
 const PLATFORMS = [
-  { value: 'all', label: 'All Platforms' },
-  { value: 'facebook', label: 'Facebook' },
-  { value: 'instagram', label: 'Instagram' },
-  { value: 'twitter', label: 'Twitter' },
-  { value: 'linkedin', label: 'LinkedIn' },
-  { value: 'youtube', label: 'YouTube' },
-  { value: 'tiktok', label: 'TikTok' },
+  { value: "all", label: "All Platforms" },
+  { value: "facebook", label: "Facebook" },
+  { value: "instagram", label: "Instagram" },
+  { value: "twitter", label: "Twitter" },
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "youtube", label: "YouTube" },
+  { value: "tiktok", label: "TikTok" },
 ];
 
 const TIME_PERIODS = [
-  { value: '7', label: 'Last 7 Days' },
-  { value: '30', label: 'Last 30 Days' },
-  { value: '90', label: 'Last 90 Days' },
+  { value: "7", label: "Last 7 Days" },
+  { value: "30", label: "Last 30 Days" },
+  { value: "90", label: "Last 90 Days" },
 ];
 
-/**
- * Fetch analytics data for comparison
- */
 async function fetchComparativeData(
   workspaceId: string,
   platform: string,
   periodDays: string
 ) {
-  // Calculate date range from period
   const now = new Date();
   const to = now.toISOString();
   const from = new Date(now.getTime() - parseInt(periodDays) * 24 * 60 * 60 * 1000).toISOString();
 
-  const params = new URLSearchParams({
-    from,
-    to,
-  });
+  const params = new URLSearchParams({ from, to });
 
-  if (platform !== 'all') {
-    params.append('platform', platform);
+  if (platform !== "all") {
+    params.append("platform", platform);
   }
 
   const response = await fetch(`/api/analytics/platform-stats?${params}`);
   if (!response.ok) {
-    // Return empty data instead of throwing to prevent console errors
-    console.warn('Comparative analytics fetch failed:', response.status);
+    console.warn("Comparative analytics fetch failed:", response.status);
     return { success: true, data: [] };
   }
   return response.json();
 }
 
 export function ComparativeAnalytics({ workspaceId }: Props) {
-  const [selectedPlatform, setSelectedPlatform] = useState('all');
-  const [selectedPeriod, setSelectedPeriod] = useState('30');
-  const [comparisonPeriod, setComparisonPeriod] = useState('30');
+  const [selectedPlatform, setSelectedPlatform] = useState("all");
+  const [selectedPeriod, setSelectedPeriod] = useState("30");
+  const [comparisonPeriod, setComparisonPeriod] = useState("30");
 
-  // Fetch current period data
   const { data: currentData, isLoading: currentLoading } = useQuery({
-    queryKey: ['comparative-analytics', workspaceId, selectedPlatform, selectedPeriod],
+    queryKey: ["comparative-analytics", workspaceId, selectedPlatform, selectedPeriod],
     queryFn: () => fetchComparativeData(workspaceId, selectedPlatform, selectedPeriod),
+    staleTime: 5 * 60 * 1000,
   });
 
-  // Fetch comparison period data
   const { data: previousData, isLoading: previousLoading } = useQuery({
-    queryKey: ['comparative-analytics-previous', workspaceId, selectedPlatform, comparisonPeriod],
+    queryKey: ["comparative-analytics-previous", workspaceId, selectedPlatform, comparisonPeriod],
     queryFn: () => fetchComparativeData(workspaceId, selectedPlatform, comparisonPeriod),
+    staleTime: 5 * 60 * 1000,
   });
 
   const isLoading = currentLoading || previousLoading;
 
-  // Calculate comparisons
   const currentMetrics = currentData?.data?.platformStats || {};
   const previousMetrics = previousData?.data?.platformStats || {};
 
   const calculateChange = (current: number, previous: number) => {
-    if (previous === 0) return 0;
+    if (previous === 0) return current > 0 ? 100 : 0;
     return ((current - previous) / previous) * 100;
   };
 
   const formatChange = (change: number) => {
-    const sign = change > 0 ? '+' : '';
+    const sign = change > 0 ? "+" : "";
     return `${sign}${change.toFixed(1)}%`;
   };
 
-  // Platform comparison data
-  const platformComparisonData = PLATFORMS.filter((p) => p.value !== 'all').map((platform) => {
+  const platformComparisonData = PLATFORMS.filter((p) => p.value !== "all").map((platform) => {
     const current = currentMetrics[platform.value] || { engagement: 0, reach: 0, posts: 0 };
     const previous = previousMetrics[platform.value] || { engagement: 0, reach: 0, posts: 0 };
 
@@ -130,155 +113,162 @@ export function ComparativeAnalytics({ workspaceId }: Props) {
     };
   });
 
-  return (
-    <div className="space-y-6">
-      {/* Controls */}
-      <Card className="p-6">
-        <div className="flex flex-wrap gap-4">
-          <div>
-            <label className="text-sm font-medium text-secondary-700 mb-2 block">
-              Platform
-            </label>
-            <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PLATFORMS.map((platform) => (
-                  <SelectItem key={platform.value} value={platform.value}>
-                    {platform.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-secondary-700 mb-2 block">
-              Current Period
-            </label>
-            <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TIME_PERIODS.map((period) => (
-                  <SelectItem key={period.value} value={period.value}>
-                    {period.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-secondary-700 mb-2 block">
-              Compare To
-            </label>
-            <Select value={comparisonPeriod} onValueChange={setComparisonPeriod}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TIME_PERIODS.map((period) => (
-                  <SelectItem key={period.value} value={period.value}>
-                    Previous {period.label.toLowerCase()}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="rounded-xl border border-gray-100 bg-white/95 backdrop-blur-md p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900/95">
+          <p className="text-sm font-medium text-gray-500 mb-2">{label}</p>
+          <div className="space-y-2">
+            {payload.map((entry: any, index: number) => (
+              <div key={index} className="flex items-center gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                  <span className="text-gray-600 dark:text-gray-300">{entry.name}:</span>
+                </div>
+                <span className="font-semibold">{entry.value.toLocaleString()}</span>
+              </div>
+            ))}
           </div>
         </div>
-      </Card>
+      );
+    }
+    return null;
+  };
 
-      {/* Platform Comparison Chart */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold text-secondary-900 mb-6">
-          Platform Performance Comparison
-        </h3>
+  return (
+    <div className="space-y-6">
+      <Card className="border-secondary-100 shadow-sm hover:shadow-md transition-all duration-200 bg-white">
+        <CardHeader className="pb-4 border-b border-secondary-100">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-indigo-50 rounded-lg">
+                <TrendingUp className="h-5 w-5 text-indigo-600" />
+              </div>
+              <div>
+                <CardTitle className="text-xl">Period Comparison</CardTitle>
+                <CardDescription>Analyze performance shifts over time</CardDescription>
+              </div>
+            </div>
 
-        {isLoading ? (
-          <div className="h-[400px] flex items-center justify-center">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2"></div>
-              <p className="text-sm text-secondary-600">Loading comparison...</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
+                <SelectTrigger className="w-[140px] h-9 bg-white border-secondary-200">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PLATFORMS.map((platform) => (
+                    <SelectItem key={platform.value} value={platform.value}>{platform.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <Calendar className="w-4 h-4" />
+                <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+                  <SelectTrigger className="w-[130px] h-9 bg-white border-secondary-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIME_PERIODS.map((period) => (
+                      <SelectItem key={period.value} value={period.value}>{period.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span>vs</span>
+                <Select value={comparisonPeriod} onValueChange={setComparisonPeriod}>
+                  <SelectTrigger className="w-[130px] h-9 bg-white border-secondary-200">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIME_PERIODS.map((period) => (
+                      <SelectItem key={period.value} value={period.value}>Prev {period.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
-        ) : (
-          <ResponsiveContainer width="100%" height={400}>
-            <BarChart data={platformComparisonData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="platform" stroke="#6b7280" />
-              <YAxis stroke="#6b7280" />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#fff',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '8px',
-                }}
-              />
-              <Legend />
-              <Bar
-                dataKey="currentEngagement"
-                name="Current Period"
-                fill="#0ea5e9"
-                radius={[4, 4, 0, 0]}
-              />
-              <Bar
-                dataKey="previousEngagement"
-                name="Previous Period"
-                fill="#cbd5e1"
-                radius={[4, 4, 0, 0]}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
+        </CardHeader>
+
+        <CardContent className="pt-6">
+          <div className="grid gap-6 md:grid-cols-3 mb-8">
+            {["engagement", "reach", "posts"].map((metric) => {
+              const currentValue = Object.values(currentMetrics).reduce(
+                (sum: number, p: any) => sum + (p[metric] || 0), 0
+              );
+              const previousValue = Object.values(previousMetrics).reduce(
+                (sum: number, p: any) => sum + (p[metric] || 0), 0
+              );
+              const change = calculateChange(currentValue, previousValue);
+              const isPositive = change > 0;
+
+              return (
+                <div key={metric} className="rounded-xl border border-secondary-100 bg-secondary-50/50 p-4 hover:bg-white transition-colors duration-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium uppercase tracking-wider text-gray-500">{metric}</span>
+                    <Badge variant={isPositive ? "success" : "error"} className={`h-5 px-1.5 text-[10px] ${isPositive ? 'bg-success-100 text-success-700' : 'bg-error-100 text-error-700'} border-0 shadow-none`}>
+                      {isPositive ? <ArrowUpRight className="h-3 w-3 mr-0.5" /> : <ArrowDownRight className="h-3 w-3 mr-0.5" />}
+                      {Math.abs(change).toFixed(1)}%
+                    </Badge>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-secondary-900">
+                      {currentValue.toLocaleString()}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      from {previousValue.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="h-[350px] w-full mt-4">
+            {isLoading ? (
+              <div className="h-full flex items-center justify-center">
+                <Spinner />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={platformComparisonData} barGap={8}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" strokeOpacity={0.4} />
+                  <XAxis
+                    dataKey="platform"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "#6b7280", fontSize: 12 }}
+                    dy={10}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "#6b7280", fontSize: 12 }}
+                    dx={-10}
+                    tickFormatter={(val) => val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}
+                  />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.02)" }} />
+                  <Legend wrapperStyle={{ paddingTop: "20px" }} />
+                  <Bar
+                    dataKey="currentEngagement"
+                    name="Current Period"
+                    fill="#6366f1"
+                    radius={[4, 4, 0, 0]}
+                    barSize={32}
+                  />
+                  <Bar
+                    dataKey="previousEngagement"
+                    name="Previous Period"
+                    fill="#e2e8f0"
+                    radius={[4, 4, 0, 0]}
+                    barSize={32}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </CardContent>
       </Card>
-
-      {/* Metrics Grid */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {['engagement', 'reach', 'posts'].map((metric) => {
-          const currentValue = Object.values(currentMetrics).reduce(
-            (sum: number, p: any) => sum + (p[metric] || 0),
-            0
-          );
-          const previousValue = Object.values(previousMetrics).reduce(
-            (sum: number, p: any) => sum + (p[metric] || 0),
-            0
-          );
-          const change = calculateChange(currentValue, previousValue);
-          const isPositive = change > 0;
-
-          return (
-            <Card key={metric} className="p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <p className="text-sm text-secondary-600 capitalize">{metric}</p>
-                  <h3 className="text-3xl font-bold text-secondary-900 mt-1">
-                    {currentValue.toLocaleString()}
-                  </h3>
-                </div>
-                <div
-                  className={`flex items-center gap-1 text-sm font-medium ${isPositive ? 'text-success-600' : 'text-error-600'
-                    }`}
-                >
-                  {isPositive ? (
-                    <ArrowUpRight className="h-4 w-4" />
-                  ) : (
-                    <ArrowDownRight className="h-4 w-4" />
-                  )}
-                  {formatChange(change)}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 text-sm text-secondary-600">
-                <span>vs. previous period:</span>
-                <span className="font-medium">{previousValue.toLocaleString()}</span>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
     </div>
   );
 }

@@ -21,10 +21,11 @@ export async function GET(request: NextRequest) {
         const searchParams = request.nextUrl.searchParams;
         const contentItemId = searchParams.get('content_item_id');
         const workspaceId = searchParams.get('workspace_id');
+        const commentId = searchParams.get('id');
 
-        if (!contentItemId && !workspaceId) {
+        if (!contentItemId && !workspaceId && !commentId) {
             return NextResponse.json(
-                { error: 'content_item_id or workspace_id is required' },
+                { error: 'content_item_id, workspace_id, or id is required' },
                 { status: 400 }
             );
         }
@@ -46,6 +47,9 @@ export async function GET(request: NextRequest) {
       `)
             .order('created_at', { ascending: true });
 
+        if (commentId) {
+            query = query.eq('id', commentId);
+        }
         if (contentItemId) {
             query = query.eq('content_item_id', contentItemId);
         }
@@ -153,9 +157,89 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // TODO: Send notifications to mentioned users
-        if (mentions.length > 0) {
-            // Queue notification job
+        // Send notifications
+        // 1. Notify mentioned users
+        const mentionRegex = /@\[([^\]]+)\]\(([^)]+)\)/g; // Matches @[Name](userId) used by many editors, or adapt to frontend format
+        // Assuming simple mentions array is passed or we parse body. 
+        // The frontend passes 'mentions' array in body, let's use that for reliability if available.
+        const mentionedUserIds = Array.isArray(mentions) ? mentions : [];
+
+        // Also parse body for @mentions if frontend doesn't send explicit array, 
+        // or just rely on explicit array to avoid parsing issues.
+        // Let's stick to the explicit 'mentions' array from request body for now.
+
+        if (mentionedUserIds.length > 0) {
+            const { createNotification } = await import('@/lib/notifications');
+
+            await Promise.all(mentionedUserIds.map(async (mentionedUserId: string) => {
+                if (mentionedUserId === user.id) return; // Don't notify self
+
+                await createNotification({
+                    workspaceId: workspace_id,
+                    userId: mentionedUserId,
+                    type: 'mention',
+                    title: 'You were mentioned',
+                    message: `${user.user_metadata.full_name || 'Someone'} mentioned you in a comment`,
+                    data: {
+                        commentId: comment.id,
+                        contentItemId: content_item_id,
+                        actorId: user.id
+                    }
+                });
+            }));
+        }
+
+        // 2. Notify post author (if not self and not already mentioned)
+        // We need to fetch post author
+        const { data: post } = await supabase
+            .from('posts')
+            .select('created_by')
+            .eq('id', content_item_id)
+            .single();
+
+        if (post && post.created_by && post.created_by !== user.id && !mentionedUserIds.includes(post.created_by)) {
+            const { createNotification } = await import('@/lib/notifications');
+            await createNotification({
+                workspaceId: workspace_id,
+                userId: post.created_by,
+                type: 'comment_received',
+                title: 'New Comment',
+                message: `${user.user_metadata.full_name || 'Someone'} commented on your post`,
+                data: {
+                    commentId: comment.id,
+                    contentItemId: content_item_id,
+                    actorId: user.id
+                }
+            });
+        }
+
+        // 3. Notify parent comment author if reply (if not self, post author, or mentioned)
+        if (parent_id) {
+            const { data: parentComment } = await supabase
+                .from('content_comments')
+                .select('author_id')
+                .eq('id', parent_id)
+                .single();
+
+            if (parentComment &&
+                parentComment.author_id !== user.id &&
+                parentComment.author_id !== post?.created_by &&
+                !mentionedUserIds.includes(parentComment.author_id)) {
+
+                const { createNotification } = await import('@/lib/notifications');
+                await createNotification({
+                    workspaceId: workspace_id,
+                    userId: parentComment.author_id,
+                    type: 'comment_reply',
+                    title: 'New Reply',
+                    message: `${user.user_metadata.full_name || 'Someone'} replied to your comment`,
+                    data: {
+                        commentId: comment.id,
+                        contentItemId: content_item_id,
+                        actorId: user.id
+                    }
+                });
+            }
         }
 
         return NextResponse.json({

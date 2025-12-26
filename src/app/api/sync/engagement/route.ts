@@ -146,13 +146,13 @@ async function syncFacebookPost(platformPost: any) {
   if (!account) throw new Error('Facebook account not found');
 
   const client = await createFacebookClient(account.id);
-  
+
   // Get basic metrics
   const basicMetrics = await client.getPostMetrics(platformPost.platform_post_id);
-  
+
   // Get insights (including views)
   const insights = await client.getPostInsights(platformPost.platform_post_id);
-  
+
   return {
     ...basicMetrics,
     views: insights.views || 0,

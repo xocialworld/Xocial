@@ -360,6 +360,97 @@ export class TwitterClient {
 }
 
 /**
+ * Twitter-specific error types for better error categorization
+ */
+export type TwitterErrorType = 
+  | 'AUTH_ERROR'           // 401 - Token invalid/expired, needs reconnection
+  | 'RATE_LIMIT'           // 429 - Rate limited, retry later
+  | 'FORBIDDEN'            // 403 - Missing permissions
+  | 'CONTENT_ERROR'        // 400 - Content rejected (duplicate, etc.)
+  | 'MEDIA_ERROR'          // Media upload/processing failed
+  | 'SERVER_ERROR'         // 5xx - Twitter server error
+  | 'UNKNOWN';
+
+export interface TwitterError extends Error {
+  type: TwitterErrorType;
+  retryAfter?: number;  // Seconds until retry for rate limits
+  canRetry: boolean;
+  originalStatus?: number;
+}
+
+/**
+ * Create a typed Twitter error
+ */
+function createTwitterError(
+  message: string, 
+  type: TwitterErrorType, 
+  options?: { 
+    retryAfter?: number; 
+    originalStatus?: number;
+  }
+): TwitterError {
+  const error = new Error(message) as TwitterError;
+  error.type = type;
+  error.retryAfter = options?.retryAfter;
+  error.originalStatus = options?.originalStatus;
+  error.canRetry = ['RATE_LIMIT', 'SERVER_ERROR'].includes(type);
+  return error;
+}
+
+/**
+ * Categorize HTTP error responses into Twitter error types
+ */
+function categorizeTwitterError(status: number, errorText: string): { type: TwitterErrorType; message: string; retryAfter?: number } {
+  try {
+    const errorJson = JSON.parse(errorText);
+    const message = errorJson.detail || errorJson.title || errorJson.errors?.[0]?.message || errorText;
+    
+    switch (status) {
+      case 401:
+        return {
+          type: 'AUTH_ERROR',
+          message: `Twitter authentication failed: ${message}. Please reconnect your account.`,
+        };
+      case 403:
+        return {
+          type: 'FORBIDDEN',
+          message: `Twitter access denied: ${message}. Check your app has the required permissions.`,
+        };
+      case 429: {
+        // Extract retry-after if available
+        const retryMatch = errorText.match(/retryAfter[=:](\d+)/);
+        return {
+          type: 'RATE_LIMIT',
+          message: `Twitter rate limit exceeded: ${message}`,
+          retryAfter: retryMatch ? parseInt(retryMatch[1]) : 60,
+        };
+      }
+      case 400:
+        return {
+          type: 'CONTENT_ERROR',
+          message: `Twitter rejected content: ${message}`,
+        };
+      default:
+        if (status >= 500) {
+          return {
+            type: 'SERVER_ERROR',
+            message: `Twitter server error: ${message}`,
+          };
+        }
+        return {
+          type: 'UNKNOWN',
+          message: message || `Twitter API error: ${status}`,
+        };
+    }
+  } catch {
+    return {
+      type: status >= 500 ? 'SERVER_ERROR' : 'UNKNOWN',
+      message: errorText || `Twitter API error: ${status}`,
+    };
+  }
+}
+
+/**
  * Factory function to create Twitter client
  */
 export async function createTwitterClient(accountId: string): Promise<TwitterClient> {
@@ -376,21 +467,43 @@ export async function createTwitterClient(accountId: string): Promise<TwitterCli
     .single();
 
   if (error || !account) {
-    throw new Error(`Twitter account not found: ${accountId}`);
+    throw createTwitterError(
+      `Twitter account not found: ${accountId}`,
+      'AUTH_ERROR',
+      { originalStatus: 404 }
+    );
   }
 
-  let accessToken = decryptToken(account.access_token);
+  let accessToken: string;
+  
+  try {
+    accessToken = decryptToken(account.access_token);
+  } catch (decryptError) {
+    console.error('[Twitter] Failed to decrypt access token:', decryptError);
+    throw createTwitterError(
+      'Failed to decrypt Twitter access token. Please reconnect your account.',
+      'AUTH_ERROR'
+    );
+  }
 
   // Check if token is expired (or close to expiring)
-  const expiresAt = new Date(account.token_expires_at);
+  const expiresAt = account.token_expires_at ? new Date(account.token_expires_at) : null;
   const now = new Date();
+  
   // Refresh if expired or expiring in next 5 minutes
-  if (expiresAt.getTime() - now.getTime() < 5 * 60 * 1000) {
-    try {
-      if (!account.refresh_token) {
-        throw new Error('No refresh token available');
-      }
+  const needsRefresh = expiresAt && (expiresAt.getTime() - now.getTime() < 5 * 60 * 1000);
+  
+  if (needsRefresh) {
+    console.log('[Twitter] Token expired or expiring soon, attempting refresh...');
+    
+    if (!account.refresh_token) {
+      throw createTwitterError(
+        'Twitter token expired and no refresh token available. Please reconnect your account.',
+        'AUTH_ERROR'
+      );
+    }
 
+    try {
       const refreshToken = decryptToken(account.refresh_token);
       const config: TwitterOAuthConfig = {
         clientId: process.env.TWITTER_CLIENT_ID!,
@@ -406,25 +519,53 @@ export async function createTwitterClient(accountId: string): Promise<TwitterCli
         ? encryptToken(tokenResponse.refresh_token)
         : account.refresh_token; // Keep old if not rotated
 
+      const newExpiresAt = new Date(Date.now() + (tokenResponse.expires_in * 1000)).toISOString();
+
       await supabase
         .from('social_accounts')
         .update({
           access_token: encryptedAccessToken,
           refresh_token: encryptedRefreshToken,
-          token_expires_at: new Date(Date.now() + (tokenResponse.expires_in * 1000)).toISOString(),
+          token_expires_at: newExpiresAt,
           updated_at: new Date().toISOString(),
         })
         .eq('id', accountId);
 
+      console.log('[Twitter] Token refreshed successfully, new expiry:', newExpiresAt);
       accessToken = tokenResponse.access_token;
-    } catch (refreshError) {
-      console.error('Failed to refresh Twitter token:', refreshError);
-      // Continue with old token, it might still work or throw 401 later
+    } catch (refreshError: any) {
+      console.error('[Twitter] Token refresh failed:', refreshError);
+      
+      // If refresh fails with auth error, account needs reconnection
+      if (refreshError.message?.includes('invalid_grant') || 
+          refreshError.message?.includes('invalid_request') ||
+          refreshError.originalStatus === 401) {
+        
+        // Mark account as needing reconnection
+        await supabase
+          .from('social_accounts')
+          .update({
+            status: 'needs_reconnection',
+            error_message: 'Token refresh failed. Please reconnect your account.',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', accountId);
+        
+        throw createTwitterError(
+          'Twitter token refresh failed. Please reconnect your account.',
+          'AUTH_ERROR'
+        );
+      }
+      
+      // For other errors, try with the existing token (it might work)
+      console.warn('[Twitter] Using existing token despite refresh failure');
     }
   }
 
   return new TwitterClient(accessToken);
 }
+
+export { createTwitterError, categorizeTwitterError };
 
 
 export async function getTwitterTweetMetrics(accessToken: string, tweetId: string) {
@@ -453,39 +594,82 @@ export async function getTwitterUserTweets(accessToken: string, userId: string, 
 
   console.log('[Twitter] Fetching user tweets for userId:', userId);
 
-  const response = await fetch(`${url}?${params}`, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-    },
-  });
+  // Retry a few times on rate limit / transient failures (serverless-safe short backoff)
+  let lastResponse: Response | null = null;
+  let lastBody = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await fetch(`${url}?${params}`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[Twitter] Failed to fetch user tweets:', response.status, errorText);
+    lastResponse = response;
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log('[Twitter] Received tweets:', data.data?.length || 0);
+
+      // Attach includes to each tweet for media resolution
+      const tweets = data.data || [];
+      const includes = data.includes || {};
+
+      // Map media to tweets
+      return tweets.map((tweet: any) => {
+        if (tweet.attachments?.media_keys?.length > 0 && includes.media) {
+          tweet.media = includes.media.filter((m: any) =>
+            tweet.attachments.media_keys.includes(m.media_key)
+          );
+        }
+        return tweet;
+      });
+    }
+
+    lastBody = await response.text();
+    const status = response.status;
+    console.error('[Twitter] Failed to fetch user tweets:', status, lastBody);
+
+    // Rate limit: short exponential backoff (don’t sleep long in API routes)
+    if (status === 429 || status >= 500) {
+      // Prefer using Twitter-provided retry info when available
+      const retryAfterHeader = response.headers.get('retry-after');
+      const rateResetHeader = response.headers.get('x-rate-limit-reset');
+      if (status === 429) {
+        // If we have explicit retry info, surface it in the error string so callers can act on it.
+        const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : null;
+        const resetEpochSeconds = rateResetHeader ? Number(rateResetHeader) : null;
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        const untilResetSeconds =
+          resetEpochSeconds && resetEpochSeconds > nowSeconds
+            ? resetEpochSeconds - nowSeconds
+            : null;
+        const suggested = retryAfterSeconds ?? untilResetSeconds ?? null;
+        if (suggested !== null) {
+          // Encode as "429;retryAfter=NN" so upstream can parse
+          throw new Error(`Failed to fetch user tweets: 429;retryAfter=${suggested}`);
+        }
+      }
+      const delayMs = 500 * Math.pow(2, attempt); // 500, 1000, 2000
+      await new Promise((r) => setTimeout(r, delayMs));
+      continue;
+    }
+
+    // Non-retriable error
     try {
-      const error = JSON.parse(errorText);
-      throw new Error(error.detail || error.errors?.[0]?.message || 'Failed to fetch user tweets');
+      const error = JSON.parse(lastBody);
+      throw new Error(error.detail || error.errors?.[0]?.message || `Failed to fetch user tweets: ${status}`);
     } catch {
-      throw new Error(`Failed to fetch user tweets: ${response.status}`);
+      throw new Error(`Failed to fetch user tweets: ${status}`);
     }
   }
 
-  const data = await response.json();
-  console.log('[Twitter] Received tweets:', data.data?.length || 0);
-
-  // Attach includes to each tweet for media resolution
-  const tweets = data.data || [];
-  const includes = data.includes || {};
-
-  // Map media to tweets
-  return tweets.map((tweet: any) => {
-    if (tweet.attachments?.media_keys?.length > 0 && includes.media) {
-      tweet.media = includes.media.filter((m: any) =>
-        tweet.attachments.media_keys.includes(m.media_key)
-      );
-    }
-    return tweet;
-  });
+  const status = lastResponse?.status ?? 0;
+  try {
+    const error = JSON.parse(lastBody);
+    throw new Error(error.detail || error.errors?.[0]?.message || `Failed to fetch user tweets: ${status}`);
+  } catch {
+    throw new Error(`Failed to fetch user tweets: ${status}`);
+  }
 }
 
 export const getTweetMetrics = getTwitterTweetMetrics;

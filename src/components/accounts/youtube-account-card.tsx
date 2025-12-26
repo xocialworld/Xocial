@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -45,7 +45,7 @@ export function YouTubeAccountCard({ account, onDisconnect, onSync }: YouTubeAcc
     } | null>(null);
     const [loadingStats, setLoadingStats] = useState(false);
 
-    const fetchStats = async () => {
+    const fetchStats = useCallback(async () => {
         setLoadingStats(true);
         try {
             const response = await fetch(`/api/youtube/${account.id}/stats`);
@@ -58,12 +58,12 @@ export function YouTubeAccountCard({ account, onDisconnect, onSync }: YouTubeAcc
         } finally {
             setLoadingStats(false);
         }
-    };
+    }, [account.id]);
 
     // Fetch stats on mount
     useEffect(() => {
         fetchStats();
-    }, [account.id]);
+    }, [fetchStats]);
 
     // Check token expiration status
     const tokenExpiresAt = new Date(account.token_expires_at);

@@ -64,7 +64,7 @@ export default function CollaboratePage() {
                 <MessageSquare className="h-6 w-6 text-purple-600" />
               </div>
               <h3 className="text-xl font-bold text-secondary-900 mb-3">Contextual Comments</h3>
-              <p className="text-secondary-600 mb-6 leading-relaxed">No more "see email regarding the third post on Tuesday". Comment directly on the post preview.</p>
+              <p className="text-secondary-600 mb-6 leading-relaxed">No more &quot;see email regarding the third post on Tuesday&quot;. Comment directly on the post preview.</p>
               <ul className="space-y-3">
                 <li className="flex items-center gap-3 text-sm font-medium text-secondary-700"><CheckCircle2 className="h-5 w-5 text-purple-600 flex-shrink-0" /> Threaded conversations</li>
                 <li className="flex items-center gap-3 text-sm font-medium text-secondary-700"><CheckCircle2 className="h-5 w-5 text-purple-600 flex-shrink-0" /> Resolve to archive</li>
@@ -79,7 +79,7 @@ export default function CollaboratePage() {
                 <Lock className="h-6 w-6 text-yellow-600" />
               </div>
               <h3 className="text-xl font-bold text-secondary-900 mb-3">Internal Notes</h3>
-              <p className="text-secondary-600 mb-6 leading-relaxed">Keep team chatter private. Toggle comments as "Internal" so clients only see what they need to.</p>
+              <p className="text-secondary-600 mb-6 leading-relaxed">Keep team chatter private. Toggle comments as &quot;Internal&quot; so clients only see what they need to.</p>
               <ul className="space-y-3">
                 <li className="flex items-center gap-3 text-sm font-medium text-secondary-700"><CheckCircle2 className="h-5 w-5 text-yellow-600 flex-shrink-0" /> Private team layer</li>
                 <li className="flex items-center gap-3 text-sm font-medium text-secondary-700"><CheckCircle2 className="h-5 w-5 text-yellow-600 flex-shrink-0" /> Client-safe views</li>

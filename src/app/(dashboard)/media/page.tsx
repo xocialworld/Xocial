@@ -39,6 +39,7 @@ import { MediaUploadModal } from '@/components/media/media-upload-modal';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { useSelectedWorkspace } from '@/store/workspaceStore';
+import { PageHeader, PageContainer } from '@/components/shared/page-components';
 
 interface MediaFile {
   id: string;
@@ -189,22 +190,18 @@ export default function MediaLibraryPage() {
   };
 
   return (
-    <div className="p-8">
+    <PageContainer>
       {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-secondary-900">Media Library</h1>
-            <p className="mt-2 text-secondary-600">
-              Manage all your images and videos in one place
-            </p>
-          </div>
+      <PageHeader
+        title="Media Library"
+        description="Manage all your images and videos in one place"
+        actions={
           <Button onClick={() => setShowUploadModal(true)}>
             <Upload className="mr-2 h-5 w-5" />
             Upload Media
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Toolbar */}
       <div className="mb-6 flex flex-wrap items-center gap-4">
@@ -261,21 +258,25 @@ export default function MediaLibraryPage() {
             variant={view === 'grid' ? 'primary' : 'ghost'}
             size="sm"
             onClick={() => setView('grid')}
+            className="h-8 w-8 p-0"
           >
             <Grid3x3 className="h-4 w-4" />
+            <span className="sr-only">Grid view</span>
           </Button>
           <Button
             variant={view === 'list' ? 'primary' : 'ghost'}
             size="sm"
             onClick={() => setView('list')}
+            className="h-8 w-8 p-0"
           >
             <List className="h-4 w-4" />
+            <span className="sr-only">List view</span>
           </Button>
         </div>
 
         {/* Bulk actions */}
         {selectedFiles.size > 0 && (
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center gap-2 ml-auto w-full sm:w-auto mt-2 sm:mt-0 justify-end">
             <Badge variant="secondary">
               {selectedFiles.size} selected
             </Badge>
@@ -286,7 +287,7 @@ export default function MediaLibraryPage() {
               disabled={deleteMutation.isPending}
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete Selected
+              Delete
             </Button>
             <Button
               variant="ghost"
@@ -318,7 +319,7 @@ export default function MediaLibraryPage() {
           <p className="text-secondary-600 mb-4">
             {searchQuery ? 'No media found' : 'No media uploaded yet'}
           </p>
-          <Button>
+          <Button onClick={() => setShowUploadModal(true)}>
             <Upload className="mr-2 h-5 w-5" />
             Upload Your First Media
           </Button>
@@ -359,8 +360,8 @@ export default function MediaLibraryPage() {
                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="text-white hover:bg-white/20"
+                    size="icon"
+                    className="text-white hover:bg-white/20 h-8 w-8"
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedMedia(file);
@@ -371,8 +372,8 @@ export default function MediaLibraryPage() {
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="text-white hover:bg-white/20"
+                    size="icon"
+                    className="text-white hover:bg-white/20 h-8 w-8"
                     onClick={(e) => {
                       e.stopPropagation();
                       handlePreview(file);
@@ -382,8 +383,8 @@ export default function MediaLibraryPage() {
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="text-white hover:bg-white/20"
+                    size="icon"
+                    className="text-white hover:bg-white/20 h-8 w-8"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleDownloadSingle(file);
@@ -393,8 +394,8 @@ export default function MediaLibraryPage() {
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="text-white hover:bg-white/20"
+                    size="icon"
+                    className="text-white hover:bg-white/20 h-8 w-8"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (confirm('Delete this media?')) {
@@ -549,7 +550,7 @@ export default function MediaLibraryPage() {
         }}
         isDeleting={deleteMutation.isPending}
       />
-    </div>
+    </PageContainer>
   );
 }
 

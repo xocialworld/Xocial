@@ -77,9 +77,16 @@ export async function GET(request: NextRequest) {
             console.warn('[LinkedIn Callback] No organization access:', error);
         }
 
-        // Get user's workspace
-        const workspace = await getUserWorkspace(user.id, supabase);
-        console.log(`[LinkedIn Callback] User workspace: ${workspace.id}`);
+        // Get user's workspace context from state
+        let workspaceId = stateVerification.workspaceId;
+
+        if (!workspaceId) {
+            console.warn('[LinkedIn Callback] No workspaceId in state, falling back to default workspace');
+            const workspace = await getUserWorkspace(user.id, supabase);
+            workspaceId = workspace.id;
+        }
+
+        console.log(`[LinkedIn Callback] Target workspace ID: ${workspaceId}`);
 
         // Encrypt tokens before storing
         const encryptedAccessToken = encryptToken(tokenResponse.access_token);
@@ -92,7 +99,7 @@ export async function GET(request: NextRequest) {
             .from('social_accounts')
             .upsert(
                 {
-                    workspace_id: workspace.id,
+                    workspace_id: workspaceId,
                     platform: 'linkedin',
                     assigned_user_id: user.id,
                     account_id: profile.sub,
@@ -137,7 +144,7 @@ export async function GET(request: NextRequest) {
                     .from('social_accounts')
                     .upsert(
                         {
-                            workspace_id: workspace.id,
+                            workspace_id: workspaceId,
                             platform: 'linkedin',
                             assigned_user_id: user.id,
                             account_id: org.id,

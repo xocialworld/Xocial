@@ -23,6 +23,119 @@ export interface YouTubeVideo {
   publishAt?: string; // ISO 8601 timestamp for scheduled publishing
 }
 
+/**
+ * YouTube-specific error types for better error categorization
+ */
+export type YouTubeErrorType = 
+  | 'AUTH_ERROR'           // 401 - Token invalid/expired, needs reconnection
+  | 'QUOTA_EXCEEDED'       // 403 with quotaExceeded - Daily quota reached
+  | 'FORBIDDEN'            // 403 - Missing permissions or channel issues
+  | 'CONTENT_ERROR'        // 400 - Content rejected (policy violation, etc.)
+  | 'UPLOAD_ERROR'         // Upload specific failures
+  | 'RATE_LIMIT'           // Too many requests
+  | 'SERVER_ERROR'         // 5xx - YouTube server error
+  | 'NOT_FOUND'            // 404 - Video/channel not found
+  | 'UNKNOWN';
+
+export interface YouTubeError extends Error {
+  type: YouTubeErrorType;
+  reason?: string;
+  canRetry: boolean;
+  quotaInfo?: {
+    dailyLimit?: number;
+    remaining?: number;
+  };
+}
+
+/**
+ * Create a typed YouTube error
+ */
+function createYouTubeError(
+  message: string, 
+  type: YouTubeErrorType, 
+  options?: { 
+    reason?: string;
+    quotaInfo?: { dailyLimit?: number; remaining?: number };
+  }
+): YouTubeError {
+  const error = new Error(message) as YouTubeError;
+  error.type = type;
+  error.reason = options?.reason;
+  error.quotaInfo = options?.quotaInfo;
+  error.canRetry = ['SERVER_ERROR', 'RATE_LIMIT'].includes(type);
+  return error;
+}
+
+/**
+ * Categorize YouTube API errors
+ */
+function categorizeYouTubeError(status: number, errorData: any): { type: YouTubeErrorType; message: string; reason?: string } {
+  const errorReason = errorData.error?.errors?.[0]?.reason || '';
+  const errorMessage = errorData.error?.message || errorData.message || `YouTube API error: ${status}`;
+  
+  switch (status) {
+    case 401:
+      return {
+        type: 'AUTH_ERROR',
+        message: `YouTube authentication failed: ${errorMessage}. Please reconnect your account.`,
+        reason: errorReason,
+      };
+    case 403:
+      // Check for quota exceeded
+      if (errorReason === 'quotaExceeded' || errorMessage.includes('quota')) {
+        return {
+          type: 'QUOTA_EXCEEDED',
+          message: 'YouTube API daily quota exceeded. Please try again tomorrow.',
+          reason: errorReason,
+        };
+      }
+      // Check for channel-related issues
+      if (errorReason === 'channelNotFound' || errorReason === 'channelClosed') {
+        return {
+          type: 'FORBIDDEN',
+          message: 'YouTube channel not found or is closed. Please verify your channel.',
+          reason: errorReason,
+        };
+      }
+      return {
+        type: 'FORBIDDEN',
+        message: `YouTube access denied: ${errorMessage}. Verify your channel has the required permissions.`,
+        reason: errorReason,
+      };
+    case 404:
+      return {
+        type: 'NOT_FOUND',
+        message: `YouTube resource not found: ${errorMessage}`,
+        reason: errorReason,
+      };
+    case 400:
+      return {
+        type: 'CONTENT_ERROR',
+        message: `YouTube rejected the request: ${errorMessage}`,
+        reason: errorReason,
+      };
+    case 429:
+      return {
+        type: 'RATE_LIMIT',
+        message: 'Too many requests to YouTube API. Please wait and try again.',
+        reason: errorReason,
+      };
+    default:
+      if (status >= 500) {
+        return {
+          type: 'SERVER_ERROR',
+          message: `YouTube server error: ${errorMessage}`,
+          reason: errorReason,
+        };
+      }
+      return {
+        type: 'UNKNOWN',
+        message: errorMessage,
+        reason: errorReason,
+      };
+  }
+}
+
 export class YouTubeClient {
   private baseUrl = 'https://www.googleapis.com/youtube/v3';
   private uploadUrl = 'https://www.googleapis.com/upload/youtube/v3';
@@ -32,6 +145,42 @@ export class YouTubeClient {
   constructor(config: YouTubeConfig) {
     this.accessToken = config.accessToken;
     this.channelId = config.channelId;
+  }
+
+  /**
+   * Internal method to make API requests with error handling
+   */
+  private async makeRequest<T>(
+    url: string, 
+    options: RequestInit = {}
+  ): Promise<T> {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${this.accessToken}`,
+        ...options.headers,
+      },
+    });
+
+    if (!response.ok) {
+      let errorData: any = {};
+      try {
+        errorData = await response.json();
+      } catch {
+        errorData = { message: response.statusText };
+      }
+
+      const categorized = categorizeYouTubeError(response.status, errorData);
+      throw createYouTubeError(categorized.message, categorized.type, { reason: categorized.reason });
+    }
+
+    // Handle empty responses (like DELETE)
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      return response.json();
+    }
+    
+    return {} as T;
   }
 
   /**
@@ -59,6 +208,8 @@ export class YouTubeClient {
       },
     };
 
+    console.log('[YouTube] Initializing video upload:', { title: video.title, privacy: video.privacyStatus });
+
     const initResponse = await fetch(`${url}?${params}`, {
       method: 'POST',
       headers: {
@@ -69,20 +220,37 @@ export class YouTubeClient {
     });
 
     if (!initResponse.ok) {
-      const error = await initResponse.json();
-      throw new Error(error.error?.message || 'Failed to initialize YouTube upload');
+      let errorData: any = {};
+      try {
+        errorData = await initResponse.json();
+      } catch {
+        errorData = { message: 'Failed to initialize upload' };
+      }
+      
+      const categorized = categorizeYouTubeError(initResponse.status, errorData);
+      console.error('[YouTube] Upload initialization failed:', categorized);
+      throw createYouTubeError(categorized.message, categorized.type, { reason: categorized.reason });
     }
 
     // Get upload URL from location header
     const uploadUrl = initResponse.headers.get('location');
     if (!uploadUrl) {
-      throw new Error('No upload URL received from YouTube');
+      throw createYouTubeError('No upload URL received from YouTube', 'UPLOAD_ERROR');
     }
 
+    console.log('[YouTube] Upload session initialized, fetching video file...');
+
     // Step 2: Upload video file
-    // In production, this would stream the file from video.videoUrl
     const videoResponse = await fetch(video.videoUrl);
+    if (!videoResponse.ok) {
+      throw createYouTubeError(
+        `Failed to fetch video file from source: ${video.videoUrl}`,
+        'UPLOAD_ERROR'
+      );
+    }
+
     const videoBlob = await videoResponse.blob();
+    console.log('[YouTube] Video file fetched, size:', videoBlob.size, 'bytes');
 
     const uploadResponse = await fetch(uploadUrl, {
       method: 'PUT',
@@ -93,11 +261,20 @@ export class YouTubeClient {
     });
 
     if (!uploadResponse.ok) {
-      const error = await uploadResponse.json();
-      throw new Error(error.error?.message || 'Failed to upload video to YouTube');
+      let errorData: any = {};
+      try {
+        errorData = await uploadResponse.json();
+      } catch {
+        errorData = { message: 'Upload failed' };
+      }
+      
+      const categorized = categorizeYouTubeError(uploadResponse.status, errorData);
+      console.error('[YouTube] Video upload failed:', categorized);
+      throw createYouTubeError(categorized.message, categorized.type, { reason: categorized.reason });
     }
 
     const data = await uploadResponse.json();
+    console.log('[YouTube] Video uploaded successfully:', data.id);
     return { id: data.id };
   }
 
@@ -127,49 +304,35 @@ export class YouTubeClient {
       if (updates.publishAt) body.status.publishAt = updates.publishAt;
     }
 
-    const response = await fetch(`${url}?${params}`, {
+    return this.makeRequest(`${url}?${params}`, {
       method: 'PUT',
       headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || 'Failed to update YouTube video');
-    }
-
-    return response.json();
   }
 
   /**
    * Get video statistics
    */
-  async getVideoStats(videoId: string): Promise<any> {
+  async getVideoStats(videoId: string): Promise<{
+    views: number;
+    likes: number;
+    comments: number;
+    favorites: number;
+  }> {
     const url = `${this.baseUrl}/videos`;
     const params = new URLSearchParams({
       part: 'statistics,snippet',
       id: videoId,
     });
 
-    const response = await fetch(`${url}?${params}`, {
-      headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || 'Failed to fetch YouTube video stats');
-    }
-
-    const data = await response.json();
+    const data = await this.makeRequest<any>(`${url}?${params}`);
     const video = data.items?.[0];
 
     if (!video) {
-      throw new Error('Video not found');
+      throw createYouTubeError('Video not found', 'NOT_FOUND');
     }
 
     return {
@@ -190,18 +353,7 @@ export class YouTubeClient {
       id: this.channelId,
     });
 
-    const response = await fetch(`${url}?${params}`, {
-      headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || 'Failed to fetch YouTube channel info');
-    }
-
-    const data = await response.json();
+    const data = await this.makeRequest<any>(`${url}?${params}`);
     return data.items?.[0];
   }
 
@@ -214,17 +366,9 @@ export class YouTubeClient {
       id: videoId,
     });
 
-    const response = await fetch(`${url}?${params}`, {
+    await this.makeRequest(`${url}?${params}`, {
       method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-      },
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || 'Failed to delete YouTube video');
-    }
 
     return { success: true };
   }
@@ -256,16 +400,45 @@ export async function createYouTubeClient(accountId: string): Promise<YouTubeCli
     .single();
 
   if (error || !account) {
-    throw new Error('YouTube account not found');
+    throw createYouTubeError(
+      `YouTube account not found: ${accountId}`,
+      'AUTH_ERROR'
+    );
   }
 
   if (!account.is_active) {
-    throw new Error('YouTube account is not active. Please reconnect.');
+    throw createYouTubeError(
+      'YouTube account is not active. Please reconnect.',
+      'AUTH_ERROR'
+    );
   }
 
+  let accessToken: string;
+
   // Check if token is expired and refresh if possible
-  if (account.token_expires_at && new Date(account.token_expires_at) < new Date()) {
-    if (account.refresh_token) {
+  const tokenExpired = account.token_expires_at && new Date(account.token_expires_at) < new Date();
+  
+  if (tokenExpired) {
+    console.log('[YouTube] Token expired, attempting refresh...');
+    
+    if (!account.refresh_token) {
+      // Mark account as needing reconnection
+      await supabase
+        .from('social_accounts')
+        .update({
+          status: 'needs_reconnection',
+          error_message: 'Access token expired and no refresh token available.',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', accountId);
+
+      throw createYouTubeError(
+        'YouTube access token has expired. Please reconnect your account.',
+        'AUTH_ERROR'
+      );
+    }
+
+    try {
       // Attempt to refresh the token
       const config = {
         clientId: process.env.YOUTUBE_CLIENT_ID!,
@@ -282,29 +455,52 @@ export async function createYouTubeClient(accountId: string): Promise<YouTubeCli
         ? encryptToken(newTokens.refresh_token)
         : account.refresh_token;
 
+      const newExpiresAt = new Date(Date.now() + newTokens.expires_in * 1000).toISOString();
+
       await supabase
         .from('social_accounts')
         .update({
           access_token: encryptedAccessToken,
           refresh_token: encryptedRefreshToken,
-          token_expires_at: new Date(Date.now() + newTokens.expires_in * 1000).toISOString(),
+          token_expires_at: newExpiresAt,
+          status: 'active',
+          error_message: null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', accountId);
 
-      // Use the new token
-      const accessToken = newTokens.access_token;
-      return new YouTubeClient({
-        accessToken,
-        channelId: account.account_id,
-      });
-    } else {
-      throw new Error('YouTube access token has expired. Please reconnect your account.');
+      console.log('[YouTube] Token refreshed successfully, new expiry:', newExpiresAt);
+      accessToken = newTokens.access_token;
+    } catch (refreshError: any) {
+      console.error('[YouTube] Token refresh failed:', refreshError);
+
+      // Mark account as needing reconnection
+      await supabase
+        .from('social_accounts')
+        .update({
+          status: 'needs_reconnection',
+          error_message: 'Token refresh failed. Please reconnect your account.',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', accountId);
+
+      throw createYouTubeError(
+        'Failed to refresh YouTube token. Please reconnect your account.',
+        'AUTH_ERROR'
+      );
+    }
+  } else {
+    // Decrypt access token
+    try {
+      accessToken = decryptToken(account.access_token);
+    } catch (decryptError) {
+      console.error('[YouTube] Failed to decrypt access token:', decryptError);
+      throw createYouTubeError(
+        'Failed to decrypt YouTube access token. Please reconnect your account.',
+        'AUTH_ERROR'
+      );
     }
   }
-
-  // Decrypt access token
-  const accessToken = decryptToken(account.access_token);
 
   return new YouTubeClient({
     accessToken,
@@ -325,22 +521,19 @@ export async function publishToYouTube(config: {
   privacyStatus?: 'public' | 'unlisted' | 'private';
   thumbnailUrl?: string;
 }): Promise<{ id: string; url: string }> {
+  console.log('[YouTube] Publishing video:', { 
+    accountId: config.accountId, 
+    title: config.title,
+    privacy: config.privacyStatus 
+  });
+
   const client = await createYouTubeClient(config.accountId);
 
-  // Fetch video file
-  const videoResponse = await fetch(config.videoUrl);
-  if (!videoResponse.ok) {
-    throw new Error(`Failed to fetch video file from ${config.videoUrl}`);
-  }
-
-  const videoBlob = await videoResponse.blob();
-
   // Upload video
-  // client.uploadVideo expects a YouTubeVideo object
   const result = await client.uploadVideo({
     title: config.title,
     description: config.description,
-    videoUrl: config.videoUrl, // Pass the URL instead of the blob
+    videoUrl: config.videoUrl,
     tags: config.tags,
     categoryId: config.categoryId,
     privacyStatus: config.privacyStatus || 'public',
@@ -350,9 +543,10 @@ export async function publishToYouTube(config: {
   if (config.thumbnailUrl && result.id) {
     try {
       await setYouTubeVideoThumbnail(client['accessToken'], result.id, config.thumbnailUrl);
+      console.log('[YouTube] Thumbnail uploaded for video:', result.id);
     } catch (error) {
       // Log but don't fail the whole operation
-      console.warn('Failed to upload thumbnail:', error);
+      console.warn('[YouTube] Failed to upload thumbnail:', error);
     }
   }
 
@@ -362,3 +556,5 @@ export async function publishToYouTube(config: {
   };
 }
 
+// Export error utilities
+export { createYouTubeError, categorizeYouTubeError };

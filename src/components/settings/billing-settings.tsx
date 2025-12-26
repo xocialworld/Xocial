@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,11 +72,7 @@ export function BillingSettings({ workspaceId }: BillingSettingsProps) {
     const [upgrading, setUpgrading] = useState<string | null>(null);
     const [showHistory, setShowHistory] = useState(false);
 
-    useEffect(() => {
-        fetchSubscription();
-    }, [workspaceId]);
-
-    const fetchSubscription = async () => {
+    const fetchSubscription = useCallback(async () => {
         try {
             const res = await fetch(`/api/billing/subscription?workspace_id=${workspaceId}`);
             const data = await res.json();
@@ -89,7 +85,11 @@ export function BillingSettings({ workspaceId }: BillingSettingsProps) {
         } finally {
             setLoading(false);
         }
-    };
+    }, [workspaceId]);
+
+    useEffect(() => {
+        fetchSubscription();
+    }, [fetchSubscription]);
 
     const fetchHistory = async () => {
         try {

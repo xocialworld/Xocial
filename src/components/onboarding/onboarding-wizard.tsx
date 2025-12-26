@@ -110,7 +110,7 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
                         </h2>
                         <p className="text-secondary-600 text-lg mb-8">
                             The AI-powered platform that makes social media management effortless.
-                            Let's set up your account in just 3 steps.
+                            Let&apos;s set up your account in just 3 steps.
                         </p>
                         <div className="grid grid-cols-3 gap-4 text-center">
                             {[
@@ -195,7 +195,7 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
                             ))}
                         </div>
                         <p className="text-xs text-secondary-500 text-center mt-4">
-                            Click to select. You'll authorize each account after this setup.
+                            Click to select. You&apos;ll authorize each account after this setup.
                         </p>
                     </div>
                 );
@@ -248,7 +248,7 @@ export function OnboardingWizard({ open, onClose, onComplete }: OnboardingWizard
                             <Check className="h-12 w-12 text-white" />
                         </div>
                         <h2 className="text-3xl font-bold text-secondary-900 mb-4">
-                            You're All Set! 🚀
+                            You&apos;re All Set! 🚀
                         </h2>
                         <p className="text-secondary-600 text-lg mb-8">
                             Your workspace is ready. Start creating amazing content!

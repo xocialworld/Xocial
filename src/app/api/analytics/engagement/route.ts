@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
 
     // Initialize engagement data structure
     const engagementMap = new Map<string, { likes: number; comments: number; shares: number }>();
-    
+
     dateRange.forEach(date => {
       const dateKey = format(date, 'MMM dd');
       engagementMap.set(dateKey, { likes: 0, comments: 0, shares: 0 });
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
     posts?.forEach(post => {
       const publishedDate = format(parseISO(post.published_at), 'MMM dd');
       const analytics = post.post_analytics as any;
-      
+
       if (analytics && Array.isArray(analytics)) {
         const current = engagementMap.get(publishedDate);
         if (current) {

@@ -159,6 +159,8 @@ export async function PATCH(
         if (brief !== undefined) updateData.brief = brief;
         if (status !== undefined) updateData.status = status;
         if (scheduled_at !== undefined) updateData.scheduled_at = scheduled_at;
+        if (body.drafted_at !== undefined) updateData.drafted_at = body.drafted_at;
+        if (body.approval_workflow_id !== undefined) updateData.approval_workflow_id = body.approval_workflow_id;
 
         // Update content item
         if (Object.keys(updateData).length > 0) {

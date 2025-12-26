@@ -15,6 +15,11 @@ interface WorkspaceState {
   setWorkspaces: (entries: WorkspaceSummary[]) => void;
   selectWorkspace: (workspaceId: string) => void;
   reset: () => void;
+  _hasHydrated: boolean;
+  setHasHydrated: (state: boolean) => void;
+  lastFetchedAt: number | null;
+  touchLastFetched: () => void;
+  invalidateWorkspaces: () => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>()(
@@ -23,10 +28,17 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       (set, get) => ({
         workspaces: [],
         selectedWorkspace: undefined,
+        _hasHydrated: false,
+        lastFetchedAt: null,
+        setHasHydrated: (state) => set({ _hasHydrated: state }),
+        touchLastFetched: () => set({ lastFetchedAt: Date.now() }),
+        invalidateWorkspaces: () => set({ lastFetchedAt: null }),
         setWorkspaces: (entries) =>
           set((state) => {
             if (entries.length === 0) {
-              return { workspaces: [], selectedWorkspace: undefined };
+              // Only clear if explicitly empty, but maybe we should keep selected if it's still valid logic?
+              // No, if list is empty, selected must be undefined.
+              return { workspaces: [], selectedWorkspace: undefined, lastFetchedAt: Date.now() };
             }
 
             const currentId = state.selectedWorkspace?.id;
@@ -36,6 +48,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             return {
               workspaces: entries,
               selectedWorkspace: nextSelected,
+              lastFetchedAt: Date.now(),
             };
           }),
         selectWorkspace: (workspaceId) =>
@@ -46,14 +59,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             }
             return { selectedWorkspace: match };
           }),
-        reset: () => set({ workspaces: [], selectedWorkspace: undefined }),
+        reset: () => set({ workspaces: [], selectedWorkspace: undefined, lastFetchedAt: null }),
       }),
       {
         name: 'workspace-store',
         partialize: (state) => ({
           workspaces: state.workspaces,
           selectedWorkspace: state.selectedWorkspace,
+          lastFetchedAt: state.lastFetchedAt,
         }),
+        onRehydrateStorage: () => (state) => {
+          state?.setHasHydrated(true);
+        },
       }
     ),
     { name: 'WorkspaceStore' }
@@ -64,4 +81,6 @@ export const useSelectedWorkspace = () =>
   useWorkspaceStore((state) => state.selectedWorkspace);
 
 export const useWorkspaceList = () => useWorkspaceStore((state) => state.workspaces);
+
+export const useHasHydrated = () => useWorkspaceStore((state) => state._hasHydrated);
 

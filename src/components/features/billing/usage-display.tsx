@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -43,11 +43,7 @@ export function UsageDisplay({ workspaceId, compact = false }: UsageDisplayProps
     const [usage, setUsage] = useState<UsageSummary | null>(null);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        fetchUsage();
-    }, [workspaceId]);
-
-    const fetchUsage = async () => {
+    const fetchUsage = useCallback(async () => {
         try {
             const res = await fetch(`/api/billing/usage?workspace_id=${workspaceId}`);
             const data = await res.json();
@@ -59,7 +55,11 @@ export function UsageDisplay({ workspaceId, compact = false }: UsageDisplayProps
         } finally {
             setLoading(false);
         }
-    };
+    }, [workspaceId]);
+
+    useEffect(() => {
+        fetchUsage();
+    }, [fetchUsage]);
 
     if (loading) {
         return (

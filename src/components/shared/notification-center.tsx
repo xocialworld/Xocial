@@ -21,7 +21,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import type { Notification } from '@/lib/notifications';
-import { CommentItem, type Comment } from './notifications/comment-item';
 
 /**
  * Fetch notifications
@@ -85,30 +84,7 @@ export function NotificationCenter() {
   const notifications = data?.data?.notifications || [];
   const unreadCount = data?.data?.unreadCount || 0;
 
-  // Mock comments for the "Comments" tab until backend integration
-  const [comments, setComments] = useState<Comment[]>([]);
 
-  useEffect(() => {
-    // Simulate fetching comments
-    // In real app, this would be a separate query or part of notifications
-    const mockComments: Comment[] = [
-      {
-        id: '1',
-        author_name: 'Sarah Wilson',
-        content: 'Great post! Looking forward to more.',
-        platform: 'instagram',
-        created_at: new Date().toISOString(),
-      },
-      {
-        id: '2',
-        author_name: 'Tech Daily',
-        content: 'Can we collaborate on this?',
-        platform: 'twitter',
-        created_at: new Date(Date.now() - 3600000).toISOString(),
-      }
-    ];
-    setComments(mockComments);
-  }, []);
 
   // Set up real-time subscription
   useEffect(() => {
@@ -163,9 +139,7 @@ export function NotificationCenter() {
     deleteMutation.mutate({ ids: [id] });
   };
 
-  const handleReply = async (text: string) => {
-    toast.success("Reply sent!");
-  };
+
 
   const renderNotificationList = (filterFn: (n: Notification) => boolean) => {
     const filtered = notifications.filter(filterFn);
@@ -306,30 +280,14 @@ export function NotificationCenter() {
             </TabsContent>
 
             <TabsContent value="comments" className="m-0">
-              {comments.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">
-                  <MessageSquare className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                  <p>No new comments</p>
-                </div>
-              ) : (
-                <div className="divide-y">
-                  {comments.map((comment) => (
-                    <CommentItem
-                      key={comment.id}
-                      comment={comment}
-                      onReply={handleReply}
-                    />
-                  ))}
-                </div>
-              )}
+              {renderNotificationList((n) => n.type === 'comment_received' || n.type === 'comment_reply')}
             </TabsContent>
 
             <TabsContent value="mentions" className="m-0">
-              <div className="p-8 text-center text-muted-foreground">
-                <AtSign className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                <p>No mentions yet</p>
-              </div>
+              {renderNotificationList((n) => n.type === 'mention')}
             </TabsContent>
+
+
           </ScrollArea>
         </Tabs>
       </PopoverContent>

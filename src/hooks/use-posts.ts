@@ -2,20 +2,21 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
-import { queryKeys } from '@/lib/react-query';
+import { queryKeys, invalidateAllPostQueries } from '@/lib/react-query';
 import type { Post } from '@/types';
 import { toast } from 'sonner';
-import { useEffect } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useSelectedWorkspace } from '@/store/workspaceStore';
 
 /**
  * Fetch posts for the current workspace
  */
-async function fetchPosts(workspaceId?: string, filters?: Record<string, any>) {
+async function fetchPosts(workspaceId?: string, filters?: Record<string, any>): Promise<Post[]> {
   const supabase = createClient();
-  
+
   // Get current user
   const { data: { user } } = await supabase.auth.getUser();
+
   if (!user) {
     throw new Error('Not authenticated');
   }
@@ -73,27 +74,30 @@ async function fetchPosts(workspaceId?: string, filters?: Record<string, any>) {
 }
 
 /**
- * Create a new post
+ * Create a new post via API (to get proper validation)
  */
-async function createPost(postData: Partial<Post>) {
-  const supabase = createClient();
-  
-  const { data, error } = await supabase
-    .from('posts')
-    .insert(postData)
-    .select()
-    .single();
+async function createPostViaAPI(postData: Partial<Post>): Promise<Post> {
+  const response = await fetch('/api/posts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(postData),
+  });
 
-  if (error) throw error;
-  return data;
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error?.message || err?.message || 'Failed to create post');
+  }
+
+  const result = await response.json();
+  return result.data?.post || result.post;
 }
 
 /**
  * Update an existing post
  */
-async function updatePost({ id, updates }: { id: string; updates: Partial<Post> }) {
+async function updatePost({ id, updates }: { id: string; updates: Partial<Post> }): Promise<Post> {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
     .from('posts')
     .update(updates)
@@ -108,9 +112,9 @@ async function updatePost({ id, updates }: { id: string; updates: Partial<Post> 
 /**
  * Delete a post
  */
-async function deletePost(id: string) {
+async function deletePostFn(id: string): Promise<{ id: string }> {
   const supabase = createClient();
-  
+
   const { error } = await supabase
     .from('posts')
     .delete()
@@ -122,11 +126,20 @@ async function deletePost(id: string) {
 
 /**
  * Hook to fetch and manage posts with React Query
+ * Includes real-time subscriptions and optimistic updates
  */
 export function usePosts(filters?: Record<string, any>) {
   const queryClient = useQueryClient();
   const supabase = createClient();
   const selectedWorkspace = useSelectedWorkspace();
+  const activeWorkspaceId = selectedWorkspace?.id;
+  const subscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // Build the query key for this specific filter set
+  const currentQueryKey = queryKeys.posts.list({ 
+    ...(filters || {}), 
+    workspaceId: activeWorkspaceId 
+  });
 
   // Fetch posts with React Query
   const {
@@ -135,15 +148,28 @@ export function usePosts(filters?: Record<string, any>) {
     error,
     refetch,
   } = useQuery({
-    queryKey: queryKeys.posts.list({ ...(filters || {}), workspaceId: selectedWorkspace?.id }),
-    queryFn: () => fetchPosts(selectedWorkspace?.id, filters),
-    staleTime: 2 * 60 * 1000, // 2 minutes for posts
+    queryKey: currentQueryKey,
+    queryFn: () => fetchPosts(activeWorkspaceId, filters),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    enabled: !!activeWorkspaceId,
   });
 
-  // Set up real-time subscription
+  // Set up real-time subscription with proper cleanup
   useEffect(() => {
-    const channelName = `posts_changes_${selectedWorkspace?.id ?? 'all'}`;
-    const subscription = supabase
+    if (!activeWorkspaceId) {
+      return;
+    }
+
+    // Clean up existing subscription
+    if (subscriptionRef.current) {
+      supabase.removeChannel(subscriptionRef.current);
+      subscriptionRef.current = null;
+    }
+
+    const channelName = `posts_changes_${activeWorkspaceId}`;
+
+    const channel = supabase
       .channel(channelName)
       .on(
         'postgres_changes',
@@ -151,53 +177,86 @@ export function usePosts(filters?: Record<string, any>) {
           event: '*',
           schema: 'public',
           table: 'posts',
-          ...(selectedWorkspace?.id ? { filter: `workspace_id=eq.${selectedWorkspace.id}` } : {}),
+          filter: `workspace_id=eq.${activeWorkspaceId}`,
         },
-        () => {
-          queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
+        (payload) => {
+          console.log('[Posts Realtime] Change detected:', payload.eventType);
+          // Invalidate ALL post queries to ensure calendar and list views are in sync
+          invalidateAllPostQueries(queryClient);
         }
       )
       .subscribe();
 
+    subscriptionRef.current = channel;
+
     return () => {
-      subscription.unsubscribe();
+      if (subscriptionRef.current) {
+        supabase.removeChannel(subscriptionRef.current);
+        subscriptionRef.current = null;
+      }
     };
-  }, [queryClient, supabase, selectedWorkspace?.id]);
+  }, [queryClient, supabase, activeWorkspaceId]);
+
+  // Helper to optimistically update all relevant caches
+  const optimisticUpdateAllCaches = useCallback((
+    updater: (posts: Post[]) => Post[]
+  ) => {
+    // Update all post list queries
+    queryClient.setQueriesData<Post[]>(
+      { queryKey: queryKeys.posts.lists() },
+      (old) => old ? updater(old) : old
+    );
+    // Also update calendar queries
+    queryClient.setQueriesData<Post[]>(
+      { queryKey: queryKeys.posts.calendar() },
+      (old) => old ? updater(old) : old
+    );
+  }, [queryClient]);
 
   // Create post mutation
   const createMutation = useMutation({
-    mutationFn: createPost,
+    mutationFn: createPostViaAPI,
     onMutate: async (newPost) => {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: queryKeys.posts.all });
 
-      // Snapshot previous value
-      const previousPosts = queryClient.getQueryData(queryKeys.posts.list(filters || {}));
+      // Snapshot previous values for rollback
+      const previousData = queryClient.getQueriesData({ queryKey: queryKeys.posts.all });
 
-      // Optimistically update
-      if (previousPosts) {
-        queryClient.setQueryData(queryKeys.posts.list(filters || {}), (old: Post[] = []) => [
-          { ...newPost, id: `temp-${Date.now()}`, created_at: new Date().toISOString() } as Post,
-          ...old,
-        ]);
-      }
+      // Optimistically add the new post with a temporary ID
+      const optimisticPost = {
+        ...newPost,
+        id: `temp-${Date.now()}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as Post;
 
-      return { previousPosts };
+      optimisticUpdateAllCaches((old) => [optimisticPost, ...old]);
+
+      return { previousData, optimisticId: optimisticPost.id };
     },
-    onError: (error: any, variables, context) => {
-      // Rollback on error
-      if (context?.previousPosts) {
-        queryClient.setQueryData(queryKeys.posts.list(filters || {}), context.previousPosts);
+    onError: (error: Error, _variables, context) => {
+      // Rollback all caches on error
+      if (context?.previousData) {
+        context.previousData.forEach(([key, data]) => {
+          queryClient.setQueryData(key, data);
+        });
       }
-      toast.error('Failed to create post');
+      console.error('[usePosts] Create failed:', error);
     },
-    onSuccess: () => {
-      toast.success('Post created successfully');
+    onSuccess: (newPost, _variables, context) => {
+      // Replace the optimistic post with the real one
+      if (context?.optimisticId && newPost?.id) {
+        optimisticUpdateAllCaches((old) => 
+          old.map((post) => 
+            post.id === context.optimisticId ? newPost : post
+          )
+        );
+      }
     },
     onSettled: () => {
-      // Always refetch after error or success
-      queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
-      queryClient.invalidateQueries({ queryKey: ['calendar-posts'] });
+      // Always refetch to ensure consistency
+      invalidateAllPostQueries(queryClient);
     },
   });
 
@@ -206,65 +265,92 @@ export function usePosts(filters?: Record<string, any>) {
     mutationFn: updatePost,
     onMutate: async ({ id, updates }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.posts.all });
-      await queryClient.cancelQueries({ queryKey: ['calendar-posts'] });
 
-      const previousPosts = queryClient.getQueryData(queryKeys.posts.list(filters || {}));
-      
-      // Optimistically update
-      if (previousPosts) {
-        queryClient.setQueryData(queryKeys.posts.list(filters || {}), (old: Post[] = []) =>
-          old.map((post) => (post.id === id ? { ...post, ...updates } : post))
-        );
-      }
+      // Snapshot for rollback
+      const previousData = queryClient.getQueriesData({ queryKey: queryKeys.posts.all });
 
-      return { previousPosts };
+      // Optimistically update across all caches
+      optimisticUpdateAllCaches((old) =>
+        old.map((post) => (post.id === id ? { ...post, ...updates } : post))
+      );
+
+      return { previousData };
     },
-    onError: (error: any, variables, context) => {
-      if (context?.previousPosts) {
-        queryClient.setQueryData(queryKeys.posts.list(filters || {}), context.previousPosts);
+    onError: (_error: Error, _variables, context) => {
+      // Rollback on error
+      if (context?.previousData) {
+        context.previousData.forEach(([key, data]) => {
+          queryClient.setQueryData(key, data);
+        });
       }
       toast.error('Failed to update post');
     },
-    onSuccess: () => {
-      toast.success('Post updated successfully');
-    },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
-      queryClient.invalidateQueries({ queryKey: ['calendar-posts'] });
+      invalidateAllPostQueries(queryClient);
     },
   });
 
   // Delete post mutation
   const deleteMutation = useMutation({
-    mutationFn: deletePost,
+    mutationFn: deletePostFn,
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.posts.all });
-      await queryClient.cancelQueries({ queryKey: ['calendar-posts'] });
 
-      const previousPosts = queryClient.getQueryData(queryKeys.posts.list(filters || {}));
+      // Snapshot for rollback
+      const previousData = queryClient.getQueriesData({ queryKey: queryKeys.posts.all });
 
-      // Optimistically remove
-      if (previousPosts) {
-        queryClient.setQueryData(queryKeys.posts.list(filters || {}), (old: Post[] = []) =>
-          old.filter((post) => post.id !== id)
-        );
-      }
+      // Optimistically remove across all caches
+      optimisticUpdateAllCaches((old) => old.filter((post) => post.id !== id));
 
-      return { previousPosts };
+      return { previousData };
     },
-    onError: (error: any, variables, context) => {
-      if (context?.previousPosts) {
-        queryClient.setQueryData(queryKeys.posts.list(filters || {}), context.previousPosts);
+    onError: (_error: Error, _variables, context) => {
+      // Rollback on error
+      if (context?.previousData) {
+        context.previousData.forEach(([key, data]) => {
+          queryClient.setQueryData(key, data);
+        });
       }
       toast.error('Failed to delete post');
     },
+    onSettled: () => {
+      invalidateAllPostQueries(queryClient);
+    },
+  });
+
+  // Update status mutation (uses server action)
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: Post['status'] }) => {
+      if (!activeWorkspaceId) throw new Error('No workspace selected');
+      const { updatePostStatus } = await import('@/app/actions/post-actions');
+      return updatePostStatus(id, status, activeWorkspaceId);
+    },
+    onMutate: async ({ id, status }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.posts.all });
+      
+      const previousData = queryClient.getQueriesData({ queryKey: queryKeys.posts.all });
+      
+      // Optimistic update
+      optimisticUpdateAllCaches((old) =>
+        old.map((post) => (post.id === id ? { ...post, status } : post))
+      );
+      
+      return { previousData };
+    },
+    onError: (_error: Error, _variables, context) => {
+      if (context?.previousData) {
+        context.previousData.forEach(([key, data]) => {
+          queryClient.setQueryData(key, data);
+        });
+      }
+      toast.error('Failed to update status');
+    },
     onSuccess: () => {
-      toast.success('Post deleted successfully');
+      toast.success('Status updated');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
-      queryClient.invalidateQueries({ queryKey: ['calendar-posts'] });
-    },
+      invalidateAllPostQueries(queryClient);
+    }
   });
 
   return {
@@ -273,12 +359,15 @@ export function usePosts(filters?: Record<string, any>) {
     error: error ? (error as Error).message : null,
     refetch,
     createPost: createMutation.mutate,
+    createPostAsync: createMutation.mutateAsync,
     updatePost: (id: string, updates: Partial<Post>) => updateMutation.mutate({ id, updates }),
     updatePostAsync: (id: string, updates: Partial<Post>) =>
       updateMutation.mutateAsync({ id, updates }),
     deletePost: deleteMutation.mutate,
+    updateStatus: updateStatusMutation.mutateAsync,
     isCreating: createMutation.isPending,
     isUpdating: updateMutation.isPending,
     isDeleting: deleteMutation.isPending,
+    isUpdatingStatus: updateStatusMutation.isPending
   };
 }

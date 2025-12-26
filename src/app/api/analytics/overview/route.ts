@@ -44,7 +44,43 @@ export async function GET(request: NextRequest) {
     const prevFromDate = new Date(fromDate);
     prevFromDate.setDate(prevFromDate.getDate() - daysDiff);
 
-    // Get current period metrics
+    // Fetch metrics from materialized view
+    const { data: summaryRows, error: metricsError } = await supabase
+      .from('daily_metrics_summary')
+      .select('*')
+      .eq('workspace_id', workspace.id)
+      .gte('metric_date', prevFromDate.toISOString()) // Fetch all history needed in one go if possible, or split
+      .lte('metric_date', to);
+
+    if (metricsError) {
+      throw new Error(metricsError.message);
+    }
+
+    // Helper filter
+    const filterByDate = (rows: any[], startDate: Date, endDate: Date) =>
+      rows.filter(r => {
+        const d = new Date(r.metric_date);
+        return d >= startDate && d <= endDate;
+      });
+
+    const currentRows = filterByDate(summaryRows || [], fromDate, toDate);
+    const prevRows = filterByDate(summaryRows || [], prevFromDate, fromDate); // fromDate is exclusive in logic usually? Original used lte(to)
+
+    // Helper aggregator
+    const aggregate = (rows: any[]) => ({
+      engagement: rows.reduce((acc, r) => acc + (r.engagement || 0), 0),
+      impressions: rows.reduce((acc, r) => acc + (r.impressions || 0), 0),
+      posts: rows.reduce((acc, r) => acc + (r.post_count || 0), 0),
+      likes: rows.reduce((acc, r) => acc + (r.likes || 0), 0),
+      comments: rows.reduce((acc, r) => acc + (r.comments || 0), 0),
+      shares: rows.reduce((acc, r) => acc + (r.shares || 0), 0),
+    });
+
+    const currentStats = aggregate(currentRows);
+    const prevStats = aggregate(prevRows);
+
+    // Followers Logic (Keep existing logic or improve if history table exists)
+    // Get current period metrics for followers
     const { data: currentAccounts } = await supabase
       .from('social_accounts')
       .select('follower_count')
@@ -52,54 +88,8 @@ export async function GET(request: NextRequest) {
 
     const totalFollowers = currentAccounts?.reduce((sum, acc) => sum + (acc.follower_count || 0), 0) || 0;
 
-    // Get current period posts and analytics
-    const { data: currentPosts } = await supabase
-      .from('posts')
-      .select('id, published_at, post_analytics(likes, comments, shares, impressions)')
-      .eq('workspace_id', workspace.id)
-      .gte('published_at', from)
-      .lte('published_at', to)
-      .eq('status', 'published');
-
-    const currentEngagement = currentPosts?.reduce((sum, post) => {
-      const analytics = post.post_analytics as any;
-      if (analytics && Array.isArray(analytics)) {
-        return sum + analytics.reduce((s: number, a: any) =>
-          s + (a.likes || 0) + (a.comments || 0) + (a.shares || 0), 0);
-      }
-      return sum;
-    }, 0) || 0;
-
-    const currentPostCount = currentPosts?.length || 0;
-    const avgEngagementRate = currentPostCount > 0 && totalFollowers > 0
-      ? (currentEngagement / totalFollowers) * 100
-      : 0;
-
-    // Get previous period metrics for comparison
-    const { data: prevPosts } = await supabase
-      .from('posts')
-      .select('id, post_analytics(likes, comments, shares)')
-      .eq('workspace_id', workspace.id)
-      .gte('published_at', prevFromDate.toISOString())
-      .lt('published_at', fromDate.toISOString())
-      .eq('status', 'published');
-
-    const prevEngagement = prevPosts?.reduce((sum, post) => {
-      const analytics = post.post_analytics as any;
-      if (analytics && Array.isArray(analytics)) {
-        return sum + analytics.reduce((s: number, a: any) =>
-          s + (a.likes || 0) + (a.comments || 0) + (a.shares || 0), 0);
-      }
-      return sum;
-    }, 0) || 0;
-
-    const prevPostCount = prevPosts?.length || 0;
-    const prevEngagementRate = prevPostCount > 0 && totalFollowers > 0
-      ? (prevEngagement / totalFollowers) * 100
-      : 0;
-
-    // Try to get historical follower counts for accurate change calculation
-    let prevFollowers = totalFollowers; // Default to current if no history
+    // Try to get historical follower counts
+    let prevFollowers = totalFollowers;
     try {
       const { data: historyData } = await supabase
         .from('social_account_history')
@@ -114,25 +104,30 @@ export async function GET(request: NextRequest) {
         prevFollowers = historyData[0].follower_count || totalFollowers;
       }
     } catch {
-      // Table might not exist yet, use current followers
-      prevFollowers = totalFollowers;
+      // Table might not exist yet
     }
 
-    // Calculate percentage changes with proper historical comparison
-    const followersChange = prevFollowers > 0
-      ? ((totalFollowers - prevFollowers) / prevFollowers) * 100
-      : 0;
-    const engagementChange = prevEngagement > 0
-      ? ((currentEngagement - prevEngagement) / prevEngagement) * 100
-      : 0;
-    const engagementRateChange = prevEngagementRate > 0
-      ? ((avgEngagementRate - prevEngagementRate) / prevEngagementRate) * 100
-      : 0;
-    const postsChange = prevPostCount > 0
-      ? ((currentPostCount - prevPostCount) / prevPostCount) * 100
+    // Calculate rates
+    const avgEngagementRate = currentStats.posts > 0 && totalFollowers > 0
+      ? (currentStats.engagement / totalFollowers) * 100
       : 0;
 
-    // Calculate sparkline data (daily aggregation)
+    const prevEngagementRate = prevStats.posts > 0 && prevFollowers > 0 // Use prevFollowers if available, else totalFollowers
+      ? (prevStats.engagement / (prevFollowers > 0 ? prevFollowers : totalFollowers)) * 100
+      : 0;
+
+    // Calculate percentage changes
+    const calculateChange = (curr: number, prev: number) => {
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return ((curr - prev) / prev) * 100;
+    };
+
+    const followersChange = calculateChange(totalFollowers, prevFollowers);
+    const engagementChange = calculateChange(currentStats.engagement, prevStats.engagement);
+    const engagementRateChange = calculateChange(avgEngagementRate, prevEngagementRate);
+    const postsChange = calculateChange(currentStats.posts, prevStats.posts);
+
+    // Calculate sparkline data
     const sparklineMap = new Map<string, {
       impressions: number;
       engagement: number;
@@ -140,34 +135,24 @@ export async function GET(request: NextRequest) {
       posts: number;
     }>();
 
-    // Initialize map with all dates in range
+    // Initialize map
     for (let d = new Date(fromDate); d <= toDate; d.setDate(d.getDate() + 1)) {
       sparklineMap.set(d.toISOString().split('T')[0], {
         impressions: 0,
         engagement: 0,
-        followers: totalFollowers, // Assuming constant for now or could interpolate
+        followers: totalFollowers,
         posts: 0,
       });
     }
 
-    currentPosts?.forEach((post) => {
-      const date = new Date(post.published_at).toISOString().split('T')[0];
+    // Populate with data from summaryRows (current period)
+    currentRows.forEach(row => {
+      const date = new Date(row.metric_date).toISOString().split('T')[0];
       const entry = sparklineMap.get(date);
       if (entry) {
-        const analytics = post.post_analytics as any;
-        let engagement = 0;
-        let impressions = 0;
-
-        if (analytics && Array.isArray(analytics)) {
-          analytics.forEach((a: any) => {
-            engagement += (a.likes || 0) + (a.comments || 0) + (a.shares || 0);
-            impressions += (a.impressions || 0);
-          });
-        }
-
-        entry.engagement += engagement;
-        entry.impressions += impressions;
-        entry.posts += 1;
+        entry.engagement += (row.engagement || 0);
+        entry.impressions += (row.impressions || 0);
+        entry.posts += (row.post_count || 0);
       }
     });
 
@@ -182,13 +167,13 @@ export async function GET(request: NextRequest) {
     const metrics = {
       totalFollowers,
       followersChange,
-      totalEngagement: currentEngagement,
+      totalEngagement: currentStats.engagement,
       engagementChange,
       avgEngagementRate,
       engagementRateChange,
-      totalPosts: currentPostCount,
+      totalPosts: currentStats.posts,
       postsChange,
-      sparklineData, // Add this to response
+      sparklineData,
     };
 
     return NextResponse.json({

@@ -104,7 +104,7 @@ export function PageContainer({
 }: PageContainerProps) {
     return (
         <div className={cn(
-            "p-4 sm:p-5 lg:p-6",
+            "p-2 sm:p-5 lg:p-6",
             !fullWidth && "max-w-[1600px] mx-auto",
             className
         )}>

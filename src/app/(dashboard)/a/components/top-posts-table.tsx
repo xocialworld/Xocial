@@ -83,8 +83,8 @@ export function TopPostsTable({ posts }: TopPostsTableProps) {
     <button
       onClick={() => handleSort(key)}
       className={`flex items-center gap-1 transition-colors ${sortKey === key
-          ? 'text-blue-600 dark:text-blue-400 font-semibold'
-          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+        ? 'text-blue-600 dark:text-blue-400 font-semibold'
+        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
         }`}
     >
       {label}
@@ -93,23 +93,23 @@ export function TopPostsTable({ posts }: TopPostsTableProps) {
   );
 
   const getRankGradient = (index: number) => {
-    if (index === 0) return 'from-yellow-400 to-amber-500';
-    if (index === 1) return 'from-gray-300 to-gray-400';
-    if (index === 2) return 'from-orange-400 to-orange-500';
-    return 'from-blue-500 to-indigo-500';
+    if (index === 0) return 'from-warning-400 to-warning-500'; // Gold (using warning scale which is amber-based)
+    if (index === 1) return 'from-slate-300 to-slate-400'; // Silver
+    if (index === 2) return 'from-orange-600 to-orange-700'; // Bronze
+    return 'from-primary-500 to-accent-indigo';
   };
 
   return (
-    <Card className="relative overflow-hidden border-0 shadow-lg bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
+    <Card className="relative overflow-hidden border-secondary-100 shadow-lg bg-white">
       {/* Decorative gradient */}
-      <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-blue-100/30 dark:from-blue-900/20 to-transparent rounded-full blur-3xl -z-10" />
+      <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-primary-50/50 to-transparent rounded-full blur-3xl -z-10" />
 
       <div className="p-6">
         <div className="mb-6">
-          <h3 className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400 bg-clip-text text-transparent">
+          <h3 className="text-xl font-bold text-secondary-900">
             Top Performing Posts
           </h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-sm text-secondary-500 mt-1">
             Your best content ranked by engagement
           </p>
         </div>
@@ -117,8 +117,8 @@ export function TopPostsTable({ posts }: TopPostsTableProps) {
         <div className="overflow-x-auto -mx-6 px-6" role="region" aria-label="Top posts table">
           <table className="w-full" role="table" aria-label="Top performing posts">
             <thead>
-              <tr className="border-b border-gray-200 dark:border-gray-700">
-                <th scope="col" className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              <tr className="border-b border-secondary-100">
+                <th scope="col" className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider text-secondary-500">
                   Content
                 </th>
                 <th scope="col" className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -144,7 +144,7 @@ export function TopPostsTable({ posts }: TopPostsTableProps) {
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            <tbody className="divide-y divide-secondary-100">
               {sortedPosts.map((post, index) => {
                 const contentPreview = post.content?.trim()
                   ? post.content
@@ -152,7 +152,7 @@ export function TopPostsTable({ posts }: TopPostsTableProps) {
                 return (
                   <tr
                     key={post.id}
-                    className="group hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors"
+                    className="group hover:bg-secondary-50/50 transition-colors"
                   >
                     <td className="py-4 px-4">
                       <div className="flex items-start gap-3">
@@ -160,7 +160,7 @@ export function TopPostsTable({ posts }: TopPostsTableProps) {
                           {index + 1}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-900 dark:text-gray-100 truncate max-w-md group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                          <p className="text-sm text-secondary-900 truncate max-w-md group-hover:text-primary-600 transition-colors">
                             {contentPreview}
                           </p>
                         </div>
@@ -170,32 +170,32 @@ export function TopPostsTable({ posts }: TopPostsTableProps) {
                       {getPlatformBadge(post.platform)}
                     </td>
                     <td className="py-4 px-4">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                      <span className="text-sm text-secondary-500">
                         {format(new Date(post.publishedAt), 'MMM d, yyyy')}
                       </span>
                     </td>
                     <td className="py-4 px-4 text-center">
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      <span className="text-sm font-medium text-secondary-900">
                         {post.likes.toLocaleString()}
                       </span>
                     </td>
                     <td className="py-4 px-4 text-center">
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      <span className="text-sm font-medium text-secondary-900">
                         {post.comments.toLocaleString()}
                       </span>
                     </td>
                     <td className="py-4 px-4 text-center">
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      <span className="text-sm font-medium text-secondary-900">
                         {post.shares.toLocaleString()}
                       </span>
                     </td>
                     <td className="py-4 px-4 text-center">
-                      <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                      <span className="text-sm font-bold text-secondary-900">
                         {post.engagement.toLocaleString()}
                       </span>
                     </td>
                     <td className="py-4 px-4 text-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-accent-violet-100 text-accent-violet-700">
                         {post.engagementRate.toFixed(2)}%
                       </span>
                     </td>

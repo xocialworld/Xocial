@@ -67,9 +67,16 @@ export async function GET(request: NextRequest) {
         const userInfo = await getTikTokUserInfo(tokenResponse.access_token);
         console.log(`[TikTok Callback] Found user: ${userInfo.display_name}`);
 
-        // Get user's workspace
-        const workspace = await getUserWorkspace(user.id, supabase);
-        console.log(`[TikTok Callback] User workspace: ${workspace.id}`);
+        // Get user's workspace context from state
+        let workspaceId = stateVerification.workspaceId;
+
+        if (!workspaceId) {
+            console.warn('[TikTok Callback] No workspaceId in state, falling back to default workspace');
+            const workspace = await getUserWorkspace(user.id, supabase);
+            workspaceId = workspace.id;
+        }
+
+        console.log(`[TikTok Callback] Target workspace ID: ${workspaceId}`);
 
         // Encrypt tokens before storing
         const encryptedAccessToken = encryptToken(tokenResponse.access_token);
@@ -82,7 +89,7 @@ export async function GET(request: NextRequest) {
             .from('social_accounts')
             .upsert(
                 {
-                    workspace_id: workspace.id,
+                    workspace_id: workspaceId,
                     platform: 'tiktok',
                     assigned_user_id: user.id,
                     account_id: userInfo.open_id,

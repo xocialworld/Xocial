@@ -9,7 +9,7 @@ interface AuthState {
   activeWorkspaceId: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  
+
   // Actions
   setUser: (user: AuthUser | null) => void;
   setProfile: (profile: UserProfile | null) => void;
@@ -34,14 +34,16 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       ...initialState,
 
-      setUser: (user) =>
+      setUser: (user) => {
         set({
           user,
           isAuthenticated: !!user,
-        }),
+        });
+      },
 
-      setProfile: (profile) =>
-        set({ profile }),
+      setProfile: (profile) => {
+        set({ profile });
+      },
 
       setWorkspaces: (workspaces) => {
         const state = get();
@@ -54,23 +56,25 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
-      setActiveWorkspace: (workspaceId) =>
-        set({ activeWorkspaceId: workspaceId }),
+      setActiveWorkspace: (workspaceId) => {
+        set({ activeWorkspaceId: workspaceId });
+      },
 
       getActiveWorkspace: () => {
         const state = get();
-        return (
-          state.workspaces.find(
-            (w) => w.workspace_id === state.activeWorkspaceId
-          ) || null
-        );
+        const activeWorkspace = state.workspaces.find(
+          (w) => w.workspace_id === state.activeWorkspaceId
+        ) || null;
+        return activeWorkspace;
       },
 
-      setLoading: (loading) =>
-        set({ isLoading: loading }),
+      setLoading: (loading) => {
+        set({ isLoading: loading });
+      },
 
-      reset: () =>
-        set(initialState),
+      reset: () => {
+        set(initialState);
+      },
     }),
     {
       name: 'xocial-auth',
@@ -80,4 +84,3 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
-

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,17 +90,10 @@ export default function PostDetailPage() {
     const [item, setItem] = useState<ContentItem | null>(null);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        if (postId) {
-            fetchPost();
-        }
-    }, [postId]);
-
-    const fetchPost = async () => {
+    const fetchPost = useCallback(async () => {
         try {
             const res = await fetch(`/api/composer/items/${postId}`);
             const data = await res.json();
-
             if (!res.ok) {
                 throw new Error(data.error || "Failed to fetch post");
             }
@@ -112,7 +105,13 @@ export default function PostDetailPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [postId]);
+
+    useEffect(() => {
+        if (postId) {
+            fetchPost();
+        }
+    }, [postId, fetchPost]);
 
     const handleDelete = async () => {
         if (!confirm("Are you sure you want to delete this post?")) return;
@@ -153,7 +152,7 @@ export default function PostDetailPage() {
                     <AlertCircle className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
                     <h2 className="text-xl font-semibold">Post not found</h2>
                     <p className="text-secondary-500 mt-2">
-                        This post may have been deleted or you don't have access to it.
+                        This post may have been deleted or you don&apos;t have access to it.
                     </p>
                     <Button className="mt-4" onClick={() => router.push("/posts")}>
                         <ArrowLeft className="h-4 w-4 mr-2" />

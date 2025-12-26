@@ -28,64 +28,17 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Mock data for engagement items
-const mockEngagements = [
-    {
-        id: 1,
-        type: 'comment',
-        user: 'Sarah Johnson',
-        handle: '@sarahj',
-        avatar: null,
-        content: 'This is such helpful content! Would love to see more like this.',
-        platform: 'instagram',
-        postTitle: 'How to grow your audience in 2024',
-        timestamp: new Date(Date.now() - 1000 * 60 * 30), // 30 mins ago
-        responded: false
-    },
-    {
-        id: 2,
-        type: 'mention',
-        user: 'Tech Daily',
-        handle: '@techdaily',
-        avatar: null,
-        content: 'Great thread by @youraccount about social media strategies!',
-        platform: 'twitter',
-        postTitle: null,
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
-        responded: true
-    },
-    {
-        id: 3,
-        type: 'like',
-        user: 'Marketing Pro',
-        handle: '@marketingpro',
-        avatar: null,
-        content: 'Liked your post',
-        platform: 'linkedin',
-        postTitle: '5 tips for better LinkedIn engagement',
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 5), // 5 hours ago
-        responded: false
-    },
-    {
-        id: 4,
-        type: 'follow',
-        user: 'Growth Hacker',
-        handle: '@growthhacker',
-        avatar: null,
-        content: 'Started following you',
-        platform: 'instagram',
-        postTitle: null,
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 8), // 8 hours ago
-        responded: false
-    },
-];
+import { useEngagement } from "@/hooks/use-engagement";
+import { useNotifications } from "@/hooks/use-notifications";
 
+// Update filter options
 const filterOptions = [
     { id: 'all', label: 'All', icon: Inbox },
-    { id: 'comments', label: 'Comments', icon: MessageCircle },
-    { id: 'mentions', label: 'Mentions', icon: AtSign },
-    { id: 'likes', label: 'Likes', icon: Heart },
-    { id: 'follows', label: 'Follows', icon: UserPlus },
+    { id: 'team', label: 'Team', icon: Users }, // New Team tab
+    { id: 'comment', label: 'Comments', icon: MessageCircle },
+    { id: 'mention', label: 'Mentions', icon: AtSign },
+    { id: 'like', label: 'Likes', icon: Heart },
+    { id: 'follow', label: 'Follows', icon: UserPlus },
 ];
 
 const platformColors: Record<string, string> = {
@@ -97,7 +50,8 @@ const platformColors: Record<string, string> = {
     youtube: 'bg-red-600',
 };
 
-function formatTimeAgo(date: Date): string {
+function formatTimeAgo(dateString: string | Date): string {
+    const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
     const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
 
     if (seconds < 60) return 'Just now';
@@ -108,36 +62,40 @@ function formatTimeAgo(date: Date): string {
 
 export default function InfluencePage() {
     const [activeFilter, setActiveFilter] = useState('all');
-    const [isLoading, setIsLoading] = useState(false);
 
-    const filteredEngagements = activeFilter === 'all'
-        ? mockEngagements
-        : mockEngagements.filter(e => e.type === activeFilter.slice(0, -1)); // Remove 's' from plural
+    // Fetch External Engagement
+    const {
+        items,
+        total,
+        isLoading,
+        refetch
+    } = useEngagement({
+        type: (activeFilter === 'all' || activeFilter === 'team') ? undefined : activeFilter,
+        limit: 50
+    });
+
+    // Fetch Internal Team Notifications
+    const { notifications, unreadCount, markAllAsRead } = useNotifications();
 
     const handleRefresh = async () => {
-        setIsLoading(true);
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        setIsLoading(false);
+        await refetch();
     };
 
-    const stats = {
-        totalEngagements: 1247,
-        responseRate: 87,
-        avgResponseTime: '2.5h',
-        newFollowers: 156
-    };
+    // Determine what to show
+    const showTeam = activeFilter === 'team';
+    // If 'all', we might want to interleave, but for now let's keep them separate or just show external.
+    // The requirement is to enable Team Activity Feed. Let's make 'Team' a distinct view.
 
     return (
         <PageContainer>
             <PageHeader
                 shortCode="I"
                 title="Influence"
-                description="Engage with your audience and build meaningful relationships"
+                description="Engage with your audience and team updates"
                 icon={Users}
                 iconColor="text-pink-500"
                 badge={{
-                    label: `${mockEngagements.filter(e => !e.responded).length} unread`,
+                    label: `${items.filter(e => !e.isRead).length + unreadCount} unread`,
                     variant: 'warning'
                 }}
                 actions={
@@ -152,6 +110,11 @@ export default function InfluencePage() {
                             <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
                             <span className="hidden sm:inline">Refresh</span>
                         </Button>
+                        {showTeam && unreadCount > 0 && (
+                            <Button variant="ghost" size="sm" onClick={() => markAllAsRead()}>
+                                Mark all read
+                            </Button>
+                        )}
                     </div>
                 }
             />
@@ -160,31 +123,24 @@ export default function InfluencePage() {
             <StatsGrid columns={4} className="mb-5">
                 <StatCard
                     label="Total Engagements"
-                    value={stats.totalEngagements.toLocaleString()}
+                    value={total?.toLocaleString() || '0'}
                     icon={MessageCircle}
                     iconColor="text-blue-500"
                     change={{ value: 12, isPositive: true }}
                 />
                 <StatCard
-                    label="Response Rate"
-                    value={`${stats.responseRate}%`}
-                    icon={Reply}
-                    iconColor="text-green-500"
-                    change={{ value: 5, isPositive: true }}
+                    label="Team Updates"
+                    value={notifications.length.toString()}
+                    icon={Bell}
+                    iconColor="text-orange-500"
                 />
+                {/* Re-using other stats for layout balance */}
                 <StatCard
                     label="Avg Response Time"
-                    value={stats.avgResponseTime}
+                    value={'2.5h'}
                     icon={TrendingUp}
                     iconColor="text-purple-500"
                     change={{ value: 15, isPositive: true }}
-                />
-                <StatCard
-                    label="New Followers"
-                    value={`+${stats.newFollowers}`}
-                    icon={UserPlus}
-                    iconColor="text-pink-500"
-                    change={{ value: 23, isPositive: true }}
                 />
             </StatsGrid>
 
@@ -212,92 +168,123 @@ export default function InfluencePage() {
             {/* Engagement Items */}
             <div className="space-y-4">
                 <SectionTitle
-                    title="Recent Activity"
-                    description={`${filteredEngagements.length} engagements`}
+                    title={showTeam ? "Team Activity" : "Recent Activity"}
+                    description={showTeam ? `${notifications.length} updates` : `${items.length} engagements`}
                 />
 
-                {filteredEngagements.length === 0 ? (
-                    <ContentCard>
-                        <EmptyState
-                            icon={Inbox}
-                            title="No engagements found"
-                            description="When people interact with your posts, you'll see them here."
-                        />
-                    </ContentCard>
-                ) : (
-                    <div className="space-y-3">
-                        {filteredEngagements.map(engagement => (
-                            <ContentCard
-                                key={engagement.id}
-                                padding="none"
-                                hover
-                                className={cn(
-                                    "overflow-hidden",
-                                    !engagement.responded && "border-l-4 border-l-primary-500"
-                                )}
-                            >
-                                <div className="p-4 sm:p-5">
-                                    <div className="flex items-start gap-4">
-                                        {/* Avatar */}
-                                        <div className="relative flex-shrink-0">
-                                            <div className="h-12 w-12 rounded-full bg-gradient-to-br from-secondary-200 to-secondary-300 flex items-center justify-center text-lg font-bold text-secondary-600">
-                                                {engagement.user.charAt(0)}
-                                            </div>
-                                            <div className={cn(
-                                                "absolute -bottom-1 -right-1 h-5 w-5 rounded-full flex items-center justify-center",
-                                                platformColors[engagement.platform] || "bg-secondary-500"
-                                            )}>
-                                                {engagement.type === 'comment' && <MessageCircle className="h-3 w-3 text-white" />}
-                                                {engagement.type === 'mention' && <AtSign className="h-3 w-3 text-white" />}
-                                                {engagement.type === 'like' && <Heart className="h-3 w-3 text-white" />}
-                                                {engagement.type === 'follow' && <UserPlus className="h-3 w-3 text-white" />}
-                                            </div>
+                {showTeam ? (
+                    // Team Notifications List
+                    notifications.length === 0 ? (
+                        <ContentCard>
+                            <EmptyState
+                                icon={Bell}
+                                title="No team updates"
+                                description="When your team collaborates, updates will appear here."
+                            />
+                        </ContentCard>
+                    ) : (
+                        <div className="space-y-3">
+                            {notifications.map(note => (
+                                <ContentCard key={note.id} padding="sm" className={cn(!note.read && "bg-blue-50/30")}>
+                                    <div className="flex items-start gap-4 p-2">
+                                        <div className="h-10 w-10 rounded-full bg-secondary-100 flex items-center justify-center">
+                                            <Bell className="h-5 w-5 text-secondary-500" />
                                         </div>
-
-                                        {/* Content */}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-start justify-between gap-2">
-                                                <div>
-                                                    <span className="font-semibold text-secondary-900">{engagement.user}</span>
-                                                    <span className="text-secondary-500 text-sm ml-2">{engagement.handle}</span>
+                                        <div>
+                                            <h4 className="text-sm font-semibold text-secondary-900">{note.title}</h4>
+                                            <p className="text-sm text-secondary-600 mt-1">{note.message}</p>
+                                            <span className="text-xs text-secondary-400 mt-2 block">{formatTimeAgo(note.created_at)}</span>
+                                        </div>
+                                    </div>
+                                </ContentCard>
+                            ))}
+                        </div>
+                    )
+                ) : (
+                    // Existing External Engagement List
+                    items.length === 0 ? (
+                        <ContentCard>
+                            <EmptyState
+                                icon={Inbox}
+                                title="No engagements found"
+                                description={isLoading ? "Loading..." : "When people interact with your posts, you'll see them here."}
+                            />
+                        </ContentCard>
+                    ) : (
+                        <div className="space-y-3">
+                            {items.map(engagement => (
+                                <ContentCard
+                                    key={engagement.id}
+                                    padding="none"
+                                    hover
+                                    className={cn(
+                                        "overflow-hidden",
+                                        !engagement.responded && "border-l-4 border-l-primary-500"
+                                    )}
+                                >
+                                    <div className="p-4 sm:p-5">
+                                        <div className="flex items-start gap-4">
+                                            {/* Avatar */}
+                                            <div className="relative flex-shrink-0">
+                                                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-secondary-200 to-secondary-300 flex items-center justify-center text-lg font-bold text-secondary-600">
+                                                    {engagement.user.charAt(0)}
                                                 </div>
-                                                <span className="text-xs text-secondary-400 whitespace-nowrap">
-                                                    {formatTimeAgo(engagement.timestamp)}
-                                                </span>
+                                                <div className={cn(
+                                                    "absolute -bottom-1 -right-1 h-5 w-5 rounded-full flex items-center justify-center",
+                                                    platformColors[engagement.platform] || "bg-secondary-500"
+                                                )}>
+                                                    {engagement.type === 'comment' && <MessageCircle className="h-3 w-3 text-white" />}
+                                                    {engagement.type === 'mention' && <AtSign className="h-3 w-3 text-white" />}
+                                                    {engagement.type === 'like' && <Heart className="h-3 w-3 text-white" />}
+                                                    {engagement.type === 'follow' && <UserPlus className="h-3 w-3 text-white" />}
+                                                </div>
                                             </div>
 
-                                            <p className="text-secondary-700 mt-1 line-clamp-2">{engagement.content}</p>
+                                            {/* Content */}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <span className="font-semibold text-secondary-900">{engagement.user}</span>
+                                                        <span className="text-secondary-500 text-sm ml-2">{engagement.handle}</span>
+                                                    </div>
+                                                    <span className="text-xs text-secondary-400 whitespace-nowrap">
+                                                        {formatTimeAgo(engagement.timestamp)}
+                                                    </span>
+                                                </div>
 
-                                            {engagement.postTitle && (
-                                                <p className="text-sm text-secondary-500 mt-2">
-                                                    On: <span className="font-medium text-secondary-600">{engagement.postTitle}</span>
-                                                </p>
-                                            )}
+                                                <p className="text-secondary-700 mt-1 line-clamp-2">{engagement.content}</p>
 
-                                            {/* Actions */}
-                                            <div className="flex items-center gap-3 mt-3">
-                                                {!engagement.responded && (
-                                                    <Button size="sm" className="gap-2">
-                                                        <Reply className="h-4 w-4" />
-                                                        Reply
+                                                {engagement.postTitle && (
+                                                    <p className="text-sm text-secondary-500 mt-2">
+                                                        On: <span className="font-medium text-secondary-600">{engagement.postTitle}</span>
+                                                    </p>
+                                                )}
+
+                                                {/* Actions */}
+                                                <div className="flex items-center gap-3 mt-3">
+                                                    {!engagement.responded && (
+                                                        <Button size="sm" className="gap-2">
+                                                            <Reply className="h-4 w-4" />
+                                                            Reply
+                                                        </Button>
+                                                    )}
+                                                    <Button size="sm" variant="ghost" className="gap-2 text-secondary-500">
+                                                        <ThumbsUp className="h-4 w-4" />
+                                                        Like
                                                     </Button>
-                                                )}
-                                                <Button size="sm" variant="ghost" className="gap-2 text-secondary-500">
-                                                    <ThumbsUp className="h-4 w-4" />
-                                                    Like
-                                                </Button>
-                                                {engagement.responded && (
-                                                    <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
-                                                        Responded
-                                                    </Badge>
-                                                )}
+                                                    {engagement.responded && (
+                                                        <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
+                                                            Responded
+                                                        </Badge>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            </ContentCard>
-                        ))}
-                    </div>
+                                </ContentCard>
+                            ))}
+                        </div>
+                    )
                 )}
             </div>
         </PageContainer>

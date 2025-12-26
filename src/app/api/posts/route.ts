@@ -77,6 +77,89 @@ type NormalizedPostInput = ValidatedPostInput & {
   status: NonNullable<ValidatedPostInput['status']>;
 };
 
+/**
+ * Valid status transitions map
+ * Key: current status, Value: array of allowed next statuses
+ */
+const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ['scheduled', 'pending_approval', 'published'],
+  pending_approval: ['approved', 'draft', 'scheduled'], // Can be sent back to draft or scheduled after review
+  approved: ['scheduled', 'published'],
+  scheduled: ['draft', 'pending_approval', 'published', 'failed'],
+  published: [], // Terminal state - cannot change
+  failed: ['scheduled', 'draft'], // Can retry by rescheduling or reverting to draft
+};
+
+/**
+ * Validate that a status transition is allowed
+ */
+function validateStatusTransition(fromStatus: string, toStatus: string): boolean {
+  const allowed = VALID_STATUS_TRANSITIONS[fromStatus];
+  return allowed ? allowed.includes(toStatus) : false;
+}
+
+/**
+ * Validate status requirements
+ */
+function validateStatusRequirements(
+  status: string,
+  scheduledAt: string | undefined,
+  platforms: string[],
+  platformAccounts: Record<string, string> | undefined
+): void {
+  // Scheduled posts require a scheduled_at date
+  if (status === 'scheduled') {
+    if (!scheduledAt) {
+      throw new APIError(
+        400,
+        'Scheduled posts require a scheduled_at date',
+        'MISSING_SCHEDULED_AT'
+      );
+    }
+    
+    // Validate scheduled date is in the future
+    const scheduledDate = new Date(scheduledAt);
+    const now = new Date();
+    if (scheduledDate <= now) {
+      throw new APIError(
+        400,
+        'Scheduled time must be in the future',
+        'INVALID_SCHEDULED_TIME'
+      );
+    }
+  }
+
+  // Published and scheduled posts require platform accounts
+  if (['published', 'scheduled', 'pending_approval'].includes(status)) {
+    if (!platformAccounts || Object.keys(platformAccounts).length === 0) {
+      throw new APIError(
+        400,
+        'Platform accounts are required for this status',
+        'MISSING_PLATFORM_ACCOUNTS'
+      );
+    }
+
+    // Ensure all platforms have accounts assigned
+    const missing = platforms.filter(p => !platformAccounts[p]);
+    if (missing.length > 0) {
+      throw new APIError(
+        400,
+        `Missing account selections for: ${missing.join(', ')}`,
+        'MISSING_PLATFORM_ACCOUNTS'
+      );
+    }
+  }
+
+  // Posts must have at least one platform
+  if (platforms.length === 0) {
+    throw new APIError(
+      400,
+      'At least one platform is required',
+      'MISSING_PLATFORMS'
+    );
+  }
+}
+
 async function ensurePlatformAccounts(
   supabase: SupabaseClient,
   workspaceId: string,
@@ -364,6 +447,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   const campaignId = searchParams.get('campaign_id');
   const from = searchParams.get('from');
   const to = searchParams.get('to');
+  const unscheduled = searchParams.get('unscheduled') === 'true';
 
   // Build query
   let query = supabase
@@ -376,9 +460,38 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     .order('created_at', { ascending: false });
 
   // Apply filters
-  if (status) {
-    query = query.eq('status', status);
+  if (unscheduled) {
+    query = query.is('scheduled_at', null).in('status', ['draft', 'pending_approval']);
+  } else {
+    // Standard filtering
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    // Date range filtering for calendar view:
+    // Include posts that should appear in the calendar range based on the same rule the UI uses:
+    // displayDate = scheduled_at || published_at || created_at
+    //
+    // IMPORTANT: Use proper BETWEEN-style filters (gte + lte) grouped with `and(...)`.
+    // If we OR individual gte/lte checks, we can match almost every row, then pagination can
+    // "starve" the calendar by returning irrelevant recent posts.
+    if (from && to) {
+      const fromIso = new Date(from).toISOString();
+      const toIso = new Date(to).toISOString();
+
+      query = query.or(
+        [
+          // Scheduled posts shown on scheduled_at
+          `and(scheduled_at.gte.${fromIso},scheduled_at.lte.${toIso})`,
+          // Published posts shown on published_at
+          `and(published_at.gte.${fromIso},published_at.lte.${toIso})`,
+          // Unscheduled drafts/pending shown on created_at (only when no scheduled/published date exists)
+          `and(created_at.gte.${fromIso},created_at.lte.${toIso},scheduled_at.is.null,published_at.is.null)`,
+        ].join(',')
+      );
+    }
   }
+
   if (accountId) {
     query = query.eq('social_account_id', accountId);
   }
@@ -386,16 +499,10 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     query = query.eq('campaign_id', campaignId);
   }
 
-  // Date range filtering for calendar view
-  if (from) {
-    query = query.or(`scheduled_at.gte.${from},published_at.gte.${from},created_at.gte.${from}`);
-  }
-  if (to) {
-    query = query.or(`scheduled_at.lte.${to},published_at.lte.${to},created_at.lte.${to}`);
-  }
-
   // Apply pagination
-  query = query.range(offset, offset + limit - 1);
+  // Calendar views can legitimately have >200 items; use a safer cap when from/to is provided.
+  const effectiveLimit = from && to ? Math.max(limit, 1000) : limit;
+  query = query.range(offset, offset + effectiveLimit - 1);
 
   const { data: posts, error, count } = await query;
 
@@ -437,13 +544,33 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(403, 'You do not have permission to create posts', 'FORBIDDEN');
   }
 
+  // Approval Workflow Enforcement
+  // If workspace requires approval, and user is not an approver (admin/owner),
+  // force status to 'pending_approval' for any non-draft status.
+  const requireApproval = (workspace as any).settings?.require_approval;
+  const isApprover = ['owner', 'admin'].includes(role);
+
+  if (requireApproval && !isApprover && ['published', 'scheduled'].includes(normalizedData.status)) {
+    console.log(`[Approval Enforcement] Forcing status to pending_approval for user ${user.id} in workspace ${workspace.id}`);
+    normalizedData.status = 'pending_approval';
+  }
+
+  // Validate status requirements before proceeding
+  validateStatusRequirements(
+    normalizedData.status,
+    normalizedData.scheduled_at,
+    normalizedData.platforms,
+    normalizedData.platformAccounts
+  );
+
   const normalizedAccounts = await ensurePlatformAccounts(
     supabase,
     workspace.id,
     normalizedData.platformAccounts,
-    normalizedStatus
+    normalizedData.status
   );
 
+  // Additional platform account validation for non-draft posts
   if (normalizedData.status !== 'draft') {
     const missing = normalizedData.platforms.filter(
       (platform) => !normalizedAccounts[platform as Platform]
@@ -490,54 +617,9 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(500, error.message, 'DATABASE_ERROR');
   }
 
-  // SRS Optimization: Dual Write to content_items and content_variants
-  // This ensures we are populating the new schema structure defined in the Blueprint
-  try {
-    // 1. Create content_item
-    const { data: contentItem, error: itemError } = await supabase
-      .from('content_items')
-      .insert({
-        workspace_id: workspace.id,
-        title: normalizedData.ai_prompt?.slice(0, 50) || 'Untitled Post',
-        brief: normalizedData.ai_prompt,
-        status: normalizedData.status === 'pending_approval' ? 'in_review' : normalizedData.status,
-        scheduled_at: normalizedData.scheduled_at,
-        created_by: user.id,
-      })
-      .select()
-      .single();
-
-    if (itemError) {
-      console.warn('[SRS Sync] Failed to create content_item:', itemError);
-    } else if (contentItem) {
-      // 2. Create content_variants for each platform
-      const variants = normalizedData.platforms.map(platform => {
-        const platformContent = normalizedData.content[platform] || normalizedData.content.default;
-        return {
-          content_item_id: contentItem.id,
-          social_account_id: normalizedAccounts[platform], // Might be undefined for draft
-          platform: platform,
-          caption: platformContent?.text || '',
-          media_ids: normalizedData.mediaIds || [],
-          status: normalizedData.status === 'published' ? 'published' :
-            normalizedData.status === 'scheduled' ? 'scheduled' : 'draft',
-          scheduled_at: normalizedData.scheduled_at,
-          published_at: normalizedData.status === 'published' ? new Date().toISOString() : null,
-        };
-      });
-
-      const { error: variantError } = await supabase
-        .from('content_variants')
-        .insert(variants);
-
-      if (variantError) {
-        console.warn('[SRS Sync] Failed to create content_variants:', variantError);
-      }
-    }
-  } catch (srsError) {
-    // Non-blocking error - tables might not exist yet if migration wasn't run
-    console.warn('[SRS Sync] SRS tables not ready or sync failed:', srsError);
-  }
+  // NOTE: Dual-write to content_items/content_variants removed for performance
+  // and to maintain single source of truth. The `posts` table is the canonical store.
+  // SRS migration can be done as a separate future initiative.
 
   if (shouldPublishImmediately(normalizedData)) {
     const updatedPost = await publishImmediately({
@@ -576,10 +658,55 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(403, 'You do not have permission to update posts', 'FORBIDDEN');
   }
 
+  // Fetch current post to validate status transitions
+  const { data: currentPost, error: fetchError } = await supabase
+    .from('posts')
+    .select('*')
+    .eq('id', postId)
+    .eq('workspace_id', workspace.id)
+    .single();
+
+  if (fetchError || !currentPost) {
+    throw new APIError(404, 'Post not found', 'POST_NOT_FOUND');
+  }
+
+  // Validate status transition if status is being changed
+  if (body.status && body.status !== currentPost.status) {
+    // Published posts cannot be modified
+    if (currentPost.status === 'published') {
+      throw new APIError(
+        400,
+        'Published posts cannot be modified',
+        'INVALID_STATUS_TRANSITION'
+      );
+    }
+
+    // Validate the transition is allowed
+    if (!validateStatusTransition(currentPost.status, body.status)) {
+      throw new APIError(
+        400,
+        `Cannot transition from "${currentPost.status}" to "${body.status}"`,
+        'INVALID_STATUS_TRANSITION'
+      );
+    }
+
+    // Validate requirements for the new status
+    const platforms = body.platforms || currentPost.platforms || [];
+    const platformAccounts = body.metadata?.accountIds || currentPost.metadata?.accountIds;
+    const scheduledAt = body.scheduled_at || currentPost.scheduled_at;
+
+    validateStatusRequirements(body.status, scheduledAt, platforms, platformAccounts);
+  }
+
+  // Prevent modification of published_at and external_post_id by non-system calls
+  const sanitizedBody = { ...body };
+  delete sanitizedBody.published_at;
+  delete sanitizedBody.external_post_id;
+
   // Update post
   const { data: post, error } = await supabase
     .from('posts')
-    .update(body)
+    .update(sanitizedBody)
     .eq('id', postId)
     .eq('workspace_id', workspace.id)
     .select()

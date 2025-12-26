@@ -43,7 +43,8 @@ const roleStyles = {
 
 export function TeamMembers({ workspaceId }: TeamMembersProps) {
     const [inviteEmail, setInviteEmail] = useState("");
-    const { members, loading, inviteMember, removeMember } = useWorkspaceMembers(workspaceId);
+    const { members: dataMembers, isLoading: loading, inviteMember, removeMember } = useWorkspaceMembers(workspaceId);
+    const members = dataMembers || [];
     const [isInviting, setIsInviting] = useState(false);
     const [inviteSuccess, setInviteSuccess] = useState(false);
 
@@ -57,7 +58,8 @@ export function TeamMembers({ workspaceId }: TeamMembersProps) {
         }
 
         setIsInviting(true);
-        await inviteMember(inviteEmail);
+        // Default to 'creator' role for quick invites
+        inviteMember({ email: inviteEmail, role: 'creator' });
         setInviteEmail("");
         setIsInviting(false);
         setInviteSuccess(true);
@@ -110,7 +112,7 @@ export function TeamMembers({ workspaceId }: TeamMembersProps) {
                     </Button>
                 </div>
                 <p className="text-xs text-secondary-500 mt-2">
-                    They'll receive an email invitation to join your workspace
+                    They&apos;ll receive an email invitation to join your workspace
                 </p>
             </div>
 

@@ -34,7 +34,7 @@ export default function ROICalculatorPage() {
                 </Link>
                 <h1 className="text-4xl sm:text-5xl font-bold text-secondary-900 mb-6">Social Media ROI Calculator</h1>
                 <p className="text-xl text-secondary-600 mb-8 max-w-2xl mx-auto">
-                    See exactly how much money you could save by switching to Xocial's automated workflow.
+                    See exactly how much money you could save by switching to Xocial&apos;s automated workflow.
                 </p>
             </div>
 
@@ -45,7 +45,7 @@ export default function ROICalculatorPage() {
                     <Card className="shadow-xl">
                         <CardHeader>
                             <CardTitle>Your Current Workflow</CardTitle>
-                            <CardDescription>Enter your team's details below.</CardDescription>
+                            <CardDescription>Enter your team&apos;s details below.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-8">
                             <div>
@@ -81,7 +81,7 @@ export default function ROICalculatorPage() {
                     <Card className="shadow-xl bg-secondary-900 text-white border-secondary-800">
                         <CardHeader>
                             <CardTitle className="text-white">Your Potential Savings</CardTitle>
-                            <CardDescription className="text-secondary-400">Based on Xocial's 60% efficiency improvement.</CardDescription>
+                            <CardDescription className="text-secondary-400">Based on Xocial&apos;s 60% efficiency improvement.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-8">
                             <div className="grid grid-cols-2 gap-4">
@@ -96,7 +96,7 @@ export default function ROICalculatorPage() {
                             </div>
 
                             <div className="p-6 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl">
-                                <p className="font-bold text-white mb-2">The "Hidden" Cost of Manual Work</p>
+                                <p className="font-bold text-white mb-2">The &quot;Hidden&quot; Cost of Manual Work</p>
                                 <p className="text-blue-100 text-sm mb-4">
                                     You are currently spending <span className="font-bold text-white">${yearlyCost.toLocaleString()}</span> per year just on manual social media admin tasks.
                                 </p>

@@ -28,13 +28,24 @@ interface PlatformSelectionDialogProps {
     onOpenChange: (open: boolean) => void;
 }
 
+import { useSelectedWorkspace } from '@/store/workspaceStore';
+import { toast } from 'sonner';
+
+// ... imports
+
 export function PlatformSelectionDialog({ open, onOpenChange }: PlatformSelectionDialogProps) {
     const [connecting, setConnecting] = useState<Platform | null>(null);
+    const selectedWorkspace = useSelectedWorkspace();
 
     const handleConnect = async (platform: Platform) => {
+        if (!selectedWorkspace) {
+            toast.error('Please select a workspace first');
+            return;
+        }
+
         setConnecting(platform);
         // Redirect to OAuth flow
-        window.location.href = `/api/auth/connect?platform=${platform}`;
+        window.location.href = `/api/auth/connect?platform=${platform}&workspaceId=${selectedWorkspace.id}`;
     };
 
     return (

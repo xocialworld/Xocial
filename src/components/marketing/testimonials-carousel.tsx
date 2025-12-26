@@ -136,7 +136,7 @@ export default function TestimonialsCarousel() {
 
                     {/* Quote Text */}
                     <blockquote className="text-xl sm:text-2xl lg:text-3xl font-medium text-secondary-800 leading-relaxed mb-8 relative z-10">
-                      "{testimonial.quote}"
+                      &quot;{testimonial.quote}&quot;
                     </blockquote>
 
                     {/* Author Info */}
@@ -174,8 +174,8 @@ export default function TestimonialsCarousel() {
               aria-current={index === activeIndex ? 'true' : 'false'}
               onClick={() => handleDotClick(index)}
               className={`h-3 rounded-full transition-all duration-300 ${index === activeIndex
-                  ? 'w-8 bg-primary-600'
-                  : 'w-3 bg-secondary-300 hover:bg-secondary-400'
+                ? 'w-8 bg-primary-600'
+                : 'w-3 bg-secondary-300 hover:bg-secondary-400'
                 }`}
             />
           ))}

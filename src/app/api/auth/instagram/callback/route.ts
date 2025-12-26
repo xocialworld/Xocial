@@ -74,9 +74,16 @@ export async function GET(request: NextRequest) {
             throw new APIError(404, 'No Facebook pages found. Instagram business accounts must be linked to a Facebook page.', 'NO_PAGES');
         }
 
-        // Get user's workspace
-        const workspace = await getUserWorkspace(user.id, supabase);
-        logger.info(`[Instagram Callback] User workspace: ${workspace.id}`);
+        // Get user's workspace context from state
+        let workspaceId = stateVerification.workspaceId;
+
+        if (!workspaceId) {
+            logger.warn('[Instagram Callback] No workspaceId in state, falling back to default workspace');
+            const workspace = await getUserWorkspace(user.id, supabase);
+            workspaceId = workspace.id;
+        }
+
+        logger.info(`[Instagram Callback] Target workspace ID: ${workspaceId}`);
 
         // Find Instagram business accounts linked to Facebook pages
         const instagramAccounts = [];
@@ -114,7 +121,7 @@ export async function GET(request: NextRequest) {
                     .from('social_accounts')
                     .upsert(
                         {
-                            workspace_id: workspace.id,
+                            workspace_id: workspaceId,
                             platform: 'instagram',
                             assigned_user_id: user.id,
                             account_id: igAccount.id,

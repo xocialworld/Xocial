@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CommentItem, Comment } from "./comment-item";
+import { createClient } from "@/lib/supabase/client";
 import { CommentInput } from "./comment-input";
 import { toast } from "sonner";
 import { MessageSquare, RefreshCw } from "lucide-react";
@@ -44,7 +45,70 @@ export function CommentList({ contentItemId, workspaceId, className }: CommentLi
 
     useEffect(() => {
         fetchComments();
-    }, [fetchComments]);
+
+        // Realtime subscription
+        const supabase = createClient();
+        console.log("Setting up realtime subscription for content:", contentItemId);
+
+        const channel = supabase
+            .channel(`comments:${contentItemId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'content_comments',
+                    filter: `content_item_id=eq.${contentItemId}`,
+                },
+                async (payload) => {
+                    console.log('Realtime event:', payload);
+
+                    if (payload.eventType === 'INSERT') {
+                        // Fetch full comment with relations
+                        const { new: newRecord } = payload;
+                        try {
+                            const res = await fetch(`/api/comments?id=${newRecord.id}&workspace_id=${workspaceId}`);
+                            if (res.ok) {
+                                const data = await res.json();
+                                if (data.comments && data.comments.length > 0) {
+                                    handleCommentAdded(data.comments[0]);
+                                }
+                            }
+                        } catch (err) {
+                            console.error("Failed to fetch new realtime comment", err);
+                        }
+                    } else if (payload.eventType === 'DELETE') {
+                        handleCommentDeleted(payload.old.id, (payload.old as any).parent_id);
+                    } else if (payload.eventType === 'UPDATE') {
+                        // Optimistic update for simple fields, or re-fetch if complex
+                        // For now, let's just handle resolution status locally if we have the record
+                        // Ideally we might want to re-fetch to be safe, but let's try mapping first
+                        const { new: updatedRecord } = payload;
+                        setComments(prev => {
+                            const updateInThread = (list: Comment[]): Comment[] => {
+                                return list.map(c => {
+                                    if (c.id === updatedRecord.id) {
+                                        return { ...c, ...updatedRecord, author: c.author }; // Preserve author, update fields
+                                    }
+                                    if (c.replies) {
+                                        return { ...c, replies: updateInThread(c.replies) };
+                                    }
+                                    return c;
+                                });
+                            };
+                            return updateInThread(prev);
+                        });
+                    }
+                }
+            )
+            .subscribe((status) => {
+                console.log("Subscription status:", status);
+            });
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [fetchComments, contentItemId, workspaceId]);
 
     const handleRefresh = () => {
         setRefreshing(true);

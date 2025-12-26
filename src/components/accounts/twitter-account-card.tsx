@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -46,7 +46,7 @@ export function TwitterAccountCard({
     } | null>(null);
     const [loadingStats, setLoadingStats] = useState(false);
 
-    const fetchStats = async () => {
+    const fetchStats = useCallback(async () => {
         setLoadingStats(true);
         try {
             const response = await fetch(`/api/twitter/${account.id}/stats`);
@@ -59,12 +59,12 @@ export function TwitterAccountCard({
         } finally {
             setLoadingStats(false);
         }
-    };
+    }, [account.id]);
 
     // Fetch stats on mount
     useEffect(() => {
         fetchStats();
-    }, [account.id]);
+    }, [fetchStats]);
 
     const handleSync = async () => {
         setSyncing(true);

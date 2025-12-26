@@ -4,6 +4,7 @@
  */
 
 'use client';
+import { createClient } from '@/lib/supabase/client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '@/components/ui/card';
@@ -113,18 +114,43 @@ export function RealtimeMetrics({ workspaceId, isLive = false }: RealtimeMetrics
     }
   }, []);
 
-  useEffect(() => {
-    if (!workspaceId) return;
 
-    // Always fetch once on mount
+
+  // Real-time subscription
+  useEffect(() => {
+    if (!workspaceId || !isLive) return;
+
+    // Initial fetch
     fetchSnapshot();
 
-    // Only set up interval if Live Mode is enabled
-    if (isLive) {
-      const interval = setInterval(fetchSnapshot, 15_000);
-      return () => clearInterval(interval);
-    }
-  }, [workspaceId, fetchSnapshot, isLive]);
+    const supabase = createClient();
+    let debounceTimer: ReturnType<typeof setTimeout>;
+
+    const handleUpdate = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchSnapshot();
+      }, 1000); // 1 second debounce
+    };
+
+    const channel = supabase
+      .channel(`realtime-metrics:${workspaceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'post_analytics',
+        },
+        handleUpdate
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearTimeout(debounceTimer);
+    };
+  }, [workspaceId, isLive, fetchSnapshot]);
 
   const metricCards = useMemo(() => {
     if (!snapshot) return [];
@@ -177,19 +203,19 @@ export function RealtimeMetrics({ workspaceId, isLive = false }: RealtimeMetrics
     <section className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+          <h2 className="text-2xl font-semibold text-secondary-900">
             Live Engagement
           </h2>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-secondary-500">
             Auto-refreshing snapshot of how your latest posts are performing
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm text-gray-500">
           {snapshot && (
-            <Badge variant="outline" className="border-green-200 bg-green-50 text-green-700">
+            <Badge variant="outline" className="border-success-200 bg-success-50 text-success-700">
               <span className="relative flex h-2 w-2 mr-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-success-500"></span>
               </span>
               {snapshot.meta.sampleSize} posts · last {snapshot.meta.windowMinutes}m
             </Badge>
@@ -203,7 +229,7 @@ export function RealtimeMetrics({ workspaceId, isLive = false }: RealtimeMetrics
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-gradient-to-r from-red-50 to-rose-50 p-4 text-sm text-red-700 shadow-sm">
+        <div className="rounded-xl border border-error-200 bg-error-50 p-4 text-sm text-error-700 shadow-sm">
           {error}
         </div>
       )}
@@ -219,7 +245,7 @@ export function RealtimeMetrics({ workspaceId, isLive = false }: RealtimeMetrics
           return (
             <Card
               key={metric.label}
-              className={`relative overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 bg-gradient-to-br ${colors.bg} backdrop-blur-sm`}
+              className={`relative overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 bg-gradient-to-br ${colors.bg}`}
             >
               <div className="p-6">
                 <div className="flex items-start justify-between">
@@ -235,10 +261,10 @@ export function RealtimeMetrics({ workspaceId, isLive = false }: RealtimeMetrics
                 </div>
                 <div className="mt-4 flex items-center gap-2">
                   <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${trend === 'up'
-                    ? 'bg-green-100 text-green-700'
+                    ? 'bg-success-100 text-success-700'
                     : trend === 'down'
-                      ? 'bg-red-100 text-red-700'
-                      : 'bg-gray-100 text-gray-600'
+                      ? 'bg-error-100 text-error-700'
+                      : 'bg-secondary-100 text-secondary-600'
                     }`}>
                     <TrendIcon className="h-3 w-3" />
                     <span>
@@ -256,11 +282,11 @@ export function RealtimeMetrics({ workspaceId, isLive = false }: RealtimeMetrics
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="p-6">
+        <Card className="p-6 border-secondary-100 shadow-sm bg-white">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Engagement sparkline</h3>
-              <p className="text-sm text-gray-500">Aggregated 5-minute buckets</p>
+              <h3 className="text-lg font-semibold text-secondary-900">Engagement sparkline</h3>
+              <p className="text-sm text-secondary-500">Aggregated 5-minute buckets</p>
             </div>
             {loading && (
               <Badge variant="secondary" className="animate-pulse">
@@ -302,7 +328,7 @@ export function RealtimeMetrics({ workspaceId, isLive = false }: RealtimeMetrics
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-6 border-secondary-100 shadow-sm bg-white">
           <div className="mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Latest high-performing posts</h3>
             <p className="text-sm text-gray-500">
@@ -315,18 +341,18 @@ export function RealtimeMetrics({ workspaceId, isLive = false }: RealtimeMetrics
               snapshot.topPosts.map((post) => (
                 <div
                   key={post.postId}
-                  className="rounded-lg border border-gray-100 p-4 hover:bg-gray-50 transition"
+                  className="rounded-lg border border-secondary-100 p-4 hover:bg-secondary-50 transition"
                 >
-                  <div className="flex items-center justify-between text-xs text-gray-500">
+                  <div className="flex items-center justify-between text-xs text-secondary-500">
                     <span className="uppercase tracking-wide">{post.platform}</span>
                     <span>
                       Updated {new Date(post.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
-                  <p className="mt-2 text-sm text-gray-900 line-clamp-2">
+                  <p className="mt-2 text-sm text-secondary-900 line-clamp-2">
                     {post.contentPreview || 'Untitled post'}
                   </p>
-                  <div className="mt-3 flex flex-wrap gap-4 text-xs text-gray-600">
+                  <div className="mt-3 flex flex-wrap gap-4 text-xs text-secondary-600">
                     <span>Engagement: {post.engagement.toLocaleString()}</span>
                     <span>Likes: {post.likes.toLocaleString()}</span>
                     <span>Comments: {post.comments.toLocaleString()}</span>

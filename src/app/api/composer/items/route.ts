@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
         const hasSchedule = scheduled_at && new Date(scheduled_at) > new Date();
         const initialStatus = hasSchedule ? 'scheduled' : 'draft';
 
-        // Create content item
+        // Create content item with drafted_at and optional approval_workflow_id
         const { data: contentItem, error: itemError } = await supabase
             .from('content_items')
             .insert({
@@ -155,6 +155,8 @@ export async function POST(request: NextRequest) {
                 brief: brief || null,
                 status: initialStatus,
                 scheduled_at: scheduled_at || null,
+                drafted_at: body.drafted_at || new Date().toISOString(),
+                approval_workflow_id: workflow_id || null,
                 created_by: user.id,
             })
             .select()

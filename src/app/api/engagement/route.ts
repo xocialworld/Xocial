@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
         const searchParams = request.nextUrl.searchParams;
         const platform = searchParams.get('platform');
         const status = searchParams.get('status');
+        const type = searchParams.get('type');
         const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100);
         const offset = parseInt(searchParams.get('offset') || '0', 10);
 
@@ -60,30 +61,76 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        // For now, return an empty state since we don't have a social_comments table
-        // In a full implementation, this would fetch from each platform's API
-        // or from a cached comments table
+        // Query social_engagements table
+        let query = supabase
+            .from('social_engagements')
+            .select(`
+                *,
+                social_account:social_accounts(
+                    id,
+                    platform,
+                    account_name,
+                    profile_image_url
+                )
+            `, { count: 'exact' })
+            .eq('workspace_id', workspace.id)
+            .order('occurred_at', { ascending: false });
 
-        const engagementItems: any[] = [];
+        // Apply filters
+        if (platform) {
+            query = query.eq('platform', platform);
+        }
 
-        // TODO: Implement actual comment fetching from connected platforms
-        // This would involve:
-        // 1. For Instagram: GET /api/instagram/comments
-        // 2. For Facebook: Similar endpoint
-        // 3. For YouTube: Comments from video analytics
+        if (type) {
+            query = query.eq('type', type);
+        }
+
+        if (status) {
+            if (status === 'new' || status === 'unread') {
+                query = query.eq('is_read', false);
+            } else if (status === 'replied') {
+                query = query.eq('is_replied', true);
+            }
+        }
+
+        // Apply pagination
+        query = query.range(offset, offset + limit - 1);
+
+        const { data: engagements, error, count } = await query;
+
+        if (error) {
+            throw error;
+        }
+
+        // Transform data
+        const items = engagements.map((item: any) => ({
+            id: item.id,
+            type: item.type,
+            user: item.author_name,
+            handle: item.author_handle,
+            avatar: item.author_avatar_url,
+            content: item.content,
+            platform: item.platform,
+            postTitle: item.post_title,
+            timestamp: item.occurred_at,
+            responded: item.is_replied,
+            isRead: item.is_read,
+            socialAccountId: item.social_account_id,
+            socialAccount: item.social_account
+        }));
 
         return NextResponse.json({
             success: true,
             data: {
-                items: engagementItems,
+                items,
                 accounts: accounts.map(acc => ({
                     id: acc.id,
                     platform: acc.platform,
                     name: acc.account_name,
                     avatar: acc.profile_image_url,
                 })),
-                total: engagementItems.length,
-                hasMore: false,
+                total: count || 0,
+                hasMore: (offset + items.length) < (count || 0),
             },
         });
     } catch (error) {

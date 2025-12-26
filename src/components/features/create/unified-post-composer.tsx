@@ -1,22 +1,26 @@
 "use client";
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ComposerInput } from './composer-input';
 import { PlatformSelector } from './platform-selector';
 import { PlatformPreviews } from './platform-previews';
 import { MediaLibraryModal } from './media-library-modal';
 import { SchedulingControls } from './scheduling-controls';
 import { ContentCompatibilityWarning } from './content-compatibility-warning';
-import type { Platform, MediaFile } from '@/types';
+import type { Platform, MediaFile, PostStatus } from '@/types';
 import { toast } from 'sonner';
-import { useAccounts } from '@/app/(dashboard)/x/hooks/useAccounts';
+import { useAccounts } from '@/hooks/use-accounts';
+import { useSelectedWorkspace } from '@/store/workspaceStore';
 import { logger } from '@/lib/logger';
+import { useQueryClient } from '@tanstack/react-query';
+import { invalidateAllPostQueries } from '@/lib/react-query';
 
 export type CreateContent = {
     text: string;
     platforms: Platform[];
     media: MediaFile[];
-    platformContent: Record<Platform, string>; // Platform-specific generated content
+    platformContent: Record<Platform, string>;
 };
 
 export type AIGenerationOptions = {
@@ -27,23 +31,134 @@ export type AIGenerationOptions = {
     model?: string;
 };
 
+// Initial empty content state
+const EMPTY_CONTENT: CreateContent = {
+    text: '',
+    platforms: [],
+    media: [],
+    platformContent: {} as Record<Platform, string>,
+};
+
+/**
+ * Centralized post submission payload builder
+ */
+function buildPostPayload(
+    content: CreateContent,
+    accountSelections: Record<Platform, string>,
+    status: PostStatus,
+    scheduledAt?: Date
+) {
+    // Build platform-specific content
+    const postContent: Record<string, { text: string }> = {};
+    content.platforms.forEach(platform => {
+        postContent[platform] = {
+            text: content.platformContent[platform] || content.text,
+        };
+    });
+
+    // Build media payload
+    const mediaPayload = content.media.map(m => ({
+        id: m.id,
+        url: m.url,
+        type: m.type,
+        filename: m.name,
+        size: m.size,
+    }));
+
+    return {
+        content: postContent,
+        platforms: content.platforms,
+        platformAccounts: accountSelections,
+        status,
+        scheduled_at: scheduledAt?.toISOString(),
+        media: mediaPayload,
+        mediaIds: content.media.map(m => m.id),
+    };
+}
+
+/**
+ * Submit post to API with consistent error handling
+ * Includes workspace ID in the request for proper workspace scoping
+ */
+async function submitPost(
+    payload: ReturnType<typeof buildPostPayload>,
+    workspaceId?: string
+): Promise<{ post: any; success: boolean }> {
+    // Build URL with workspace ID if provided
+    const url = workspaceId
+        ? `/api/posts?workspaceId=${encodeURIComponent(workspaceId)}`
+        : '/api/posts';
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            // Also pass workspace ID in header for redundancy
+            ...(workspaceId && { 'x-workspace-id': workspaceId }),
+        },
+        body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+        const errorMsg = data?.error?.message || data?.message || `Request failed with status ${response.status}`;
+        throw new Error(errorMsg);
+    }
+
+    console.log('[Composer] Post created successfully:', data.data?.post?.id || data.post?.id);
+
+    return {
+        post: data.data?.post || data.post,
+        success: true,
+    };
+}
+
 export function UnifiedPostComposer() {
     // Core content state
-    const [content, setContent] = useState<CreateContent>({
-        text: '',
-        platforms: [],
-        media: [],
-        platformContent: {} as Record<Platform, string>,
-    });
+    const [content, setContent] = useState<CreateContent>(EMPTY_CONTENT);
 
     // UI state
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isPublishing, setIsPublishing] = useState(false);
     const [showMediaUpload, setShowMediaUpload] = useState(false);
     const [showMediaLibrary, setShowMediaLibrary] = useState(false);
     const [aiOptions, setAIOptions] = useState<AIGenerationOptions>({});
 
+    // Get current workspace for proper scoping
+    const workspace = useSelectedWorkspace();
+    const workspaceId = workspace?.id;
+
     // Shared account state via React Query + Supabase realtime
     const { accounts: connectedAccounts, loading: loadingAccounts, error, refetch } = useAccounts();
+
+    // Query client for invalidating caches after post creation
+    const queryClient = useQueryClient();
+
+    // Router for navigation after post creation
+    const router = useRouter();
+    const searchParams = useSearchParams();
+
+    // Track if we've already prefilled from URL
+    const prefillApplied = useRef(false);
+
+    // Prefill scheduled date from URL params (from calendar click)
+    useEffect(() => {
+        if (prefillApplied.current) return;
+
+        const dateParam = searchParams.get('date');
+        if (dateParam) {
+            try {
+                const prefillDate = new Date(dateParam);
+                if (!isNaN(prefillDate.getTime())) {
+                    console.log('[Composer] Prefilling date from URL:', prefillDate);
+                    prefillApplied.current = true;
+                }
+            } catch (e) {
+                console.warn('[Composer] Invalid date param:', dateParam);
+            }
+        }
+    }, [searchParams]);
 
     // Real-time verification + error logging on mount and window focus
     useEffect(() => {
@@ -55,10 +170,7 @@ export function UnifiedPostComposer() {
             });
         }
 
-        const onFocus = () => {
-            refetch();
-        };
-
+        const onFocus = () => refetch();
         window.addEventListener('focus', onFocus);
         return () => window.removeEventListener('focus', onFocus);
     }, [error, refetch]);
@@ -118,25 +230,18 @@ export function UnifiedPostComposer() {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                const errorMessage = errorData.error?.message || errorData.message || 'Failed to generate content';
-                throw new Error(errorMessage);
+                throw new Error(errorData.error?.message || errorData.message || 'Failed to generate content');
             }
 
             const apiResponse = await response.json();
             const data = apiResponse?.data || {};
-
-            console.log('AI Generation Result:', {
-                requested: aiOptions,
-                generatedSummary: data.summary,
-                platformContent: data.platformContent
-            });
 
             // Update platform-specific content from API response
             const platformContent: Partial<Record<Platform, string>> = {};
             let hasGeneratedContent = false;
 
             if (data.platformContent) {
-                // Normalize keys from API response to ensure we match our platform IDs
+                // Normalize keys from API response
                 const normalizedResponse: Record<string, any> = {};
                 Object.entries(data.platformContent).forEach(([key, val]) => {
                     const cleanKey = key.toLowerCase().trim();
@@ -151,36 +256,32 @@ export function UnifiedPostComposer() {
                 });
 
                 content.platforms.forEach(platform => {
-                    // Try exact or fuzzy match
                     let platformData = normalizedResponse[platform];
-
                     if (!platformData) {
                         const fuzzyKey = Object.keys(normalizedResponse).find(k => k.includes(platform));
                         if (fuzzyKey) platformData = normalizedResponse[fuzzyKey];
                     }
 
-                    if (platformData && platformData.text) {
+                    if (platformData?.text) {
                         platformContent[platform] = platformData.text;
                         hasGeneratedContent = true;
                     }
                 });
             }
 
-            if (!hasGeneratedContent) {
-                // Final fallback: If we have any content at all in the data object, try to use it
-                if (data.platformContent && Object.values(data.platformContent).length > 0) {
-                    const firstValue = Object.values(data.platformContent)[0] as any;
-                    if (firstValue && firstValue.text) {
-                        content.platforms.forEach(p => {
-                            platformContent[p] = firstValue.text;
-                        });
-                        hasGeneratedContent = true;
-                    }
+            // Fallback: use first available content for all platforms
+            if (!hasGeneratedContent && data.platformContent) {
+                const firstValue = Object.values(data.platformContent)[0] as any;
+                if (firstValue?.text) {
+                    content.platforms.forEach(p => {
+                        platformContent[p] = firstValue.text;
+                    });
+                    hasGeneratedContent = true;
                 }
             }
 
             if (!hasGeneratedContent) {
-                toast.warning('AI generated content but it appears empty. Please try again or adjust your prompt.');
+                toast.warning('AI generated content but it appears empty. Please try again.');
                 return;
             }
 
@@ -188,10 +289,10 @@ export function UnifiedPostComposer() {
                 ...prev,
                 platformContent: platformContent as Record<Platform, string>
             }));
-            toast.success('Content generated successfully! ✨');
-        } catch (error) {
+            toast.success('Content generated successfully!');
+        } catch (error: any) {
             console.error('AI generation error:', error);
-            toast.error('Failed to generate content. Please try again.');
+            toast.error(error.message || 'Failed to generate content');
         } finally {
             setIsGenerating(false);
         }
@@ -208,16 +309,12 @@ export function UnifiedPostComposer() {
                 const response = await fetch('/api/ai/hashtags', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        content: currentContent,
-                        platform,
-                        count: 5,
-                    }),
+                    body: JSON.stringify({ content: currentContent, platform, count: 5 }),
                 });
 
                 if (!response.ok) throw new Error('Failed to generate hashtags');
                 const data = await response.json();
-                const hashtags = data.data.hashtags || [];
+                const hashtags = data.data?.hashtags || [];
                 if (hashtags.length > 0) {
                     newContent = `${currentContent}\n\n${hashtags.map((t: string) => `#${t}`).join(' ')}`;
                 }
@@ -225,30 +322,23 @@ export function UnifiedPostComposer() {
                 const response = await fetch('/api/ai/refine', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        content: currentContent,
-                        platform,
-                        refinementType: instruction,
-                    }),
+                    body: JSON.stringify({ content: currentContent, platform, refinementType: instruction }),
                 });
 
                 if (!response.ok) throw new Error('Failed to refine content');
                 const data = await response.json();
-                newContent = data.data.text;
+                newContent = data.data?.text || currentContent;
             }
 
             setContent(prev => ({
                 ...prev,
-                platformContent: {
-                    ...prev.platformContent,
-                    [platform]: newContent,
-                },
+                platformContent: { ...prev.platformContent, [platform]: newContent },
             }));
 
             toast.success(`${platform} content updated`);
-        } catch (error) {
+        } catch (error: any) {
             console.error('AI refine error:', error);
-            toast.error('Failed to update content');
+            toast.error(error.message || 'Failed to update content');
         }
     }, [content]);
 
@@ -267,12 +357,12 @@ export function UnifiedPostComposer() {
             const formData = new FormData();
             formData.append('file', file);
             const response = await fetch('/api/media/upload', { method: 'POST', body: formData });
-            let payload: any = null;
-            try { payload = await response.json(); } catch { }
+            const payload = await response.json().catch(() => null);
+
             if (!response.ok) {
-                const msg = payload?.error || `Failed to upload ${file.name}`;
-                throw new Error(msg);
+                throw new Error(payload?.error || `Failed to upload ${file.name}`);
             }
+
             return {
                 id: payload.id,
                 url: payload.url,
@@ -283,8 +373,8 @@ export function UnifiedPostComposer() {
         });
 
         const results = await Promise.allSettled(uploadPromises);
-        const succeeded = results.filter(r => r.status === 'fulfilled') as PromiseFulfilledResult<MediaFile>[];
-        const failed = results.filter(r => r.status === 'rejected') as PromiseRejectedResult[];
+        const succeeded = results.filter((r): r is PromiseFulfilledResult<MediaFile> => r.status === 'fulfilled');
+        const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
 
         if (succeeded.length) {
             setContent(prev => ({
@@ -294,8 +384,7 @@ export function UnifiedPostComposer() {
             toast.success(`${succeeded.length} file(s) uploaded`);
         }
         if (failed.length) {
-            const firstError = (failed[0].reason && failed[0].reason.message) || 'Some uploads failed';
-            toast.error(firstError);
+            toast.error(failed[0].reason?.message || 'Some uploads failed');
         }
     }, []);
 
@@ -320,335 +409,162 @@ export function UnifiedPostComposer() {
     const handlePlatformContentChange = useCallback((platform: Platform, text: string) => {
         setContent(prev => ({
             ...prev,
-            platformContent: {
-                ...prev.platformContent,
-                [platform]: text,
-            },
+            platformContent: { ...prev.platformContent, [platform]: text },
         }));
     }, []);
 
-    // Publishing callbacks
-    const [isPublishing, setIsPublishing] = useState(false);
-
-    const handleSaveDraft = useCallback(async (accountSelections: Record<Platform, string>) => {
-        setIsPublishing(true);
-        try {
-            const postContent: Record<string, { text: string }> = {};
-            content.platforms.forEach(platform => {
-                postContent[platform] = {
-                    text: content.platformContent[platform] || content.text,
-                };
-            });
-
-            const mediaPayload = content.media.map(m => ({
-                id: m.id,
-                url: m.url,
-                type: m.type,
-                filename: m.name,
-                size: m.size,
-            }));
-
-            const response = await fetch('/api/posts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    content: postContent,
-                    platforms: content.platforms,
-                    platformAccounts: accountSelections,
-                    status: 'draft',
-                    media: mediaPayload,
-                    mediaIds: content.media.map(m => m.id),
-                }),
-            });
-
-            if (!response.ok) {
-                const err = await response.json();
-                const msg = (err && err.error && err.error.message) || err?.message || 'Failed to save draft';
-                throw new Error(msg);
-            }
-
-            toast.success('Draft saved successfully!');
-
-            // Reset form
-            setContent({
-                text: '',
-                platforms: [],
-                media: [],
-                platformContent: {} as Record<Platform, string>,
-            });
-        } catch (error: any) {
-            console.error('Save draft error:', error);
-            toast.error(error.message || 'Failed to save draft');
-        } finally {
-            setIsPublishing(false);
-        }
-    }, [content]);
-
-    const handleSchedule = useCallback(async (
+    /**
+     * Centralized post submission handler
+     * All create/schedule/publish operations go through this
+     */
+    const handleSubmitPost = useCallback(async (
         accountSelections: Record<Platform, string>,
-        scheduledTime: Date
+        status: PostStatus,
+        scheduledAt?: Date
     ) => {
+        // Validation
+        if (content.platforms.length === 0) {
+            toast.error('Please select at least one platform');
+            return;
+        }
+
+        // For non-draft posts, ensure all platforms have accounts selected
+        if (status !== 'draft') {
+            const missingAccounts = content.platforms.filter(p => !accountSelections[p]);
+            if (missingAccounts.length > 0) {
+                toast.error(`Please select accounts for: ${missingAccounts.join(', ')}`);
+                return;
+            }
+        }
+
+        // For scheduled posts, ensure we have a date
+        if (status === 'scheduled' && !scheduledAt) {
+            toast.error('Please select a scheduled time');
+            return;
+        }
+
+        if (!workspaceId) {
+            toast.error('Please select a workspace first');
+            return;
+        }
+
         setIsPublishing(true);
+
         try {
-            const postContent: Record<string, { text: string }> = {};
-            content.platforms.forEach(platform => {
-                postContent[platform] = {
-                    text: content.platformContent[platform] || content.text,
-                };
-            });
+            const payload = buildPostPayload(content, accountSelections, status, scheduledAt);
+            const result = await submitPost(payload, workspaceId);
 
-            const mediaPayload = content.media.map(m => ({
-                id: m.id,
-                url: m.url,
-                type: m.type,
-                filename: m.name,
-                size: m.size,
-            }));
+            // Determine success message based on final status
+            const finalStatus = result.post?.status || status;
+            let successMessage = '';
 
-            const response = await fetch('/api/posts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    content: postContent,
-                    platforms: content.platforms,
-                    platformAccounts: accountSelections,
-                    status: 'scheduled',
-                    scheduled_at: scheduledTime.toISOString(),
-                    media: mediaPayload,
-                    mediaIds: content.media.map(m => m.id),
-                }),
-            });
-
-            if (!response.ok) {
-                const err = await response.json();
-                const msg = (err && err.error && err.error.message) || err?.message || 'Failed to schedule post';
-                throw new Error(msg);
+            switch (finalStatus) {
+                case 'pending_approval':
+                    successMessage = 'Post submitted for approval!';
+                    break;
+                case 'published':
+                    successMessage = 'Post published successfully!';
+                    break;
+                case 'scheduled':
+                    successMessage = `Post scheduled for ${scheduledAt?.toLocaleString() || 'later'}`;
+                    break;
+                case 'draft':
+                    successMessage = 'Draft saved!';
+                    break;
+                default:
+                    successMessage = 'Post created!';
             }
 
-            toast.success(`Post scheduled for ${scheduledTime.toLocaleString()}!`);
+            toast.success(successMessage);
+
+            // Invalidate all post queries to ensure calendar updates
+            await invalidateAllPostQueries(queryClient);
 
             // Reset form
-            setContent({
-                text: '',
-                platforms: [],
-                media: [],
-                platformContent: {} as Record<Platform, string>,
-            });
+            setContent(EMPTY_CONTENT);
+
+            // Navigate to calendar
+            setTimeout(() => router.push('/o'), 300);
+
         } catch (error: any) {
-            console.error('Schedule error:', error);
-            toast.error(error.message || 'Failed to schedule post');
+            console.error('[Composer] Submit error:', error);
+            toast.error(error.message || 'Failed to create post');
         } finally {
             setIsPublishing(false);
         }
-    }, [content]);
+    }, [content, queryClient, router, workspaceId]);
 
-    const handlePublish = useCallback(async (accountSelections: Record<Platform, string>) => {
-        setIsPublishing(true);
-        try {
-            const postContent: Record<string, { text: string }> = {};
-            content.platforms.forEach(platform => {
-                postContent[platform] = {
-                    text: content.platformContent[platform] || content.text,
-                };
-            });
+    // Simplified action handlers that use the centralized submission
+    const handleSaveDraft = useCallback(
+        (accountSelections: Record<Platform, string>) => handleSubmitPost(accountSelections, 'draft'),
+        [handleSubmitPost]
+    );
 
-            const mediaPayload = content.media.map(m => ({
-                id: m.id,
-                url: m.url,
-                type: m.type,
-                filename: m.name,
-                size: m.size,
-            }));
+    const handleSchedule = useCallback(
+        (accountSelections: Record<Platform, string>, scheduledTime: Date) =>
+            handleSubmitPost(accountSelections, 'scheduled', scheduledTime),
+        [handleSubmitPost]
+    );
 
-            const response = await fetch('/api/posts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    content: postContent,
-                    platforms: content.platforms,
-                    platformAccounts: accountSelections,
-                    status: 'published',
-                    media: mediaPayload,
-                    mediaIds: content.media.map(m => m.id),
-                }),
-            });
+    const handlePublish = useCallback(
+        (accountSelections: Record<Platform, string>) => handleSubmitPost(accountSelections, 'published'),
+        [handleSubmitPost]
+    );
 
-            if (!response.ok) {
-                const err = await response.json();
-                const msg = (err && err.error && err.error.message) || err?.message || 'Failed to publish post';
-                throw new Error(msg);
-            }
+    const handleRequestApproval = useCallback(
+        (accountSelections: Record<Platform, string>) => handleSubmitPost(accountSelections, 'pending_approval'),
+        [handleSubmitPost]
+    );
 
-            const data = await response.json();
-            toast.success('Post published successfully! 🎉');
-
-            // Reset form
-            setContent({
-                text: '',
-                platforms: [],
-                media: [],
-                platformContent: {} as Record<Platform, string>,
-            });
-        } catch (error: any) {
-            console.error('Publish error:', error);
-            toast.error(error.message || 'Failed to publish post');
-        } finally {
-            setIsPublishing(false);
-        }
-    }, [content]);
-
-    const handleRequestApproval = useCallback(async (accountSelections: Record<Platform, string>) => {
-        setIsPublishing(true);
-        try {
-            const postContent: Record<string, { text: string }> = {};
-            content.platforms.forEach(platform => {
-                postContent[platform] = {
-                    text: content.platformContent[platform] || content.text,
-                };
-            });
-
-            const mediaPayload = content.media.map(m => ({
-                id: m.id,
-                url: m.url,
-                type: m.type,
-                filename: m.name,
-                size: m.size,
-            }));
-
-            const response = await fetch('/api/posts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    content: postContent,
-                    platforms: content.platforms,
-                    platformAccounts: accountSelections,
-                    status: 'pending_approval', // This status should trigger the approval workflow
-                    media: mediaPayload,
-                    mediaIds: content.media.map(m => m.id),
-                }),
-            });
-
-            if (!response.ok) {
-                const err = await response.json();
-                const msg = (err && err.error && err.error.message) || err?.message || 'Failed to request approval';
-                throw new Error(msg);
-            }
-
-            toast.success('Approval requested successfully!');
-
-            // Reset form
-            setContent({
-                text: '',
-                platforms: [],
-                media: [],
-                platformContent: {} as Record<Platform, string>,
-            });
-        } catch (error: any) {
-            console.error('Request approval error:', error);
-            toast.error(error.message || 'Failed to request approval');
-        } finally {
-            setIsPublishing(false);
-        }
-    }, [content]);
-
+    // Mixed publish/schedule (for some platforms publish now, others schedule)
     const handleMixedPublishSchedule = useCallback(async (
         onlineAccounts: Record<Platform, string>,
         offlineAccounts: Record<Platform, string>,
         scheduledTime: Date
     ) => {
+        if (!workspaceId) {
+            toast.error('Please select a workspace first');
+            return;
+        }
+
         setIsPublishing(true);
+
         try {
-            const postContent: Record<string, { text: string }> = {};
-            content.platforms.forEach(platform => {
-                postContent[platform] = {
-                    text: content.platformContent[platform] || content.text,
-                };
-            });
-
-            const mediaPayload = content.media.map(m => ({
-                id: m.id,
-                url: m.url,
-                type: m.type,
-                filename: m.name,
-                size: m.size,
-            }));
-
-            // 1. Publish to online accounts
+            // Publish to online accounts
             if (Object.keys(onlineAccounts).length > 0) {
                 const onlinePlatforms = Object.keys(onlineAccounts) as Platform[];
-                const mediaPayload = content.media.map(m => ({
-                    id: m.id,
-                    url: m.url,
-                    type: m.type,
-                    filename: m.name,
-                    size: m.size,
-                }));
-
-                const publishResponse = await fetch('/api/posts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        content: postContent,
-                        platforms: onlinePlatforms,
-                        platformAccounts: onlineAccounts,
-                        status: 'published',
-                        media: mediaPayload,
-                        mediaIds: content.media.map(m => m.id),
-                    }),
-                });
-
-                if (!publishResponse.ok) {
-                    const err = await publishResponse.json();
-                    const msg = (err && err.error && err.error.message) || err?.message || 'Failed to publish to online accounts';
-                    throw new Error(msg);
-                }
+                const onlineContent = { ...content, platforms: onlinePlatforms };
+                const payload = buildPostPayload(onlineContent, onlineAccounts, 'published');
+                await submitPost(payload, workspaceId);
             }
 
-            // 2. Schedule for offline accounts
+            // Schedule for offline accounts
             if (Object.keys(offlineAccounts).length > 0) {
                 const offlinePlatforms = Object.keys(offlineAccounts) as Platform[];
-                const scheduleResponse = await fetch('/api/posts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        content: postContent,
-                        platforms: offlinePlatforms,
-                        platformAccounts: offlineAccounts,
-                        status: 'scheduled',
-                        scheduled_at: scheduledTime.toISOString(),
-                        media: mediaPayload,
-                        mediaIds: content.media.map(m => m.id),
-                    }),
-                });
-
-                if (!scheduleResponse.ok) {
-                    const err = await scheduleResponse.json();
-                    const msg = (err && err.error && err.error.message) || err?.message || 'Failed to schedule for offline accounts';
-                    throw new Error(msg);
-                }
+                const offlineContent = { ...content, platforms: offlinePlatforms };
+                const payload = buildPostPayload(offlineContent, offlineAccounts, 'scheduled', scheduledTime);
+                await submitPost(payload, workspaceId);
             }
 
-            toast.success('Published to online accounts and scheduled for offline ones! 🚀');
+            toast.success('Posts processed successfully!');
 
-            // Reset form
-            setContent({
-                text: '',
-                platforms: [],
-                media: [],
-                platformContent: {} as Record<Platform, string>,
-            });
+            // Invalidate caches and redirect
+            await invalidateAllPostQueries(queryClient);
+            setContent(EMPTY_CONTENT);
+            setTimeout(() => router.push('/o'), 300);
+
         } catch (error: any) {
-            console.error('Mixed publish/schedule error:', error);
-            toast.error(error.message || 'Failed to process request');
+            console.error('[Composer] Mixed submit error:', error);
+            toast.error(error.message || 'Failed to process posts');
         } finally {
             setIsPublishing(false);
         }
-    }, [content]);
+    }, [content, queryClient, router, workspaceId]);
 
     // Calculate if AI can be used (enough content)
     const canUseAI = content.text.trim().length >= 20 && content.platforms.length > 0;
 
-    // Derived connected platforms (both active and inactive)
+    // Derived connected platforms
     const connectedPlatforms = Array.from(new Set(
         connectedAccounts
             .map(acc => acc.platform?.toLowerCase())
@@ -729,3 +645,4 @@ export function UnifiedPostComposer() {
         </div>
     );
 }
+

@@ -128,7 +128,7 @@ export async function requireAuth(request: NextRequest) {
  * Create a Supabase client with service role to bypass RLS
  * Use ONLY for admin operations like workspace creation
  */
-function createServiceRoleClient(): SupabaseClient {
+export function createServiceRoleClient(): SupabaseClient {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 

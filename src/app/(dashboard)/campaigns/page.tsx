@@ -7,11 +7,12 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit, Trash2, BarChart3, Calendar } from 'lucide-react';
+import { Plus, Edit, Trash2, BarChart3, Calendar, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
+import { PageHeader, PageContainer } from '@/components/shared/page-components';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -98,24 +99,20 @@ export default function CampaignsPage() {
   };
 
   return (
-    <div className="p-8">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-secondary-900">
-              Campaigns
-            </h1>
-            <p className="mt-2 text-secondary-600">
-              Organize and track your marketing campaigns
-            </p>
-          </div>
+    <PageContainer>
+      <PageHeader
+        title="Campaigns"
+        description="Organize and track your marketing campaigns"
+        icon={Megaphone}
+        iconColor="text-primary-500"
+        actions={
           <Button>
             <Plus className="mr-2 h-5 w-5" />
-            Create Campaign
+            <span className="hidden sm:inline">Create Campaign</span>
+            <span className="inline sm:hidden">Create</span>
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Campaigns Grid */}
       {isLoading ? (
@@ -135,7 +132,7 @@ export default function CampaignsPage() {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {campaigns.map((campaign: Campaign) => {
             const postsCount = campaign.posts_count?.[0]?.count || 0;
-            
+
             return (
               <Card key={campaign.id} className="p-6 hover:shadow-md transition-shadow">
                 {/* Color bar */}
@@ -236,7 +233,7 @@ export default function CampaignsPage() {
           })}
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

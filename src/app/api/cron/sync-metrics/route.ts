@@ -22,7 +22,7 @@ import { createTikTokClient } from '@/lib/platforms/tiktok';
  */
 export const GET = withCronVerification(async (request: NextRequest) => {
   const startTime = Date.now();
-  
+
   try {
     console.log('[Cron: Sync Metrics] Starting metrics sync job');
 
@@ -86,7 +86,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
     // Process each platform-post
     for (const pp of platformPosts) {
       const postStartTime = Date.now();
-      
+
       try {
         console.log(`[Cron: Sync Metrics] Processing post ${pp.post_id} (${pp.platform})`);
 
@@ -166,6 +166,18 @@ export const GET = withCronVerification(async (request: NextRequest) => {
 
     console.log(`[Cron: Sync Metrics] Completed: ${successCount} succeeded, ${failureCount} failed in ${totalDuration}ms`);
 
+    // Optimization: Refresh the analytics materialized view
+    try {
+      const { error: refreshError } = await supabase.rpc('refresh_daily_metrics');
+      if (refreshError) {
+        console.error('[Cron: Sync Metrics] Failed to refresh materialized view:', refreshError);
+      } else {
+        console.log('[Cron: Sync Metrics] Successfully refreshed daily_metrics_summary');
+      }
+    } catch (e) {
+      console.error('[Cron: Sync Metrics] Exception refreshing view:', e);
+    }
+
     return cronSuccessResponse({
       message: 'Metrics sync job completed',
       processed: results.length,
@@ -210,22 +222,22 @@ async function fetchPlatformMetrics(
     switch (platform) {
       case 'facebook':
         return await fetchFacebookMetrics(externalPostId, account.access_token);
-      
+
       case 'instagram':
         return await fetchInstagramMetrics(externalPostId, account.access_token);
-      
+
       case 'twitter':
         return await fetchTwitterMetrics(externalPostId, account.access_token);
-      
+
       case 'linkedin':
         return await fetchLinkedInMetrics(externalPostId, account.access_token);
-      
+
       case 'youtube':
         return await fetchYouTubeMetrics(externalPostId, account.access_token);
-      
+
       case 'tiktok':
         return await fetchTikTokMetrics(externalPostId, account.access_token);
-      
+
       default:
         console.warn(`[Metrics] Unsupported platform: ${platform}`);
         return null;
@@ -246,13 +258,13 @@ async function fetchFacebookMetrics(postId: string, accessToken: string) {
     // Create a temporary FacebookClient instance
     const { FacebookClient } = await import('@/lib/platforms/facebook');
     const client = new FacebookClient({ accessToken, pageId: 'temp' });
-    
+
     // Get basic metrics (likes, comments, shares, reactions)
     const basicMetrics = await client.getPostMetrics(postId);
-    
+
     // Get insights (views, impressions, engagement, clicks)
     const insights = await client.getPostInsights(postId);
-    
+
     return {
       impressions: insights.impressions || 0,
       views: insights.views || 0,  // NEW: v24.0 metric
@@ -275,7 +287,7 @@ async function fetchInstagramMetrics(postId: string, accessToken: string) {
   try {
     const client = await createInstagramClient(accessToken);
     const insights = await (client as any).getPostInsights?.(postId) || {};
-    
+
     return {
       impressions: insights.impressions || 0,
       reach: insights.reach || 0,
@@ -297,11 +309,11 @@ async function fetchTwitterMetrics(postId: string, accessToken: string) {
   try {
     const { TwitterClient } = await import('@/lib/platforms/twitter');
     const client = new TwitterClient(accessToken);
-    
+
     const tweet = await client.getTweet(postId);
     const metrics = tweet.public_metrics || {};
     const nonPublic = tweet.non_public_metrics || {};
-    
+
     return {
       impressions: (metrics.impression_count || 0) + (nonPublic.impression_count || 0),
       reach: (metrics.impression_count || 0) + (nonPublic.impression_count || 0), // Approx
@@ -323,7 +335,7 @@ async function fetchLinkedInMetrics(postId: string, accessToken: string) {
   try {
     const client = await createLinkedInClient(accessToken);
     const stats = await (client as any).getPostStatistics?.(postId) || {};
-    
+
     return {
       impressions: stats.impressions || 0,
       reach: stats.reach || 0,
@@ -348,7 +360,7 @@ async function fetchYouTubeMetrics(videoId: string, accessToken: string) {
       part: 'statistics,snippet',
       id: videoId,
     });
-    
+
     const response = await fetch(
       `https://www.googleapis.com/youtube/v3/videos?${params.toString()}`,
       {
@@ -357,35 +369,35 @@ async function fetchYouTubeMetrics(videoId: string, accessToken: string) {
         },
       }
     );
-    
+
     if (!response.ok) {
       throw new Error('Failed to fetch YouTube video statistics');
     }
-    
+
     const data = await response.json();
     if (!data.items || data.items.length === 0) {
       throw new Error('Video not found');
     }
-    
+
     const video = data.items[0];
     const stats = video.statistics;
-    
+
     const views = parseInt(stats.viewCount || '0');
     const likes = parseInt(stats.likeCount || '0');
     const comments = parseInt(stats.commentCount || '0');
-    
+
     // Try to fetch detailed analytics if possible
     let detailedMetrics = {
       impressions: views,
       reach: views,
     };
-    
+
     try {
       // Get channel ID
       const channelId = video.snippet.channelId;
       const endDate = new Date().toISOString().split('T')[0];
       const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      
+
       const analyticsParams = new URLSearchParams({
         ids: `channel==${channelId}`,
         startDate,
@@ -394,7 +406,7 @@ async function fetchYouTubeMetrics(videoId: string, accessToken: string) {
         dimensions: 'video',
         filters: `video==${videoId}`,
       });
-      
+
       const analyticsResponse = await fetch(
         `https://youtubeanalytics.googleapis.com/v2/reports?${analyticsParams.toString()}`,
         {
@@ -404,7 +416,7 @@ async function fetchYouTubeMetrics(videoId: string, accessToken: string) {
           },
         }
       );
-      
+
       if (analyticsResponse.ok) {
         const analyticsData = await analyticsResponse.json();
         if (analyticsData.rows && analyticsData.rows.length > 0) {
@@ -418,7 +430,7 @@ async function fetchYouTubeMetrics(videoId: string, accessToken: string) {
     } catch (analyticsError) {
       console.warn('[Metrics] Could not fetch detailed YouTube analytics:', analyticsError);
     }
-    
+
     return {
       impressions: detailedMetrics.impressions,
       reach: detailedMetrics.reach,
@@ -440,7 +452,7 @@ async function fetchTikTokMetrics(postId: string, accessToken: string) {
   try {
     const client = await createTikTokClient(accessToken);
     const stats = await (client as any).getVideoStats?.(postId) || {};
-    
+
     return {
       impressions: 0,
       reach: 0,

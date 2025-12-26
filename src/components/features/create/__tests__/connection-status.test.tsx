@@ -5,7 +5,7 @@ const state: any = {
   error: null,
   refetch: jest.fn(),
 };
-jest.mock('@/app/(dashboard)/x/hooks/useAccounts', () => ({
+jest.mock('@/hooks/use-accounts', () => ({
   useAccounts: () => state,
   __setAccounts: (a: any[]) => (state.accounts = a),
   __setLoading: (l: boolean) => (state.loading = l),
@@ -41,7 +41,7 @@ describe('UnifiedPostComposer connection status', () => {
   }
 
   it('shows ready-to-publish when selected platform has an online account', async () => {
-    const accountsModule: any = require('@/app/(dashboard)/x/hooks/useAccounts');
+    const accountsModule: any = require('@/hooks/use-accounts');
     accountsModule.__setAccounts([
       {
         id: 'acc-ig-1',
@@ -76,7 +76,7 @@ describe('UnifiedPostComposer connection status', () => {
   });
 
   it('indicates offline when selected platform has only offline accounts', async () => {
-    const accountsModule: any = require('@/app/(dashboard)/x/hooks/useAccounts');
+    const accountsModule: any = require('@/hooks/use-accounts');
     accountsModule.__setAccounts([
       {
         id: 'acc-li-1',
@@ -109,7 +109,7 @@ describe('UnifiedPostComposer connection status', () => {
 
   it('refreshes connection status on Sync click', async () => {
     renderWithProviders(<UnifiedPostComposer />);
-    const accountsModule: any = require('@/app/(dashboard)/x/hooks/useAccounts');
+    const accountsModule: any = require('@/hooks/use-accounts');
     const syncButton = await screen.findByRole('button', { name: /Sync/i });
     fireEvent.click(syncButton);
     await waitFor(() => expect(accountsModule.__getRefetch()).toHaveBeenCalled());

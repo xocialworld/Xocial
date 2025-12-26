@@ -6,6 +6,7 @@ import {
     getLinkedInProfile,
 } from '@/lib/oauth/linkedin';
 import { logger } from '@/lib/logger';
+import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
 
 interface SyncResult {
     synced: number;
@@ -50,22 +51,22 @@ export async function syncLinkedInPosts(
                     published_at: post.created?.time ? new Date(post.created.time).toISOString() : new Date().toISOString(),
                 };
 
-                await supabase.from('posts').upsert(postData, {
-                    onConflict: 'workspace_id,external_post_id',
+                const { id: postId } = await upsertPostByExternalId(supabase as any, {
+                    workspace_id: postData.workspace_id,
+                    social_account_id: postData.social_account_id,
+                    external_post_id: postData.external_post_id,
+                    platforms: postData.platforms,
+                    content: postData.content,
+                    status: postData.status,
+                    published_at: postData.published_at,
                 });
 
                 // Store stats
                 try {
                     const stats = await getLinkedInPostStats(accessToken, post.id);
-                    const { data: dbPost } = await supabase
-                        .from('posts')
-                        .select('id')
-                        .eq('external_post_id', post.id)
-                        .single();
-
-                    if (dbPost && stats) {
+                    if (postId && stats) {
                         const analyticsData = {
-                            post_id: dbPost.id,
+                            post_id: postId,
                             platform: 'linkedin',
                             impressions: stats.impressionCount || 0,
                             likes: stats.likeCount || 0,

@@ -52,7 +52,7 @@ const CustomLegend = ({ payload }: any) => (
           className="w-3 h-3 rounded-full transition-transform group-hover:scale-125"
           style={{ backgroundColor: entry.color }}
         />
-        <span className="text-sm text-gray-600 group-hover:text-gray-900 transition-colors">
+        <span className="text-sm text-secondary-600 group-hover:text-secondary-900 transition-colors">
           {entry.value}
         </span>
       </div>
@@ -63,18 +63,18 @@ const CustomLegend = ({ payload }: any) => (
 export function EngagementChart({ data }: EngagementChartProps) {
   return (
     <Card
-      className="relative overflow-hidden border-0 shadow-lg bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm p-6"
+      className="relative overflow-hidden border-secondary-100 bg-white shadow-sm hover:shadow-md transition-all duration-200 p-6"
       role="region"
       aria-label="Engagement over time chart"
     >
       {/* Decorative gradient */}
-      <div className="absolute top-0 left-0 w-64 h-64 bg-gradient-to-br from-pink-100/50 dark:from-pink-900/30 to-transparent rounded-full blur-3xl -z-10" />
+      <div className="absolute top-0 left-0 w-64 h-64 bg-gradient-to-br from-primary-50 to-transparent rounded-full blur-3xl -z-10" />
 
       <div className="mb-6">
-        <h3 className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400 bg-clip-text text-transparent">
+        <h3 className="text-xl font-bold text-secondary-900">
           Engagement Over Time
         </h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+        <p className="text-sm text-secondary-500 mt-1">
           Track likes, comments, and shares across all platforms
         </p>
       </div>

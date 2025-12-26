@@ -12,12 +12,14 @@ import {
     ExternalLink,
     RefreshCw,
     CheckCircle2,
-    XCircle,
     AlertCircle,
-    Plus
+    Plus,
+    Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { useAccounts } from "@/hooks/use-accounts";
+import { toast } from "sonner";
 
 interface IntegrationsListProps {
     workspaceId: string;
@@ -62,18 +64,11 @@ const platformConfig = {
     },
 };
 
-// Mock data - in production, fetch from API
-const mockIntegrations = [
-    { id: "1", platform: "instagram", connected: true, account: "@xocial_app", lastSync: new Date(Date.now() - 1000 * 60 * 30) },
-    { id: "2", platform: "youtube", connected: true, account: "Xocial Official", lastSync: new Date(Date.now() - 1000 * 60 * 60 * 2) },
-    { id: "3", platform: "facebook", connected: false },
-    { id: "4", platform: "twitter", connected: false },
-    { id: "5", platform: "linkedin", connected: false },
-    { id: "6", platform: "tiktok", connected: false },
-];
-
-function formatLastSync(date: Date): string {
+function formatLastSync(dateStr: string | null): string {
+    if (!dateStr) return 'Never';
+    const date = new Date(dateStr);
     const minutes = Math.floor((Date.now() - date.getTime()) / 60000);
+    if (minutes < 1) return 'Just now';
     if (minutes < 60) return `${minutes}m ago`;
     const hours = Math.floor(minutes / 60);
     if (hours < 24) return `${hours}h ago`;
@@ -81,17 +76,41 @@ function formatLastSync(date: Date): string {
 }
 
 export function IntegrationsList({ workspaceId }: IntegrationsListProps) {
+    const { accounts, loading, refetch } = useAccounts();
     const [syncing, setSyncing] = useState<string | null>(null);
 
-    const handleSync = async (id: string) => {
-        setSyncing(id);
-        // Simulate sync
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        setSyncing(null);
+    const handleSync = async (account: any) => {
+        setSyncing(account.id);
+        try {
+            const response = await fetch(`/api/accounts/${account.id}/sync-posts`, {
+                method: 'POST',
+            });
+            if (!response.ok) throw new Error('Sync failed');
+            toast.success(`Synced ${account.platform} successfully`);
+            refetch();
+        } catch (error) {
+            toast.error('Failed to sync account');
+            console.error(error);
+        } finally {
+            setSyncing(null);
+        }
     };
 
-    const connected = mockIntegrations.filter(i => i.connected);
-    const available = mockIntegrations.filter(i => !i.connected);
+    const connectedPlatforms = new Set(accounts.map(acc => acc.platform.toLowerCase()));
+
+    // Connected accounts from API
+    const connected = accounts.filter(acc => acc.is_active);
+
+    // Available platforms are those in config NOT in connected list
+    // Note: This logic assumes one account per platform per workspace. 
+    // If multiple accounts per platform are allowed, 'available' should always show all supported platforms or a 'Add new' button.
+    // For now, let's assume we list unconnected platforms as recommendations.
+    // We allow multiple accounts per platform, so show all supported platforms in the 'Add' section
+    const available = Object.keys(platformConfig);
+
+    if (loading) {
+        return <div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin text-primary-500" /></div>;
+    }
 
     return (
         <div className="space-y-6">
@@ -127,13 +146,13 @@ export function IntegrationsList({ workspaceId }: IntegrationsListProps) {
                     </div>
                 ) : (
                     <div className="space-y-3">
-                        {connected.map((integration) => {
-                            const config = platformConfig[integration.platform as keyof typeof platformConfig];
+                        {connected.map((account) => {
+                            const config = platformConfig[account.platform.toLowerCase() as keyof typeof platformConfig];
                             const Icon = config?.icon || AlertCircle;
 
                             return (
                                 <div
-                                    key={integration.id}
+                                    key={account.id}
                                     className="flex items-center justify-between p-4 bg-white border border-secondary-100 rounded-xl hover:border-secondary-200 transition-colors"
                                 >
                                     <div className="flex items-center gap-4">
@@ -146,19 +165,21 @@ export function IntegrationsList({ workspaceId }: IntegrationsListProps) {
                                         <div>
                                             <div className="flex items-center gap-2">
                                                 <p className="font-medium text-secondary-900">
-                                                    {config?.name || integration.platform}
+                                                    {config?.name || account.platform}
                                                 </p>
-                                                <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-[10px] px-1.5 py-0">
-                                                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                                                    Connected
-                                                </Badge>
+                                                <div className="flex items-center gap-2">
+                                                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-[10px] px-1.5 py-0">
+                                                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                                                        Connected
+                                                    </Badge>
+                                                </div>
                                             </div>
                                             <div className="flex items-center gap-2 text-sm text-secondary-500">
-                                                <span>{integration.account}</span>
-                                                {integration.lastSync && (
+                                                <span>{account.account_name}</span>
+                                                {account.last_synced_at && (
                                                     <>
                                                         <span>•</span>
-                                                        <span>Synced {formatLastSync(integration.lastSync)}</span>
+                                                        <span>Synced {formatLastSync(account.last_synced_at)}</span>
                                                     </>
                                                 )}
                                             </div>
@@ -169,19 +190,21 @@ export function IntegrationsList({ workspaceId }: IntegrationsListProps) {
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            onClick={() => handleSync(integration.id)}
-                                            disabled={syncing === integration.id}
+                                            onClick={() => handleSync(account)}
+                                            disabled={syncing === account.id}
                                             className="h-9 px-3"
                                         >
                                             <RefreshCw className={cn(
                                                 "h-4 w-4 mr-2",
-                                                syncing === integration.id && "animate-spin"
+                                                syncing === account.id && "animate-spin"
                                             )} />
                                             Sync
                                         </Button>
-                                        <Button variant="outline" size="sm" className="h-9 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200">
-                                            Disconnect
-                                        </Button>
+                                        <Link href={`/x/settings/${account.id}`}>
+                                            <Button variant="outline" size="sm" className="h-9 text-secondary-600 hover:text-red-600 hover:bg-red-50 border-secondary-200">
+                                                Settings
+                                            </Button>
+                                        </Link>
                                     </div>
                                 </div>
                             );
@@ -193,16 +216,16 @@ export function IntegrationsList({ workspaceId }: IntegrationsListProps) {
             {/* Available Platforms */}
             <div className="pt-4 border-t border-secondary-100">
                 <h4 className="text-sm font-medium text-secondary-700 mb-3">
-                    Available Platforms
+                    Connect New Channel
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {available.map((integration) => {
-                        const config = platformConfig[integration.platform as keyof typeof platformConfig];
+                    {available.map((platformKey) => {
+                        const config = platformConfig[platformKey as keyof typeof platformConfig];
                         const Icon = config?.icon || AlertCircle;
 
                         return (
                             <div
-                                key={integration.id}
+                                key={platformKey}
                                 className="flex items-center justify-between p-3 bg-secondary-50 border border-secondary-100 rounded-xl hover:bg-secondary-100 transition-colors"
                             >
                                 <div className="flex items-center gap-3">
@@ -214,16 +237,18 @@ export function IntegrationsList({ workspaceId }: IntegrationsListProps) {
                                     </div>
                                     <div>
                                         <p className="font-medium text-secondary-700">
-                                            {config?.name || integration.platform}
+                                            {config?.name || platformKey}
                                         </p>
                                         <p className="text-xs text-secondary-500">Not connected</p>
                                     </div>
                                 </div>
 
-                                <Button size="sm" variant="outline" className="h-8">
-                                    <Plus className="h-3.5 w-3.5 mr-1" />
-                                    Connect
-                                </Button>
+                                <Link href={`/api/auth/connect?platform=${platformKey}&workspaceId=${workspaceId}`}>
+                                    <Button size="sm" variant="outline" className="h-8">
+                                        <Plus className="h-3.5 w-3.5 mr-1" />
+                                        Connect
+                                    </Button>
+                                </Link>
                             </div>
                         );
                     })}

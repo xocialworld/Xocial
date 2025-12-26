@@ -58,7 +58,7 @@ export default function CustomersPage() {
             <Card key={i} className={`shadow-xl border ${c.color} hover:-translate-y-2 transition-transform duration-300 h-full flex flex-col bg-white/95 backdrop-blur`}>
               <CardContent className="p-8 flex flex-col h-full">
                 <Quote className="h-10 w-10 text-secondary-300 mb-6" />
-                <p className="text-lg text-secondary-800 italic mb-8 flex-grow leading-relaxed">"{c.quote}"</p>
+                <p className="text-lg text-secondary-800 italic mb-8 flex-grow leading-relaxed">&quot;{c.quote}&quot;</p>
                 <div className="border-t border-secondary-100 pt-6 mt-auto">
                   <div className="mb-2">
                     <div className="font-bold text-secondary-900 text-lg">{c.author}</div>
@@ -84,7 +84,7 @@ export default function CustomersPage() {
               </div>
               <h2 className="text-3xl md:text-4xl font-bold text-secondary-900 mb-6 leading-tight">How TechFlow Agency Scaled 10x</h2>
               <p className="text-lg text-secondary-600 mb-8 leading-relaxed">
-                TechFlow was struggling with "spreadsheet hell". Managing content calendars for 50 clients in Excel was leading to errors, missed posts, and frustrated clients.
+                TechFlow was struggling with &quot;spreadsheet hell&quot;. Managing content calendars for 50 clients in Excel was leading to errors, missed posts, and frustrated clients.
               </p>
               <ul className="space-y-6 mb-10">
                 <li className="flex items-start gap-4">

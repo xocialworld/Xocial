@@ -67,7 +67,7 @@ export function Header({ user }: HeaderProps) {
 
   return (
     <header className="sticky top-0 z-40 border-b border-secondary-200/80 bg-white/80 backdrop-blur-xl">
-      <div className="flex h-14 items-center justify-between px-4 lg:px-6">
+      <div className="flex h-14 items-center justify-between pl-14 pr-4 lg:px-6">
         {/* Left section - Workspace & Search */}
         <div className="flex flex-1 items-center gap-4">
           {/* Workspace Switcher */}

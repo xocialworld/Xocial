@@ -16,69 +16,86 @@ import {
     Smartphone
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
+import { NotificationPreferences, NotificationChannelPreferences } from "@/types";
 
-interface NotificationPreference {
-    id: string;
+interface NotificationCategoryConfig {
+    id: keyof Omit<NotificationPreferences, "digest_frequency">;
     label: string;
     description: string;
     icon: any;
-    email: boolean;
-    push: boolean;
+    hasPush: boolean;
+    hasEmail: boolean;
 }
 
-const defaultPreferences: NotificationPreference[] = [
+const categoryConfigs: NotificationCategoryConfig[] = [
     {
         id: "approvals",
         label: "Approval Requests",
         description: "When content needs your review and approval",
         icon: CheckCircle2,
-        email: true,
-        push: true,
+        hasEmail: true,
+        hasPush: true,
     },
     {
         id: "comments",
         label: "Comments & Mentions",
         description: "When someone comments on or mentions your content",
         icon: MessageSquare,
-        email: true,
-        push: true,
+        hasEmail: true,
+        hasPush: true,
     },
     {
         id: "publishing",
         label: "Publishing Status",
         description: "When posts are published successfully or fail",
         icon: Send,
-        email: true,
-        push: false,
+        hasEmail: true,
+        hasPush: false,
     },
     {
         id: "analytics",
         label: "Weekly Analytics",
         description: "Weekly summary of your social media performance",
         icon: Bell,
-        email: true,
-        push: false,
+        hasEmail: true,
+        hasPush: false,
     },
     {
         id: "marketing",
         label: "Product Updates",
         description: "News about Xocial features and improvements",
         icon: Megaphone,
-        email: false,
-        push: false,
+        hasEmail: false,
+        hasPush: false,
     },
 ];
 
+const defaultPreferences: NotificationPreferences = {
+    approvals: { email: true, push: true, in_app: true },
+    comments: { email: true, push: true, in_app: true },
+    publishing: { email: true, push: false, in_app: true },
+    analytics: { email: true, push: false, in_app: false },
+    marketing: { email: true, push: false, in_app: false },
+    digest_frequency: 'weekly'
+};
+
 function NotificationRow({
-    preference,
+    config,
+    preferences,
     onEmailChange,
     onPushChange
 }: {
-    preference: NotificationPreference;
+    config: NotificationCategoryConfig;
+    preferences: NotificationPreferences;
     onEmailChange: (checked: boolean) => void;
     onPushChange: (checked: boolean) => void;
 }) {
-    const Icon = preference.icon;
+    const Icon = config.icon;
+    // Safe access in case preferences structure doesn't match config yet
+    const categoryPrefs = preferences[config.id];
+
+    if (!categoryPrefs) return null;
 
     return (
         <div className="flex flex-col sm:flex-row sm:items-center gap-4 py-4 border-b border-secondary-100 last:border-0">
@@ -87,23 +104,25 @@ function NotificationRow({
                     <Icon className="h-4 w-4 text-secondary-600" />
                 </div>
                 <div className="min-w-0">
-                    <p className="font-medium text-secondary-900">{preference.label}</p>
-                    <p className="text-sm text-secondary-500 line-clamp-1">{preference.description}</p>
+                    <p className="font-medium text-secondary-900">{config.label}</p>
+                    <p className="text-sm text-secondary-500 line-clamp-1">{config.description}</p>
                 </div>
             </div>
 
             <div className="flex items-center gap-6 sm:gap-8 pl-12 sm:pl-0">
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className={cn("flex items-center gap-2", !config.hasEmail && "opacity-50 cursor-not-allowed")}>
                     <Switch
-                        checked={preference.email}
+                        checked={categoryPrefs.email}
                         onCheckedChange={onEmailChange}
+                        disabled={!config.hasEmail}
                     />
                     <span className="text-xs font-medium text-secondary-600 hidden sm:inline">Email</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className={cn("flex items-center gap-2", !config.hasPush && "opacity-50 cursor-not-allowed")}>
                     <Switch
-                        checked={preference.push}
+                        checked={categoryPrefs.push}
                         onCheckedChange={onPushChange}
+                        disabled={!config.hasPush}
                     />
                     <span className="text-xs font-medium text-secondary-600 hidden sm:inline">Push</span>
                 </label>
@@ -113,41 +132,119 @@ function NotificationRow({
 }
 
 export function NotificationsForm() {
-    const [preferences, setPreferences] = useState<NotificationPreference[]>(defaultPreferences);
+    const [preferences, setPreferences] = useState<NotificationPreferences>(defaultPreferences);
+    const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
+    const supabase = createClient();
 
-    const updatePreference = (id: string, field: 'email' | 'push', value: boolean) => {
-        setPreferences(prev => prev.map(p =>
-            p.id === id ? { ...p, [field]: value } : p
-        ));
+    useEffect(() => {
+        async function loadPreferences() {
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return;
+
+                const { data: profile } = await supabase
+                    .from("profiles")
+                    .select("notification_preferences")
+                    .eq("id", user.id)
+                    .single();
+
+                if (profile?.notification_preferences) {
+                    // Merge with defaults to ensure all keys exist
+                    const loadedPrefs = profile.notification_preferences as unknown as NotificationPreferences;
+                    setPreferences({
+                        ...defaultPreferences,
+                        ...loadedPrefs
+                    });
+                }
+            } catch (error) {
+                console.error("Error loading notification preferences:", error);
+                toast.error("Failed to load preferences");
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        loadPreferences();
+    }, [supabase]);
+
+    const updatePreference = (categoryId: keyof Omit<NotificationPreferences, 'digest_frequency'>, channel: 'email' | 'push', value: boolean) => {
+        setPreferences(prev => {
+            const currentCategory = prev[categoryId] as NotificationChannelPreferences;
+            return {
+                ...prev,
+                [categoryId]: {
+                    ...currentCategory,
+                    [channel]: value
+                }
+            };
+        });
         setHasChanges(true);
     };
 
     const handleSave = async () => {
         setSaving(true);
+        setSaved(false);
 
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 800));
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Not authenticated");
 
-        toast.success("Notification preferences saved!");
-        setSaving(false);
-        setSaved(true);
-        setHasChanges(false);
+            const { error } = await supabase
+                .from("profiles")
+                .update({
+                    notification_preferences: preferences as any
+                })
+                .eq("id", user.id);
 
-        setTimeout(() => setSaved(false), 2000);
+            if (error) throw error;
+
+            toast.success("Notification preferences saved!");
+            setSaved(true);
+            setHasChanges(false);
+
+            setTimeout(() => setSaved(false), 2000);
+        } catch (error) {
+            console.error("Error saving preferences:", error);
+            toast.error("Failed to save preferences");
+        } finally {
+            setSaving(false);
+        }
     };
 
     const enableAll = () => {
-        setPreferences(prev => prev.map(p => ({ ...p, email: true, push: true })));
+        const newPrefs = { ...preferences };
+        categoryConfigs.forEach(cat => {
+            if (newPrefs[cat.id]) {
+                if (cat.hasEmail) newPrefs[cat.id].email = true;
+                if (cat.hasPush) newPrefs[cat.id].push = true;
+            }
+        });
+        setPreferences(newPrefs);
         setHasChanges(true);
     };
 
     const disableAll = () => {
-        setPreferences(prev => prev.map(p => ({ ...p, email: false, push: false })));
+        const newPrefs = { ...preferences };
+        categoryConfigs.forEach(cat => {
+            if (newPrefs[cat.id]) {
+                newPrefs[cat.id].email = false;
+                newPrefs[cat.id].push = false;
+            }
+        });
+        setPreferences(newPrefs);
         setHasChanges(true);
     };
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center p-12">
+                <Loader2 className="h-6 w-6 animate-spin text-secondary-400" />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
@@ -192,12 +289,13 @@ export function NotificationsForm() {
 
             {/* Notification Rows */}
             <div>
-                {preferences.map((preference) => (
+                {categoryConfigs.map((config) => (
                     <NotificationRow
-                        key={preference.id}
-                        preference={preference}
-                        onEmailChange={(checked) => updatePreference(preference.id, 'email', checked)}
-                        onPushChange={(checked) => updatePreference(preference.id, 'push', checked)}
+                        key={config.id}
+                        config={config}
+                        preferences={preferences}
+                        onEmailChange={(checked) => updatePreference(config.id, 'email', checked)}
+                        onPushChange={(checked) => updatePreference(config.id, 'push', checked)}
                     />
                 ))}
             </div>

@@ -143,9 +143,16 @@ export async function GET(request: NextRequest) {
         // Ensure profile exists to satisfy RLS before workspace resolution
         await ensureUserProfile(user, supabase);
 
-        // Get user's workspace (pass authenticated client)
-        const workspace = await getUserWorkspace(user.id, supabase);
-        logger.info('[Twitter OAuth] User workspace resolved', { workspaceId: workspace.id });
+        // Get user's workspace context from state
+        let workspaceId = stateVerification.workspaceId;
+
+        if (!workspaceId) {
+            logger.warn('[Twitter OAuth] No workspaceId in state, falling back to default workspace');
+            const workspace = await getUserWorkspace(user.id, supabase);
+            workspaceId = workspace.id;
+        }
+
+        logger.info('[Twitter OAuth] Workspace context resolved', { workspaceId });
 
         // Encrypt tokens before storing
         const encryptedAccessToken = encryptToken(tokenResponse.access_token);
@@ -159,7 +166,7 @@ export async function GET(request: NextRequest) {
             .from('social_accounts')
             .upsert(
                 {
-                    workspace_id: workspace.id,
+                    workspace_id: workspaceId,
                     platform: 'twitter',
                     assigned_user_id: user.id,
                     account_id: profile.id,

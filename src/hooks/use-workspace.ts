@@ -4,19 +4,20 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Workspace, WorkspaceMember } from "@/types";
 import { slugify } from "@/lib/utils";
+import { useSelectedWorkspace, useWorkspaceStore, useHasHydrated } from "@/store/workspaceStore";
 
 type WorkspaceWithRole = Workspace & { role?: WorkspaceMember["role"] };
 
-interface WorkspaceMembershipRow {
-  role: WorkspaceMember["role"];
-  workspace: Workspace | null;
-}
-
 export function useWorkspace() {
-  const [workspace, setWorkspace] = useState<WorkspaceWithRole | null>(null);
+  const [workspaceDetails, setWorkspaceDetails] = useState<WorkspaceWithRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const supabase = useMemo(() => createClient(), []);
+
+  // Use global state for selection
+  const selectedWorkspace = useSelectedWorkspace();
+  const hasHydrated = useHasHydrated();
+  const invalidateWorkspaces = useWorkspaceStore((state) => state.invalidateWorkspaces);
 
   const linkMembership = useCallback(
     async (workspaceId: string, userId: string, role: WorkspaceMember["role"] = "owner") => {
@@ -65,89 +66,76 @@ export function useWorkspace() {
         }
 
         await linkMembership(data.id, user.id, "owner");
-        setWorkspace({ ...data, role: "owner" });
+
+        // Update local state
+        setWorkspaceDetails({ ...data, role: "owner" });
         setError(null);
+
+        // Trigger global refresh so switcher sees it
+        invalidateWorkspaces();
+
         return data;
       } catch (err: any) {
         setError(err.message || "Unable to create workspace");
         throw err;
       }
     },
-    [linkMembership, supabase]
+    [linkMembership, supabase, invalidateWorkspaces]
   );
 
-  const fetchWorkspace = useCallback(async () => {
+  // Fetch full details for the globally selected workspace
+  const fetchWorkspaceDetails = useCallback(async () => {
+    if (!hasHydrated) return;
+
+    // If no workspace is selected globally, we can't fetch details.
+    // However, if the user has no workspaces, selectedWorkspace will be undefined.
+    if (!selectedWorkspace) {
+      setWorkspaceDetails(null);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
 
-      if (!user) {
-        throw new Error("Not authenticated");
-      }
-
-      const { data: memberships, error: membershipError } = await supabase
-        .from("workspace_members")
-        .select("role, workspace:workspace_id (*)")
-        .eq("user_id", user.id)
-        .order("joined_at", { ascending: true });
-
-      if (membershipError) {
-        throw membershipError;
-      }
-
-      const membershipList: WorkspaceMembershipRow[] = (memberships ?? []).map(
-        (member: any) => ({
-          role: member.role as WorkspaceMember["role"],
-          workspace: member.workspace as Workspace | null,
-        })
-      );
-      const primaryMembership = membershipList.find((member) => member.workspace);
-      if (primaryMembership?.workspace) {
-        setWorkspace({ ...primaryMembership.workspace, role: primaryMembership.role });
-        setError(null);
-        return;
-      }
-
-      const { data: ownedWorkspace, error: ownedError } = await supabase
+      // We already have the ID and Role from the store, but we might need full settings/details
+      const { data: fullWorkspace, error: fetchError } = await supabase
         .from("workspaces")
         .select("*")
-        .eq("owner_id", user.id)
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .eq("id", selectedWorkspace.id)
+        .single();
 
-      if (ownedError && ownedError.code !== "PGRST116") {
-        throw ownedError;
+      if (fetchError) {
+        throw fetchError;
       }
 
-      if (ownedWorkspace) {
-        await linkMembership(ownedWorkspace.id, user.id, "owner");
-        setWorkspace({ ...ownedWorkspace, role: "owner" });
-        setError(null);
-        return;
-      }
-
-      const fallbackName = user.email?.split("@")[0] || "Workspace";
-      await createWorkspace(`${fallbackName}'s Workspace`);
+      setWorkspaceDetails({
+        ...fullWorkspace,
+        role: selectedWorkspace.role as WorkspaceMember["role"] // Trust the role from the store/switcher logic or fetch it again if paranoid
+      });
       setError(null);
     } catch (err: any) {
+      console.error("Error fetching workspace details:", err);
       setError(err.message);
+      // If we fail to find it, maybe it was deleted? 
+      // We might want to clear the selection in the store, but let's be passive for now.
     } finally {
       setLoading(false);
     }
-  }, [createWorkspace, linkMembership, supabase]);
+  }, [selectedWorkspace, supabase, hasHydrated]);
 
   useEffect(() => {
-    fetchWorkspace();
-  }, [fetchWorkspace]);
+    fetchWorkspaceDetails();
+  }, [fetchWorkspaceDetails]);
+
+  // Compatibility: if we are loading hydration, return true
+  const effectiveLoading = !hasHydrated || loading;
 
   return {
-    workspace,
-    loading,
+    workspace: workspaceDetails,
+    loading: effectiveLoading,
     error,
-    fetchWorkspace,
+    fetchWorkspace: fetchWorkspaceDetails,
     createWorkspace,
   };
 }

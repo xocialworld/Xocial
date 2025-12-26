@@ -109,14 +109,14 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-4xl mx-auto">
             {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-primary-100 to-purple-100 text-primary-700 backdrop-blur-sm border border-primary-200/50 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-primary-100 to-purple-100 text-primary-700 backdrop-blur-sm border border-primary-200/50 mb-8">
               <Sparkles className="h-4 w-4 animate-pulse" />
               <span className="text-sm font-semibold">The Intelligent Social Suite</span>
               <ChevronRight className="h-4 w-4" />
             </div>
 
             {/* Main Headline */}
-            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-secondary-900 mb-6 animate-in fade-in slide-in-from-bottom-5 duration-700 delay-100">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-secondary-900 mb-6">
               Social Media Chaos,{' '}
               <span className="relative">
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 via-indigo-600 to-purple-600">
@@ -136,12 +136,12 @@ export default function Home() {
             </h1>
 
             {/* Subheadline */}
-            <p className="text-lg sm:text-xl md:text-2xl text-secondary-600 max-w-2xl mx-auto mb-10 animate-in fade-in slide-in-from-bottom-6 duration-700 delay-200 leading-relaxed">
+            <p className="text-lg sm:text-xl md:text-2xl text-secondary-600 max-w-2xl mx-auto mb-10 leading-relaxed">
               Plan, collaborate, and publish with the only AI-native platform designed for modern marketing teams.
             </p>
 
             {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12 animate-in fade-in slide-in-from-bottom-7 duration-700 delay-300">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
               <Link href="/auth/signup">
                 <Button
                   size="lg"
@@ -165,7 +165,7 @@ export default function Home() {
             </div>
 
             {/* Platform badges */}
-            <div className="flex flex-wrap items-center justify-center gap-3 mb-16 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-400">
+            <div className="flex flex-wrap items-center justify-center gap-3 mb-16">
               <span className="text-sm text-secondary-500 font-medium">Works with:</span>
               {platforms.map((platform) => (
                 <div
@@ -179,7 +179,7 @@ export default function Home() {
           </div>
 
           {/* Hero Image */}
-          <div className="relative mx-auto max-w-6xl animate-in fade-in zoom-in-95 duration-1000 delay-500">
+          <div className="relative mx-auto max-w-6xl">
             <div className="rounded-2xl bg-secondary-900/5 p-2 ring-1 ring-inset ring-secondary-900/10 lg:-m-4 lg:rounded-3xl lg:p-4">
               <div className="relative aspect-[16/10] overflow-hidden rounded-xl lg:rounded-2xl shadow-2xl border border-secondary-200/50 bg-secondary-50">
                 <OptimizedImage
@@ -315,7 +315,7 @@ export default function Home() {
                 <span className="text-blue-600">miss nothing.</span>
               </h2>
               <p className="text-lg sm:text-xl text-secondary-600 mb-8 leading-relaxed">
-                Drag-and-drop your way to a perfect feed. Our calendar gives you a bird's-eye view of your entire social strategy across all platforms.
+                Drag-and-drop your way to a perfect feed. Our calendar gives you a bird&apos;s-eye view of your entire social strategy across all platforms.
               </p>
               <ul className="space-y-4 mb-8">
                 {[

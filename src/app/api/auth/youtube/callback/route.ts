@@ -136,9 +136,16 @@ export async function GET(request: NextRequest) {
         // Ensure profile exists to satisfy RLS before workspace resolution
         await ensureUserProfile(user, supabase);
 
-        // Get user's workspace (pass authenticated client)
-        const workspace = await getUserWorkspace(user.id, supabase);
-        logger.info(`[YouTube Callback] User workspace: ${workspace.id}`);
+        // Get user's workspace context from state
+        let workspaceId = stateVerification.workspaceId;
+
+        if (!workspaceId) {
+            logger.warn('[YouTube Callback] No workspaceId in state, falling back to default workspace');
+            const workspace = await getUserWorkspace(user.id, supabase);
+            workspaceId = workspace.id;
+        }
+
+        logger.info(`[YouTube Callback] Target workspace ID: ${workspaceId}`);
 
         // Store each channel as a separate social account with encrypted tokens
         const accounts = await Promise.all(
@@ -158,7 +165,7 @@ export async function GET(request: NextRequest) {
                     .from('social_accounts')
                     .upsert(
                         {
-                            workspace_id: workspace.id,
+                            workspace_id: workspaceId,
                             assigned_user_id: user.id,
                             platform: 'youtube',
                             account_id: channel.id,

@@ -6,8 +6,9 @@ import { TemplateGrid } from './components/template-grid';
 import { TemplateFilters } from './components/template-filters';
 import { CreateTemplateDialog } from './components/create-template-dialog';
 import { Button } from '@/components/ui/button';
-import { Plus, Loader2 } from 'lucide-react';
+import { Plus, Loader2, LayoutTemplate } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { PageHeader, PageContainer } from "@/components/shared/page-components";
 
 export default function TemplatesPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -53,19 +54,20 @@ export default function TemplatesPage() {
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Content Templates</h1>
-          <p className="text-muted-foreground mt-2">
-            Save and reuse your best-performing content templates
-          </p>
-        </div>
-        <Button onClick={() => setShowCreateDialog(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Template
-        </Button>
-      </div>
+    <PageContainer>
+      <PageHeader
+        title="Content Templates"
+        description="Save and reuse your best-performing content templates"
+        icon={LayoutTemplate}
+        iconColor="text-indigo-500"
+        actions={
+          <Button onClick={() => setShowCreateDialog(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            <span className="hidden sm:inline">Create Template</span>
+            <span className="inline sm:hidden">Create</span>
+          </Button>
+        }
+      />
 
       <TemplateFilters
         selectedCategory={selectedCategory}
@@ -87,7 +89,7 @@ export default function TemplatesPage() {
         onOpenChange={setShowCreateDialog}
         onCreate={createTemplate}
       />
-    </div>
+    </PageContainer>
   );
 }
 

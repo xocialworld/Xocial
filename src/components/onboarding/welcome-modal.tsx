@@ -82,7 +82,7 @@ export function WelcomeModal({
                         </div>
                         <h2 className="text-2xl font-bold mb-2">{greeting}</h2>
                         <p className="text-white/80">
-                            Let's explore what you can do with Xocial
+                            Let&apos;s explore what you can do with Xocial
                         </p>
                     </div>
                 </div>

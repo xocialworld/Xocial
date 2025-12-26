@@ -7,6 +7,7 @@ import {
     getYouTubeChannelStats,
 } from './oauth/youtube';
 import { logger } from './logger';
+import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
 
 export interface YouTubeChannelStats {
     subscriberCount: number;
@@ -272,23 +273,23 @@ export async function syncYouTubeVideos(
                     },
                 };
 
-                // Upsert post
-                const { data: post, error: postError } = await supabase
-                    .from('posts')
-                    .upsert(postData, {
-                        onConflict: 'workspace_id,external_post_id',
-                    })
-                    .select()
-                    .single();
-
-                if (postError) {
-                    throw postError;
-                }
+                const { id: postId } = await upsertPostByExternalId(supabase as any, {
+                    workspace_id: postData.workspace_id,
+                    social_account_id: postData.social_account_id,
+                    external_post_id: postData.external_post_id,
+                    platforms: postData.platforms,
+                    content: postData.content,
+                    status: postData.status,
+                    published_at: postData.published_at,
+                    scheduled_at: null,
+                    media: null,
+                    metadata: postData.metadata,
+                });
 
                 // Store analytics if available
                 if (videoStats.statistics) {
                     const analyticsData = {
-                        post_id: post.id,
+                        post_id: postId,
                         platform: 'youtube',
                         impressions: parseInt(videoStats.statistics.viewCount || '0'),
                         reach: parseInt(videoStats.statistics.viewCount || '0'),

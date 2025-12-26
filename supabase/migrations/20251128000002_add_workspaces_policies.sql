@@ -16,8 +16,11 @@ CREATE POLICY "Users can create personal workspaces"
 CREATE POLICY "Users can view own workspaces"
   ON public.workspaces FOR SELECT TO authenticated
   USING (
-    owner_id = auth.uid() OR id IN (
-      SELECT workspace_id FROM public.workspace_members WHERE user_id = auth.uid()
+    owner_id = auth.uid() OR
+    EXISTS (
+      SELECT 1 FROM public.workspace_members 
+      WHERE workspace_members.workspace_id = id 
+      AND workspace_members.user_id = auth.uid()
     )
   );
 

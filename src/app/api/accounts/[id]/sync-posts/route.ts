@@ -1,3 +1,4 @@
+// ... (imports remain)
 import { NextRequest } from 'next/server';
 import {
     withErrorHandler,
@@ -13,7 +14,6 @@ import { syncTwitterTweets } from '@/lib/twitter-sync';
  * POST /api/accounts/[id]/sync-posts - Trigger sync to fetch historical posts from platform
  * 
  * This endpoint will fetch posts from the platform's API and store them in platform_posts table.
- * Currently returns a placeholder response - full implementation requires platform API integration.
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
     const { user, supabase } = await requireAuth(request);
@@ -38,36 +38,57 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
         throw new APIError(404, 'Social account not found', 'ACCOUNT_NOT_FOUND');
     }
 
-    // Verify user has access to this workspace
-    const { data: membership } = await supabase
-        .from('workspace_members')
-        .select('id, role')
-        .eq('workspace_id', account.workspace_id)
-        .eq('user_id', user.id)
-        .single();
-
-    if (!membership) {
-        throw new APIError(403, 'You do not have access to this account', 'FORBIDDEN');
-    }
-
-    // Allow sync for any member role to ensure historical imports work during setup
-    // Roles: owner, admin, manager, editor, viewer
+    // Note: The social_accounts RLS policies now guarantee that we can only select 
+    // accounts linked to workspaces where the user is a member. 
+    // Therefore, if 'account' is found, the user implicitly has access.
+    // We do not need a separate workspace_members query.
 
     const platform = account.platform.toLowerCase();
     let syncedCount = 0;
+    let syncedErrors = 0;
+    let details: string[] = [];
 
     try {
         if (platform === 'youtube') {
             // REAL SYNC for YouTube
-            syncedCount = await syncYouTubePosts(account, supabase);
+            const result = await syncYouTubePosts(account, supabase);
+            syncedCount = result.synced;
+            syncedErrors = result.errors;
+            details = result.details || [];
         } else if (platform === 'twitter') {
             // REAL SYNC for Twitter
             const result = await syncTwitterTweets(account.id, { maxTweets: 50 });
             syncedCount = result.synced;
+            syncedErrors = result.errors;
+            details = result.details || [];
+        } else if (platform === 'facebook') {
+            const { syncFacebookPosts } = await import('@/lib/facebook-sync');
+            const result = await syncFacebookPosts(account.id, { maxPosts: 50 });
+            syncedCount = result.synced;
+            syncedErrors = result.errors;
+            details = result.details || [];
+        } else if (platform === 'linkedin') {
+            const { syncLinkedInPosts } = await import('@/lib/linkedin-sync');
+            const result = await syncLinkedInPosts(account.id, { maxPosts: 50 });
+            syncedCount = result.synced;
+            syncedErrors = result.errors;
+            details = result.details || [];
+        } else if (platform === 'tiktok') {
+            const { syncTikTokVideos } = await import('@/lib/tiktok-sync');
+            const result = await syncTikTokVideos(account.id, { maxVideos: 50 });
+            syncedCount = result.synced;
+            syncedErrors = result.errors;
+            details = result.details || [];
+        } else if (platform === 'instagram') {
+            const { syncInstagramPosts } = await import('@/lib/instagram-sync');
+            const result = await syncInstagramPosts(account.id);
+            syncedCount = result.synced || 0;
+            syncedErrors = result.errors;
+            details = result.details || [];
         } else {
-            // MOCK SYNC for other platforms (for demo purposes)
-            const mockPosts = generateMockPosts(account, 50);
-            syncedCount = await insertPosts(mockPosts, account, supabase);
+            // Unsupported or not yet implemented platform
+            // Do nothing (count = 0) rather than inventing fake data
+            console.warn(`Sync not implemented for platform: ${platform}`);
         }
 
         // Update last_synced_at
@@ -77,20 +98,44 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
             .eq('id', accountId);
 
         return successResponse({
-            message: `Successfully synced ${syncedCount} posts`,
+            message:
+                syncedErrors > 0
+                    ? `Synced ${syncedCount} posts with ${syncedErrors} errors`
+                    : `Successfully synced ${syncedCount} posts`,
             count: syncedCount,
+            errors: syncedErrors,
+            details,
         });
 
     } catch (error) {
         console.error('Sync error:', error);
-        throw new APIError(500, 'Failed to sync posts: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        const message = error instanceof Error ? error.message : String(error);
+        // If Twitter token is expired/invalid, surface as 401 so UI can prompt reconnect.
+        if (platform === 'twitter' && (message.includes('401') || message.toLowerCase().includes('unauthorized'))) {
+            throw new APIError(401, 'Twitter authentication expired. Please reconnect Twitter in Accounts (X) and try again.', 'TWITTER_TOKEN_EXPIRED');
+        }
+        // If Twitter is rate-limiting us, surface as 429 so UI can prompt to retry later.
+        if (platform === 'twitter' && (message.includes('429') || message.toLowerCase().includes('rate'))) {
+            // Try to parse our encoded format: "Failed to fetch user tweets: 429;retryAfter=NN"
+            const match = message.match(/429;retryAfter=(\d+)/);
+            const retryAfterSeconds = match ? Number(match[1]) : null;
+            throw new APIError(
+                429,
+                retryAfterSeconds
+                    ? `Twitter rate limit hit. Please wait ~${retryAfterSeconds}s and try Sync again.`
+                    : 'Twitter rate limit hit. Please wait 1–2 minutes and try Sync again.',
+                'TWITTER_RATE_LIMIT',
+                retryAfterSeconds ? { retryAfterSeconds } : undefined
+            );
+        }
+        throw new APIError(500, 'Failed to sync posts: ' + message);
     }
 });
 
 /**
  * Sync YouTube posts using real API
  */
-async function syncYouTubePosts(account: any, supabase: any) {
+async function syncYouTubePosts(account: any, supabase: any): Promise<{ synced: number; errors: number; details: string[] }> {
     if (!account.access_token) {
         throw new Error('No access token available');
     }
@@ -123,7 +168,14 @@ async function syncYouTubePosts(account: any, supabase: any) {
             console.warn('[YouTube Sync] Token refresh failed, proceeding with existing token');
         }
     }
+    const details: string[] = [];
+    let errors = 0;
     const videos = await getYouTubeChannelVideos(accessToken, account.account_id, 50);
+    details.push(`[YouTube] Fetched ${videos.length} videos from API for channelId=${account.account_id}`);
+
+    if (!videos || videos.length === 0) {
+        details.push('[YouTube] API returned 0 videos. This can happen if the channel has no public uploads or if the token scopes are missing youtube.readonly.');
+    }
 
     const postsToInsert = [];
 
@@ -133,31 +185,31 @@ async function syncYouTubePosts(account: any, supabase: any) {
 
         try {
             // 2. Fetch video details (stats + duration)
-            const details = await getYouTubeVideoStats(accessToken, videoId);
+            const videoDetails = await getYouTubeVideoStats(accessToken, videoId);
 
             // 3. Detect Shorts (duration <= 60s)
-            const durationStr = details.contentDetails?.duration || '';
+            const durationStr = videoDetails.contentDetails?.duration || '';
             const durationSec = parseYouTubeDuration(durationStr);
             const isShort = durationSec > 0 && durationSec <= 60;
             const postType = isShort ? 'short' : 'video';
 
             // 4. Prepare post data
-            const publishedAt = details.snippet.publishedAt;
+            const publishedAt = videoDetails.snippet.publishedAt;
             const media = [{
                 type: 'video',
                 url: `https://www.youtube.com/watch?v=${videoId}`,
-                thumbnail: details.snippet.thumbnails.high?.url || details.snippet.thumbnails.medium?.url || details.snippet.thumbnails.default?.url,
+                thumbnail: videoDetails.snippet.thumbnails.high?.url || videoDetails.snippet.thumbnails.medium?.url || videoDetails.snippet.thumbnails.default?.url,
                 duration: durationSec,
                 metadata: {
                     duration: durationSec,
-                    viewCount: details.statistics?.viewCount,
-                    likeCount: details.statistics?.likeCount,
-                    commentCount: details.statistics?.commentCount
+                    viewCount: videoDetails.statistics?.viewCount,
+                    likeCount: videoDetails.statistics?.likeCount,
+                    commentCount: videoDetails.statistics?.commentCount
                 }
             }];
 
             postsToInsert.push({
-                caption: details.snippet.title + '\n\n' + details.snippet.description.substring(0, 500),
+                caption: videoDetails.snippet.title + '\n\n' + videoDetails.snippet.description.substring(0, 500),
                 published_at: publishedAt,
                 post_type: postType,
                 media: media,
@@ -165,21 +217,24 @@ async function syncYouTubePosts(account: any, supabase: any) {
                 external_post_id: videoId,
                 permalink: `https://www.youtube.com/watch?v=${videoId}`,
                 metrics: {
-                    likes: parseInt(details.statistics?.likeCount || '0'),
-                    comments: parseInt(details.statistics?.commentCount || '0'),
-                    views: parseInt(details.statistics?.viewCount || '0'),
+                    likes: parseInt(videoDetails.statistics?.likeCount || '0'),
+                    comments: parseInt(videoDetails.statistics?.commentCount || '0'),
+                    views: parseInt(videoDetails.statistics?.viewCount || '0'),
                     shares: 0,
                     saves: 0
                 }
             });
+            details.push(`Fetched YouTube video ${videoId}`);
         } catch (err) {
+            errors++;
             console.error(`Failed to fetch details for video ${videoId}:`, err);
             // Continue to next video
         }
     }
 
     // 5. Insert into DB
-    return await insertPosts(postsToInsert, account, supabase);
+    const synced = await insertPosts(postsToInsert, account, supabase);
+    return { synced, errors, details };
 }
 
 /**
@@ -198,12 +253,71 @@ function parseYouTubeDuration(duration: string): number {
 
 /**
  * Insert posts into database (shared logic)
+ * 
+ * Now writes to:
+ * 1. external_posts (primary for calendar display of imported content)
+ * 2. posts (legacy, for backwards compatibility)
+ * 3. platform_posts (for detailed platform tracking)
+ * 4. engagement_history (for metrics)
  */
 async function insertPosts(posts: any[], account: any, supabase: any) {
     let count = 0;
+    const platform = (account.platform || '').toLowerCase();
 
     for (const post of posts) {
-        // ── Deduplication: skip existing posts with same external_post_id for this account ──
+        // ─────────────────────────────────────────────────────────────────────────
+        // 1. PRIMARY: Write to external_posts table (new canonical source for imported content)
+        // ─────────────────────────────────────────────────────────────────────────
+        try {
+            const { data: existingExternal } = await supabase
+                .from('external_posts')
+                .select('id')
+                .eq('social_account_id', account.id)
+                .eq('platform', platform)
+                .eq('external_post_id', post.external_post_id)
+                .maybeSingle();
+
+            if (existingExternal?.id) {
+                // Update existing external post
+                await supabase
+                    .from('external_posts')
+                    .update({
+                        permalink: post.permalink,
+                        content: { text: post.caption, caption: post.caption },
+                        media: post.media || [],
+                        post_type: post.post_type,
+                        published_at: post.published_at,
+                        metrics: post.metrics || {},
+                        fetched_at: new Date().toISOString(),
+                    })
+                    .eq('id', existingExternal.id);
+            } else {
+                // Insert new external post
+                await supabase
+                    .from('external_posts')
+                    .insert({
+                        workspace_id: account.workspace_id,
+                        social_account_id: account.id,
+                        platform: platform,
+                        external_post_id: post.external_post_id,
+                        permalink: post.permalink,
+                        content: { text: post.caption, caption: post.caption },
+                        media: post.media || [],
+                        post_type: post.post_type,
+                        published_at: post.published_at,
+                        metrics: post.metrics || {},
+                    });
+            }
+        } catch (externalErr: any) {
+            // external_posts table might not exist in older deployments
+            if (!externalErr?.message?.includes('does not exist')) {
+                console.error('Error writing to external_posts:', externalErr);
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // 2. LEGACY: Write to posts table (for backwards compatibility)
+        // ─────────────────────────────────────────────────────────────────────────
         const { data: existingPost } = await supabase
             .from('posts')
             .select('id')
@@ -218,6 +332,8 @@ async function insertPosts(posts: any[], account: any, supabase: any) {
             const { data: updated, error: updateErr } = await supabase
                 .from('posts')
                 .update({
+                    platforms: [platform],
+                    status: 'published',
                     published_at: post.published_at,
                     metadata: { post_type: post.post_type },
                     media: post.media,
@@ -236,7 +352,7 @@ async function insertPosts(posts: any[], account: any, supabase: any) {
                     social_account_id: account.id,
                     content: { text: post.caption },
                     media: post.media,
-                    platforms: [account.platform],
+                    platforms: [platform],
                     status: 'published',
                     published_at: post.published_at,
                     metadata: { post_type: post.post_type },
@@ -253,13 +369,25 @@ async function insertPosts(posts: any[], account: any, supabase: any) {
             continue;
         }
 
-        // 2. Create entry in platform_posts table (dedup by platform + platform_post_id)
-        const { data: existingPlatformPost } = await supabase
-            .from('platform_posts')
-            .select('id')
-            .eq('platform', account.platform)
-            .eq('platform_post_id', post.platform_post_id)
-            .maybeSingle();
+        // We successfully created/updated; count it for calendar display.
+        count++;
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // 3. Create entry in platform_posts table (dedup by platform + platform_post_id)
+        // ─────────────────────────────────────────────────────────────────────────
+        let existingPlatformPost: any = null;
+        try {
+            const res = await supabase
+                .from('platform_posts')
+                .select('id')
+                .eq('platform', platform)
+                .eq('platform_post_id', post.platform_post_id)
+                .maybeSingle();
+            existingPlatformPost = res.data;
+        } catch (e) {
+            // platform_posts might not exist in some deployments; calendar only needs `posts`.
+            continue;
+        }
 
         let platformPost: any = null;
         let platformPostError: any = null;
@@ -283,9 +411,9 @@ async function insertPosts(posts: any[], account: any, supabase: any) {
                 .from('platform_posts')
                 .insert({
                     post_id: newPost.id,
-                    platform: account.platform,
-                    platform_post_id: post.platform_post_id || `mock_${Date.now()}_${Math.random()}`,
-                    permalink: post.permalink || `https://${account.platform}.com/p/${Math.random()}`,
+                    platform: platform,
+                    platform_post_id: post.platform_post_id,
+                    permalink: post.permalink,
                     published_at: post.published_at,
                     status: 'published',
                     metadata: { post_type: post.post_type },
@@ -301,94 +429,27 @@ async function insertPosts(posts: any[], account: any, supabase: any) {
             continue;
         }
 
-        // 3. Create engagement history
-        if (post.metrics) {
+        // ─────────────────────────────────────────────────────────────────────────
+        // 4. Create engagement history
+        // ─────────────────────────────────────────────────────────────────────────
+        // Only insert if metrics are provided (or default to 0)
+        // Never fabricate random numbers
+        try {
             await supabase
                 .from('engagement_history')
                 .insert({
                     platform_post_id: platformPost.id,
-                    likes: post.metrics.likes || 0,
-                    comments: post.metrics.comments || 0,
-                    shares: post.metrics.shares || 0,
-                    views: post.metrics.views || 0,
-                    saves: post.metrics.saves || 0,
+                    likes: post.metrics?.likes || 0,
+                    comments: post.metrics?.comments || 0,
+                    shares: post.metrics?.shares || 0,
+                    views: post.metrics?.views || 0,
+                    saves: post.metrics?.saves || 0,
                     recorded_at: new Date().toISOString()
                 });
-        } else {
-            // Mock metrics for non-YouTube
-            await supabase.from('engagement_history').insert({
-                platform_post_id: platformPost.id,
-                likes: Math.floor(Math.random() * 1000),
-                comments: Math.floor(Math.random() * 100),
-                shares: Math.floor(Math.random() * 50),
-                views: Math.floor(Math.random() * 10000),
-                saves: Math.floor(Math.random() * 20),
-                recorded_at: new Date().toISOString()
-            });
+        } catch {
+            // ignore if engagement_history doesn't exist or RLS blocks it
         }
-
-        count++;
     }
 
     return count;
-}
-
-/**
- * Generate mock posts for a specific platform
- */
-function generateMockPosts(account: any, count: number) {
-    const posts = [];
-    const now = new Date();
-    const platform = account.platform.toLowerCase();
-
-    const postTypes = getPostTypesForPlatform(platform);
-
-    for (let i = 0; i < count; i++) {
-        // Random date within last 2 years
-        const date = new Date(now.getTime() - Math.random() * 2 * 365 * 24 * 60 * 60 * 1000);
-        const postType = postTypes[Math.floor(Math.random() * postTypes.length)];
-
-        let media: any[] = [];
-
-        // Generate appropriate media based on post type
-        if (postType === 'video' || postType === 'reel' || postType === 'short') {
-            const isShort = postType === 'short' || (postType === 'reel' && platform === 'instagram');
-            media = [{
-                type: 'video',
-                url: 'https://example.com/video.mp4',
-                thumbnail: 'https://placehold.co/600x400/png',
-                duration: isShort ? 45 : 300,
-                aspectRatio: isShort ? 0.5625 : 1.77 // 9:16 vs 16:9
-            }];
-        } else if (postType === 'carousel') {
-            media = [
-                { type: 'image', url: 'https://placehold.co/600x600/png' },
-                { type: 'image', url: 'https://placehold.co/600x600/png' },
-                { type: 'image', url: 'https://placehold.co/600x600/png' }
-            ];
-        } else if (postType === 'feed' || postType === 'tweet' || postType === 'article') {
-            media = [{ type: 'image', url: 'https://placehold.co/600x600/png' }];
-        }
-
-        posts.push({
-            caption: `Mock ${postType} post from ${date.toLocaleDateString()}`,
-            published_at: date.toISOString(),
-            post_type: postType,
-            media: media
-        });
-    }
-
-    return posts.sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime());
-}
-
-function getPostTypesForPlatform(platform: string) {
-    switch (platform) {
-        case 'instagram': return ['feed', 'story', 'reel', 'carousel'];
-        case 'facebook': return ['feed', 'story', 'video'];
-        case 'twitter': return ['tweet'];
-        case 'youtube': return ['video', 'short'];
-        case 'tiktok': return ['video'];
-        case 'linkedin': return ['feed', 'article'];
-        default: return ['feed'];
-    }
 }

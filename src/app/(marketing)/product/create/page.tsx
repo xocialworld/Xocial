@@ -253,7 +253,7 @@ export default function CreatePage() {
                 How do approvals work?
               </AccordionTrigger>
               <AccordionContent className="text-secondary-600 text-base leading-relaxed pb-5">
-                You can assign team members or external clients to approve posts before they are scheduled. They'll get notified instantly via email and can approve with one click.
+                You can assign team members or external clients to approve posts before they are scheduled. They&apos;ll get notified instantly via email and can approve with one click.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="q4" className="border border-secondary-200 rounded-xl px-6 data-[state=open]:bg-secondary-50">

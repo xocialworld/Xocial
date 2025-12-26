@@ -1,123 +1,168 @@
-import { useState, useEffect, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { toast } from "sonner";
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { createClient } from '@/lib/supabase/client';
+import { useEffect } from 'react';
+
+export type WorkspaceRole = 'owner' | 'admin' | 'manager' | 'creator' | 'analyst';
 
 export interface WorkspaceMember {
-    id: string;
-    user_id: string;
-    role: string;
+    id: string; // The workspace_member id
+    user_id: string; // The user's id
+    role: WorkspaceRole;
     joined_at: string;
     profile: {
-        email: string;
+        id: string;
         name: string;
+        email: string;
         avatar_url: string | null;
     };
 }
 
-export function useWorkspaceMembers(workspaceId: string) {
-    const [members, setMembers] = useState<WorkspaceMember[]>([]);
-    const [loading, setLoading] = useState(true);
-    const supabase = createClient();
+interface MembersResponse {
+    success: boolean;
+    data: {
+        members: WorkspaceMember[];
+    };
+}
 
-    const fetchMembers = useCallback(async () => {
+interface InviteMemberPayload {
+    email: string;
+    role: WorkspaceRole;
+    workspaceId: string;
+    message?: string;
+}
+
+export function useWorkspaceMembers(workspaceId: string) {
+    const queryClient = useQueryClient();
+    const supabase = createClient();
+    const queryKey = ['workspace-members', workspaceId];
+
+    // Realtime subscription
+    useEffect(() => {
         if (!workspaceId) return;
 
-        setLoading(true);
-        try {
-            const { data, error } = await supabase
-                .from("workspace_members")
-                .select(`
-          id,
-          user_id,
-          role,
-          joined_at,
-          profile:profiles (
-            email,
-            name,
-            avatar_url
-          )
-        `)
-                .eq("workspace_id", workspaceId);
-
-            if (error) throw error;
-
-            setMembers(data as unknown as WorkspaceMember[]);
-        } catch (error) {
-            console.error("Error fetching members:", error);
-            toast.error("Failed to load team members");
-        } finally {
-            setLoading(false);
-        }
-    }, [workspaceId, supabase]);
-
-    useEffect(() => {
-        fetchMembers();
-    }, [fetchMembers]);
-
-    const inviteMember = async (email: string, role: string = "viewer") => {
-        try {
-            // 1. Check if user exists
-            const { data: users, error: userError } = await supabase
-                .from("profiles")
-                .select("id")
-                .eq("email", email)
-                .single();
-
-            if (userError || !users) {
-                // In a real app, we would create an invite record here
-                toast.error("User not found. Invite by email not fully implemented yet.");
-                return;
-            }
-
-            // 2. Add to workspace
-            const { error: insertError } = await supabase
-                .from("workspace_members")
-                .insert({
-                    workspace_id: workspaceId,
-                    user_id: users.id,
-                    role: role,
-                });
-
-            if (insertError) {
-                if (insertError.code === "23505") {
-                    toast.error("User is already a member");
-                } else {
-                    throw insertError;
+        const channel = supabase
+            .channel(`workspace-members-realtime:${workspaceId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'workspace_members',
+                    filter: `workspace_id=eq.${workspaceId}`,
+                },
+                () => {
+                    // Use literal key or reconstruct it to avoid dependency on unstable object
+                    queryClient.invalidateQueries({ queryKey: ['workspace-members', workspaceId] });
                 }
-                return;
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [workspaceId, queryClient, supabase]);
+
+    // Fetch members
+    const {
+        data: members,
+        isLoading,
+        error,
+        refetch,
+    } = useQuery({
+        queryKey,
+        queryFn: async () => {
+            const response = await fetch(`/api/team/members?workspaceId=${workspaceId}`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch members');
             }
+            const result = await response.json();
+            return result.data.members as WorkspaceMember[];
+        },
+        enabled: !!workspaceId,
+        staleTime: Infinity, // Rely on realtime
+    });
 
-            toast.success("Member added successfully");
-            fetchMembers();
-        } catch (error) {
-            console.error("Error inviting member:", error);
-            toast.error("Failed to invite member");
-        }
-    };
+    // Remove member
+    const { mutate: removeMember, isPending: isRemoving } = useMutation({
+        mutationFn: async (memberId: string) => {
+            const response = await fetch(`/api/team/members/${memberId}?workspaceId=${workspaceId}`, {
+                method: 'DELETE',
+            });
 
-    const removeMember = async (userId: string) => {
-        try {
-            const { error } = await supabase
-                .from("workspace_members")
-                .delete()
-                .eq("workspace_id", workspaceId)
-                .eq("user_id", userId);
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error?.message || 'Failed to remove member');
+            }
+            return response.json();
+        },
+        onSuccess: () => {
+            toast.success('Member removed successfully');
+            queryClient.invalidateQueries({ queryKey });
+        },
+        onError: (error: Error) => {
+            toast.error(error.message);
+        },
+    });
 
-            if (error) throw error;
+    // Update member role
+    const { mutate: updateRole, isPending: isUpdating } = useMutation({
+        mutationFn: async ({ memberId, role }: { memberId: string; role: WorkspaceRole }) => {
+            const response = await fetch(`/api/team/members/${memberId}?workspaceId=${workspaceId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role }),
+            });
 
-            toast.success("Member removed");
-            fetchMembers();
-        } catch (error) {
-            console.error("Error removing member:", error);
-            toast.error("Failed to remove member");
-        }
-    };
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error?.message || 'Failed to update role');
+            }
+            return response.json();
+        },
+        onSuccess: () => {
+            toast.success('Role updated successfully');
+            queryClient.invalidateQueries({ queryKey });
+        },
+        onError: (error: Error) => {
+            toast.error(error.message);
+        },
+    });
+
+    // Invite member
+    const { mutate: inviteMember, isPending: isInviting } = useMutation({
+        mutationFn: async (payload: Omit<InviteMemberPayload, 'workspaceId'>) => {
+            const response = await fetch('/api/team/invite', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payload, workspaceId }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error?.message || 'Failed to send invitation');
+            }
+            return response.json();
+        },
+        onSuccess: () => {
+            toast.success('Invitation sent successfully');
+            // Ideally we might refetch invitations list here if we had one
+        },
+        onError: (error: Error) => {
+            toast.error(error.message);
+        },
+    });
 
     return {
         members,
-        loading,
-        inviteMember,
+        isLoading,
+        error,
+        refetch,
         removeMember,
-        refresh: fetchMembers,
+        isRemoving,
+        updateRole,
+        isUpdating,
+        inviteMember,
+        isInviting,
     };
 }

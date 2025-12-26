@@ -5,6 +5,7 @@ import {
   successResponse,
   validateRequest,
   APIError,
+  createServiceRoleClient,
 } from '@/lib/api-middleware';
 import { z } from 'zod';
 import { slugify } from '@/lib/utils';
@@ -22,12 +23,7 @@ type WorkspaceEntry = {
   role: string;
 };
 
-const createWorkspaceSchema = z.object({
-  name: z.string().min(2).max(80),
-  slug: z.string().regex(/^[a-z0-9-]+$/).min(3).max(100).optional(),
-  logoUrl: z.string().url().optional(),
-  settings: z.record(z.any()).optional(),
-});
+import { createWorkspaceSchema } from '@/lib/validations';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,13 +68,20 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   });
 
   // Fetch workspace details for memberships
+  // Fetch workspace details for memberships
   const membershipWorkspaceIds = (memberships ?? []).map((m: any) => m.workspace_id).filter(Boolean);
-  const { data: membershipWorkspaces } = await supabase
-    .from('workspaces')
-    .select('*')
-    .in('id', membershipWorkspaceIds);
+  let membershipWorkspaces: WorkspaceRow[] = [];
+
+  if (membershipWorkspaceIds.length > 0) {
+    const { data } = await supabase
+      .from('workspaces')
+      .select('*')
+      .in('id', membershipWorkspaceIds);
+    if (data) membershipWorkspaces = data as WorkspaceRow[];
+  }
+
   const membershipMap = new Map<string, WorkspaceRow>();
-  (membershipWorkspaces ?? []).forEach((ws: WorkspaceRow) => {
+  membershipWorkspaces.forEach((ws: WorkspaceRow) => {
     membershipMap.set(ws.id, ws);
   });
   const membershipList = (memberships ?? []).map((membership: any) => ({
@@ -106,14 +109,37 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
  * Creates a workspace + owner membership
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+  const { user } = await requireAuth(request);
+  const serviceClient = createServiceRoleClient();
 
   const payload = await validateRequest(request, createWorkspaceSchema);
-  const baseSlug = payload.slug || slugify(payload.name) || 'workspace';
-  const uniqueSuffix = Math.random().toString(36).slice(-4);
-  const slug = `${baseSlug}-${uniqueSuffix}`.replace(/--+/g, '-').slice(0, 100);
+  // Check for duplicate workspace name for this user
+  const { data: existingWorkspace } = await serviceClient
+    .from('workspaces')
+    .select('id')
+    .eq('owner_id', user.id)
+    .eq('name', payload.name)
+    .maybeSingle();
 
-  const { data: workspace, error } = await supabase
+  if (existingWorkspace) {
+    throw new APIError(409, 'A workspace with this name already exists', 'DUPLICATE_WORKSPACE_NAME');
+  }
+
+  const baseSlug = payload.slug || slugify(payload.name) || 'workspace';
+  // Only append suffix if slug is not manually provided, to ensure uniqueness without user input
+  // But if user provided a slug, we try to use it directly first (or handle constraint violation)
+  // Re-reading code: payload.slug is optional in schema. 
+  // We will keep the suffix behavior for generated slugs to ensure global uniqueness if slugs are global,
+  // but since we checked name uniqueness for the user, we can be a bit cleaner.
+  // Actually, per SRS, workspace slugs might need to be globally unique or scoped to team (owner).
+  // The DB likely has a globally unique constraint on 'slug' if 'team_id' column doesn't exist or isn't part of the constraint.
+  // Let's keep the random suffix for now to be safe on slugs, but we have solved the name duplication issue.
+  const uniqueSuffix = Math.random().toString(36).slice(-4);
+  const slug = payload.slug
+    ? payload.slug // User provided slug, try to use it (will fail if duplicate)
+    : `${baseSlug}-${uniqueSuffix}`.replace(/--+/g, '-').slice(0, 100);
+
+  const { data: workspace, error } = await serviceClient
     .from('workspaces')
     .insert({
       name: payload.name,
@@ -121,6 +147,8 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       logo_url: payload.logoUrl,
       owner_id: user.id,
       settings: payload.settings || {},
+      timezone: payload.timezone || 'UTC',
+      color_theme: payload.color_theme || 'teal',
     })
     .select()
     .single();
@@ -129,7 +157,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(500, error?.message || 'Unable to create workspace', 'DATABASE_ERROR');
   }
 
-  const { error: membershipError } = await supabase
+  const { error: membershipError } = await serviceClient
     .from('workspace_members')
     .upsert(
       {
@@ -141,6 +169,8 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     );
 
   if (membershipError) {
+    // Attempt cleanup if membership fails, though unlikely with service role
+    await serviceClient.from('workspaces').delete().eq('id', workspace.id);
     throw new APIError(500, membershipError.message, 'DATABASE_ERROR');
   }
 

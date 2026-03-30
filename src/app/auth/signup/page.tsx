@@ -31,7 +31,12 @@ export default function SignupPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || data.message || "Failed to create account");
+        // data.error is { message, code } — extract the message string
+        const errMsg =
+          (typeof data.error === 'object' ? data.error?.message : data.error) ||
+          data.message ||
+          'Failed to create account';
+        toast.error(errMsg);
         return;
       }
 

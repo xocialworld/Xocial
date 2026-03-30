@@ -44,12 +44,16 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(500, 'Failed to create user', 'SIGNUP_FAILED');
   }
 
-  // Create profile
-  const { error: profileError } = await supabase.from('profiles').insert({
-    id: authData.user.id,
-    email: validatedData.email,
-    name: validatedData.name,
-  });
+  // Upsert profile — handles the case where the auth user already exists
+  // (e.g. email confirmed but profile row was missing) gracefully
+  const { error: profileError } = await supabase.from('profiles').upsert(
+    {
+      id: authData.user.id,
+      email: validatedData.email,
+      name: validatedData.name,
+    },
+    { onConflict: 'id' }
+  );
 
   if (profileError) {
     throw new APIError(500, profileError.message, 'PROFILE_CREATE_ERROR');

@@ -18,7 +18,19 @@ export function createClient() {
 
   client = createBrowserClient(
     supabaseUrl || '',
-    supabaseAnonKey || ''
+    supabaseAnonKey || '',
+    {
+      auth: {
+        // Explicitly use PKCE flow — ensures code_verifier is stored in
+        // cookies (not just memory) so it survives cross-tab/redirect
+        flowType: 'pkce',
+        // Store auth state in cookies so it works across SSR and client
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+      },
+    }
   );
 
   return client;

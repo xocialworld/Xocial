@@ -10,6 +10,8 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
 import { trackError } from '@/lib/monitoring';
+import { isRedirectError } from 'next/dist/client/components/redirect';
+import { isNotFoundError } from 'next/dist/client/components/not-found';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -35,11 +37,20 @@ export class ErrorBoundary extends React.Component<
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    // Let Next.js handle its own redirect/not-found errors — don't swallow them
+    if (isRedirectError(error) || isNotFoundError(error)) {
+      throw error;
+    }
     // Update state so the next render will show the fallback UI
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // Let Next.js handle its own redirect/not-found errors
+    if (isRedirectError(error) || isNotFoundError(error)) {
+      throw error;
+    }
+
     // Log the error with component stack information
     console.error('Error Boundary caught error:', error, errorInfo);
 

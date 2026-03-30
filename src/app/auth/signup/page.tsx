@@ -4,7 +4,6 @@ export const dynamic = "force-dynamic";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,50 +16,26 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const supabase = createClient();
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      // Create auth user
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            name,
-          },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
       });
 
-      if (signUpError) {
-        toast.error(signUpError.message || "Failed to create account");
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || data.message || "Failed to create account");
         return;
       }
 
-      if (!authData.user) {
-        toast.error("Failed to create user");
-        return;
-      }
-
-      // Create profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: authData.user.id,
-          email,
-          name,
-        });
-
-      if (profileError) {
-        toast.error(profileError.message || "Failed to create profile");
-        return;
-      }
-
-      toast.success("Account created successfully! Please check your email to verify.");
+      toast.success("Account created! Please check your email to verify.");
       router.push("/auth/login");
     } catch (error: any) {
       toast.error(error.message || "An unexpected error occurred");

@@ -135,7 +135,7 @@ export async function GET(request: NextRequest) {
       const platformLower = row.platform?.toLowerCase();
       if (!platformLower) return;
 
-      const entry = statsMap.get(platformLower) || {
+      const entry: PlatformStat = statsMap.get(platformLower) || {
         platform: platformLower,
         followers: followerMap.get(platformLower) || 0,
         engagement: 0,

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import {
   withErrorHandler,
   successResponse,
@@ -23,7 +23,7 @@ const registerSchema = z.object({
 export const POST = withErrorHandler(async (request: NextRequest) => {
   const validatedData = await validateRequest(request, registerSchema);
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Create auth user
   const { data: authData, error: signUpError } = await supabase.auth.signUp({

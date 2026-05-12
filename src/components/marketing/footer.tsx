@@ -54,7 +54,7 @@ const footerSections = {
       { href: '/careers', label: 'Careers' },
       { href: '/privacy', label: 'Privacy' },
       { href: '/terms', label: 'Terms' },
-      { href: '/security', label: 'Security' },
+      { href: '/data-deletion', label: 'Data Deletion' },
     ]
   }
 }
@@ -213,8 +213,8 @@ export default function MarketingFooter() {
                 <Link href="/terms" className="text-sm text-secondary-500 hover:text-secondary-300 transition-colors">
                   Terms of Service
                 </Link>
-                <Link href="/cookies" className="text-sm text-secondary-500 hover:text-secondary-300 transition-colors">
-                  Cookie Settings
+                <Link href="/data-deletion" className="text-sm text-secondary-500 hover:text-secondary-300 transition-colors">
+                  Data Deletion
                 </Link>
               </div>
             </div>

@@ -6,7 +6,7 @@ export const metadata: Metadata = {
     "Review the terms for using Xocial, a social media management app for planning, scheduling, publishing, collaboration, and analytics.",
 };
 
-const lastUpdated = "May 12, 2026";
+const lastUpdated = "May 13, 2026";
 
 export default function TermsOfServicePage() {
   return (
@@ -27,6 +27,13 @@ export default function TermsOfServicePage() {
             schedule, publish, collaborate on, and analyze social media content.
             By creating an account, connecting a social profile, or using
             Xocial, you agree to these Terms.
+          </p>
+          <p className="text-base leading-7">
+            These Terms are written to support a trustworthy social media
+            management product and to make clear that use of Facebook,
+            Instagram, and other connected platforms remains subject to those
+            platforms&apos; own terms, developer policies, community standards,
+            and API rules.
           </p>
         </header>
 
@@ -90,7 +97,35 @@ export default function TermsOfServicePage() {
 
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold text-gray-900">
-            4. Your Content
+            4. Meta Platform Data
+          </h2>
+          <p className="leading-7">
+            If you connect Facebook or Instagram, Xocial may receive data from
+            Meta APIs, including Page identifiers, Instagram professional account
+            identifiers, account names, usernames, profile images, permission
+            scopes, access tokens, post status, comments, engagement metrics, and
+            analytics made available by Meta for your authorized account.
+          </p>
+          <p className="leading-7">
+            Xocial uses this Meta Platform Data only to provide the features you
+            request: account connection, scheduling, publishing, comments,
+            analytics, troubleshooting, security, and compliance. We do not sell,
+            license, purchase, rent, or transfer Meta Platform Data except as
+            needed to provide Xocial to you, to service providers acting on our
+            behalf, to comply with law, or as otherwise permitted by Meta&apos;s
+            terms.
+          </p>
+          <p className="leading-7">
+            We do not use Meta Platform Data to train, fine-tune, or improve AI
+            models. You must not use Xocial to collect, store, or process Meta
+            data in ways that violate Meta Platform Terms, Meta Developer
+            Policies, or applicable law.
+          </p>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-2xl font-semibold text-gray-900">
+            5. Your Content
           </h2>
           <p className="leading-7">
             You keep ownership of the posts, captions, media, brand materials,
@@ -109,7 +144,7 @@ export default function TermsOfServicePage() {
 
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold text-gray-900">
-            5. Acceptable Use
+            6. Acceptable Use
           </h2>
           <p className="leading-7">You agree not to use Xocial to:</p>
           <ul className="list-disc space-y-2 pl-6 leading-7">
@@ -121,6 +156,15 @@ export default function TermsOfServicePage() {
             <li>
               Publish spam, deceptive content, malware, or content intended to
               manipulate platform systems.
+            </li>
+            <li>
+              Scrape, resell, broker, enrich, or build independent profiles from
+              data obtained through connected platform APIs.
+            </li>
+            <li>
+              Use Meta Platform Data for surveillance, eligibility decisions,
+              credit decisions, employment decisions, or advertising targeting
+              outside authorized Xocial functionality.
             </li>
             <li>
               Interfere with, probe, overload, reverse engineer, or bypass the
@@ -135,7 +179,7 @@ export default function TermsOfServicePage() {
 
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold text-gray-900">
-            6. AI-Assisted Features
+            7. AI-Assisted Features
           </h2>
           <p className="leading-7">
             Xocial may offer AI-assisted captions, content ideas, recommendations,
@@ -147,7 +191,7 @@ export default function TermsOfServicePage() {
 
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold text-gray-900">
-            7. Plans, Billing, and Changes
+            8. Plans, Billing, and Changes
           </h2>
           <p className="leading-7">
             Some Xocial features may require a paid plan. Pricing, usage limits,
@@ -160,7 +204,7 @@ export default function TermsOfServicePage() {
 
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold text-gray-900">
-            8. Service Availability
+            9. Service Availability
           </h2>
           <p className="leading-7">
             We work to keep Xocial reliable, but the service may occasionally be
@@ -173,7 +217,7 @@ export default function TermsOfServicePage() {
 
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold text-gray-900">
-            9. Privacy
+            10. Privacy and Data Deletion
           </h2>
           <p className="leading-7">
             Our Privacy Policy explains how we collect, use, and protect
@@ -187,11 +231,31 @@ export default function TermsOfServicePage() {
             </a>
             .
           </p>
+          <p className="leading-7">
+            You can request deletion of your Xocial account data or connected
+            Meta data at
+            <a
+              className="ml-1 text-blue-600 hover:underline"
+              href="mailto:support@xocial.world"
+            >
+              support@xocial.world
+            </a>
+            , or follow the instructions at
+            <a
+              className="ml-1 text-blue-600 hover:underline"
+              href="https://www.xocial.world/data-deletion"
+            >
+              https://www.xocial.world/data-deletion
+            </a>
+            . If you remove Xocial from Facebook or Instagram settings, we will
+            stop future API access for that connection and delete or anonymize
+            eligible Meta Platform Data according to our Privacy Policy.
+          </p>
         </section>
 
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold text-gray-900">
-            10. Suspension and Termination
+            11. Suspension and Termination
           </h2>
           <p className="leading-7">
             You may stop using Xocial at any time. We may suspend or limit access
@@ -200,11 +264,17 @@ export default function TermsOfServicePage() {
             violate connected platform policies. When practical, we will provide
             notice and an opportunity to resolve the issue.
           </p>
+          <p className="leading-7">
+            If your account is terminated or a connected platform requires us to
+            remove data, we may delete or disable the affected connection, tokens,
+            records, scheduled posts, analytics, or other data as needed to
+            comply with platform policy, law, or these Terms.
+          </p>
         </section>
 
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold text-gray-900">
-            11. Disclaimers and Responsibility
+            12. Disclaimers and Responsibility
           </h2>
           <p className="leading-7">
             Xocial is provided as a business software service. We do not promise
@@ -218,7 +288,7 @@ export default function TermsOfServicePage() {
 
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold text-gray-900">
-            12. Updates to These Terms
+            13. Updates to These Terms
           </h2>
           <p className="leading-7">
             We may update these Terms as Xocial changes. The updated version will
@@ -236,7 +306,7 @@ export default function TermsOfServicePage() {
 
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold text-gray-900">
-            13. Contact Us
+            14. Contact Us
           </h2>
           <p className="leading-7">
             If you have questions about these Terms or Xocial, please contact us

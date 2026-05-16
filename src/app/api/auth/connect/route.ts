@@ -10,7 +10,11 @@ import { getTikTokAuthUrl } from '@/lib/oauth/tiktok';
 import { generatePKCE, getTwitterAuthUrl } from '@/lib/platforms/twitter';
 import { getInstagramAuthUrl, getInstagramFacebookAuthUrl } from '@/lib/oauth/instagram';
 import { OAUTH_CONFIG, OAuthPlatform } from '@/lib/oauth/oauth-config';
-import { getOAuthAppOrigin, sanitizeOAuthRedirect } from '@/lib/oauth/redirect';
+import {
+  buildOAuthRedirectUrl,
+  getOAuthAppOrigin,
+  sanitizeOAuthRedirect,
+} from '@/lib/oauth/redirect';
 
 /**
  * GET /api/auth/connect?platform=youtube&redirect=/x
@@ -235,7 +239,12 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     logger.error(`[OAuth Connect] Error initiating ${platform} OAuth:`, error as Error);
 
     if (error instanceof APIError) {
-      throw error;
+      const errorUrl = buildOAuthRedirectUrl(redirectUrl, appUrl, {
+        error: error.message,
+        code: error.code,
+        platform,
+      });
+      return NextResponse.redirect(errorUrl);
     }
 
     throw new APIError(500, `Failed to initiate ${platform} OAuth flow`, 'OAUTH_INIT_FAILED');

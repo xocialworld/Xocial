@@ -2,12 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { APIError, handleAPIError } from '@/lib/api-middleware';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
 import {
+  getInstagramGraphBaseUrl,
   getInstagramAccountInsights,
   getInstagramMediaInsights,
 } from '@/lib/oauth/instagram';
 import { decryptToken } from '@/lib/encryption';
 
 export const dynamic = 'force-dynamic';
+
+function getConnectedVia(metadata: any): string | undefined {
+  if (!metadata) return undefined;
+  if (typeof metadata === 'string') {
+    try {
+      return JSON.parse(metadata)?.connected_via;
+    } catch {
+      return undefined;
+    }
+  }
+  return metadata.connected_via;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,10 +35,7 @@ export async function GET(request: NextRequest) {
       throw new APIError(400, 'accountId is required');
     }
 
-    const {
-      data: account,
-      error: accountError,
-    } = await supabase
+    const { data: account, error: accountError } = await supabase
       .from('social_accounts')
       .select('workspace_id, account_id, account_name, access_token, metadata, is_active')
       .eq('id', accountId)
@@ -42,16 +52,18 @@ export async function GET(request: NextRequest) {
     }
 
     const accessToken = decryptToken(account.access_token);
+    const baseUrl = getInstagramGraphBaseUrl(getConnectedVia(account.metadata));
 
     if (mediaId) {
-      const insights = await getInstagramMediaInsights(mediaId, accessToken);
+      const insights = await getInstagramMediaInsights(mediaId, accessToken, baseUrl);
       return NextResponse.json({ success: true, scope: 'media', mediaId, insights });
     }
 
     const insights = await getInstagramAccountInsights(
       account.account_id,
       accessToken,
-      period
+      period,
+      baseUrl
     );
     return NextResponse.json({
       success: true,
@@ -63,4 +75,3 @@ export async function GET(request: NextRequest) {
     return handleAPIError(error);
   }
 }
-

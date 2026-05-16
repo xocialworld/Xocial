@@ -1,31 +1,25 @@
 /**
  * Instagram OAuth Integration
- * Instagram uses Facebook's Graph API for business accounts
+ * Supports both Instagram Login and Instagram via Facebook Page.
  */
 
 export interface InstagramOAuthConfig {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
-  configurationId?: string;
 }
 
 /**
- * Generate Instagram OAuth authorization URL
- * Instagram uses Facebook Login for OAuth
+ * Generate the primary Instagram Professional Account OAuth URL.
+ * This is Instagram API with Instagram Login and does not require a linked
+ * Facebook Page.
  */
-export function getInstagramAuthUrl(
-  config: InstagramOAuthConfig,
-  state: string
-): string {
+export function getInstagramAuthUrl(config: InstagramOAuthConfig, state: string): string {
   const scopes = [
-    'instagram_basic',
-    'instagram_content_publish',
-    'pages_show_list',
-    'pages_read_engagement',
-    'pages_manage_posts',
-    'pages_read_user_content',
-    'pages_manage_engagement',
+    'instagram_business_basic',
+    'instagram_business_content_publish',
+    'instagram_business_manage_comments',
+    'instagram_business_manage_insights',
   ];
 
   const params = new URLSearchParams({
@@ -35,19 +29,163 @@ export function getInstagramAuthUrl(
     response_type: 'code',
   });
 
-  if (config.configurationId) {
-    params.set('config_id', config.configurationId);
-    params.set('override_default_response_type', 'true');
-  } else {
-    params.set('scope', scopes.join(','));
-    params.set('auth_type', 'rerequest');
-  }
+  params.set('scope', scopes.join(','));
+
+  return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
+}
+
+export interface InstagramFacebookOAuthConfig extends InstagramOAuthConfig {
+  configurationId: string;
+}
+
+/**
+ * Generate the secondary Instagram-via-Facebook-Page OAuth URL.
+ * This is Instagram API with Facebook Login and requires a Page-linked
+ * Instagram Professional account.
+ */
+export function getInstagramFacebookAuthUrl(
+  config: InstagramFacebookOAuthConfig,
+  state: string
+): string {
+  const params = new URLSearchParams({
+    client_id: config.clientId,
+    redirect_uri: config.redirectUri,
+    state,
+    response_type: 'code',
+    config_id: config.configurationId,
+    override_default_response_type: 'true',
+  });
 
   return `https://www.facebook.com/v24.0/dialog/oauth?${params.toString()}`;
 }
 
 /**
- * Exchange Instagram/Facebook OAuth code for access token
+ * Exchange Instagram Login code for an Instagram short-lived access token.
+ */
+export async function exchangeInstagramLoginCode(
+  config: InstagramOAuthConfig,
+  code: string
+): Promise<{ access_token: string; user_id: string; permissions?: string[] }> {
+  const params = new URLSearchParams({
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    grant_type: 'authorization_code',
+    redirect_uri: config.redirectUri,
+    code,
+  });
+
+  const response = await fetch('https://api.instagram.com/oauth/access_token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params.toString(),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(
+      error?.error_message || error?.error?.message || 'Failed to exchange Instagram OAuth code'
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Exchange an Instagram short-lived token for a long-lived Instagram token.
+ */
+export async function exchangeInstagramLongLivedToken(
+  config: Pick<InstagramOAuthConfig, 'clientSecret'>,
+  shortLivedToken: string
+): Promise<{ access_token: string; token_type?: string; expires_in: number }> {
+  const params = new URLSearchParams({
+    grant_type: 'ig_exchange_token',
+    client_secret: config.clientSecret,
+    access_token: shortLivedToken,
+  });
+
+  const response = await fetch('https://graph.instagram.com/access_token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params.toString(),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error?.message || 'Failed to exchange Instagram long-lived token');
+  }
+
+  return response.json();
+}
+
+/**
+ * Refresh a long-lived Instagram Login token.
+ */
+export async function refreshInstagramLongLivedToken(
+  accessToken: string
+): Promise<{ access_token: string; token_type?: string; expires_in: number }> {
+  const params = new URLSearchParams({
+    grant_type: 'ig_refresh_token',
+    access_token: accessToken,
+  });
+
+  const response = await fetch(
+    `https://graph.instagram.com/refresh_access_token?${params.toString()}`
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error?.message || 'Failed to refresh Instagram token');
+  }
+
+  return response.json();
+}
+
+export interface InstagramLoginAccountInfo {
+  id: string;
+  username: string;
+  name?: string;
+  account_type?: string;
+  profile_picture_url?: string;
+  followers_count?: number;
+  follows_count?: number;
+  media_count?: number;
+}
+
+/**
+ * Get account info for Instagram API with Instagram Login.
+ */
+export async function getInstagramLoginAccountInfo(
+  accessToken: string
+): Promise<InstagramLoginAccountInfo> {
+  const fields = [
+    'id',
+    'username',
+    'name',
+    'account_type',
+    'profile_picture_url',
+    'followers_count',
+    'follows_count',
+    'media_count',
+  ].join(',');
+
+  const response = await fetch(
+    `https://graph.instagram.com/v24.0/me?fields=${fields}&access_token=${accessToken}`
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error?.message || 'Failed to fetch Instagram account info');
+  }
+
+  return response.json();
+}
+
+/**
+ * Exchange Instagram/Facebook OAuth code for access token.
  */
 export async function exchangeInstagramCode(
   config: InstagramOAuthConfig,
@@ -70,6 +208,12 @@ export async function exchangeInstagramCode(
   }
 
   return response.json();
+}
+
+export function getInstagramGraphBaseUrl(connectedVia?: string): string {
+  return connectedVia === 'instagram_login'
+    ? 'https://graph.instagram.com/v24.0'
+    : 'https://graph.facebook.com/v24.0';
 }
 
 export interface InstagramBusinessAccount {
@@ -123,7 +267,8 @@ export async function postInstagramMedia(
   instagramAccountId: string,
   mediaUrl: string,
   caption?: string,
-  mediaType: 'IMAGE' | 'VIDEO' | 'REELS' = 'IMAGE'
+  mediaType: 'IMAGE' | 'VIDEO' | 'REELS' = 'IMAGE',
+  baseUrl = 'https://graph.facebook.com/v24.0'
 ): Promise<{ id: string }> {
   // Step 1: Create container
   const containerParams = new URLSearchParams({
@@ -139,7 +284,7 @@ export async function postInstagramMedia(
   }
 
   const containerResponse = await fetch(
-    `https://graph.facebook.com/v24.0/${instagramAccountId}/media?${containerParams.toString()}`,
+    `${baseUrl}/${instagramAccountId}/media?${containerParams.toString()}`,
     { method: 'POST' }
   );
 
@@ -158,7 +303,7 @@ export async function postInstagramMedia(
   });
 
   const publishResponse = await fetch(
-    `https://graph.facebook.com/v24.0/${instagramAccountId}/media_publish?${publishParams.toString()}`,
+    `${baseUrl}/${instagramAccountId}/media_publish?${publishParams.toString()}`,
     { method: 'POST' }
   );
 
@@ -176,7 +321,8 @@ export async function postInstagramMedia(
 export async function getInstagramMedia(
   accessToken: string,
   instagramAccountId: string,
-  limit: number = 20
+  limit: number = 20,
+  baseUrl = 'https://graph.facebook.com/v24.0'
 ): Promise<any[]> {
   const fields = [
     'id',
@@ -187,11 +333,11 @@ export async function getInstagramMedia(
     'thumbnail_url',
     'timestamp',
     'like_count',
-    'comments_count'
+    'comments_count',
   ].join(',');
 
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/${instagramAccountId}/media?fields=${fields}&limit=${limit}&access_token=${accessToken}`
+    `${baseUrl}/${instagramAccountId}/media?fields=${fields}&limit=${limit}&access_token=${accessToken}`
   );
 
   if (!response.ok) {
@@ -202,39 +348,35 @@ export async function getInstagramMedia(
   return data.data || [];
 }
 
-
-
 /**
  * Create Instagram media container (for images)
  */
 type InstagramMediaContent =
   | {
-    image_url: string;
-    caption: string;
-  }
+      image_url: string;
+      caption: string;
+    }
   | {
-    video_url: string;
-    caption: string;
-  };
+      video_url: string;
+      caption: string;
+    };
 
 export async function createInstagramMediaContainer(
   igAccountId: string,
   accessToken: string,
-  content: InstagramMediaContent
+  content: InstagramMediaContent,
+  baseUrl = 'https://graph.facebook.com/v24.0'
 ): Promise<{ id: string }> {
-  const response = await fetch(
-    `https://graph.facebook.com/v24.0/${igAccountId}/media`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ...content,
-        access_token: accessToken,
-      }),
-    }
-  );
+  const response = await fetch(`${baseUrl}/${igAccountId}/media`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      ...content,
+      access_token: accessToken,
+    }),
+  });
 
   if (!response.ok) {
     const error = await response.json();
@@ -251,26 +393,24 @@ export async function publishInstagramMedia(
   igAccountId: string,
   accessToken: string,
   creationId: string,
-  publishTime?: Date
+  publishTime?: Date,
+  baseUrl = 'https://graph.facebook.com/v24.0'
 ): Promise<{ id: string }> {
-  const response = await fetch(
-    `https://graph.facebook.com/v24.0/${igAccountId}/media_publish`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        creation_id: creationId,
-        access_token: accessToken,
-        ...(publishTime
-          ? {
+  const response = await fetch(`${baseUrl}/${igAccountId}/media_publish`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      creation_id: creationId,
+      access_token: accessToken,
+      ...(publishTime
+        ? {
             publish_time: Math.floor(publishTime.getTime() / 1000),
           }
-          : {}),
-      }),
-    }
-  );
+        : {}),
+    }),
+  });
 
   if (!response.ok) {
     const error = await response.json();
@@ -285,20 +425,13 @@ export async function publishInstagramMedia(
  */
 export async function getInstagramMediaInsights(
   mediaId: string,
-  accessToken: string
+  accessToken: string,
+  baseUrl = 'https://graph.facebook.com/v24.0'
 ): Promise<any[]> {
-  const metrics = [
-    'impressions',
-    'reach',
-    'engagement',
-    'saved',
-    'comments',
-    'likes',
-    'shares',
-  ];
+  const metrics = ['impressions', 'reach', 'engagement', 'saved', 'comments', 'likes', 'shares'];
 
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/${mediaId}/insights?metric=${metrics.join(',')}&access_token=${accessToken}`
+    `${baseUrl}/${mediaId}/insights?metric=${metrics.join(',')}&access_token=${accessToken}`
   );
 
   if (!response.ok) {
@@ -315,17 +448,13 @@ export async function getInstagramMediaInsights(
 export async function getInstagramAccountInsights(
   igAccountId: string,
   accessToken: string,
-  period: 'day' | 'week' | 'days_28' = 'day'
+  period: 'day' | 'week' | 'days_28' = 'day',
+  baseUrl = 'https://graph.facebook.com/v24.0'
 ): Promise<any[]> {
-  const metrics = [
-    'impressions',
-    'reach',
-    'follower_count',
-    'profile_views',
-  ];
+  const metrics = ['impressions', 'reach', 'follower_count', 'profile_views'];
 
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/${igAccountId}/insights?metric=${metrics.join(',')}&period=${period}&access_token=${accessToken}`
+    `${baseUrl}/${igAccountId}/insights?metric=${metrics.join(',')}&period=${period}&access_token=${accessToken}`
   );
 
   if (!response.ok) {
@@ -336,17 +465,16 @@ export async function getInstagramAccountInsights(
   return data.data || [];
 }
 
-
-
 /**
  * Get Instagram comments on a media
  */
 export async function getInstagramComments(
   mediaId: string,
-  accessToken: string
+  accessToken: string,
+  baseUrl = 'https://graph.facebook.com/v24.0'
 ): Promise<any[]> {
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/${mediaId}/comments?fields=id,text,username,timestamp,like_count,replies&access_token=${accessToken}`
+    `${baseUrl}/${mediaId}/comments?fields=id,text,username,timestamp,like_count,replies&access_token=${accessToken}`
   );
 
   if (!response.ok) {
@@ -363,21 +491,19 @@ export async function getInstagramComments(
 export async function replyToInstagramComment(
   commentId: string,
   accessToken: string,
-  message: string
+  message: string,
+  baseUrl = 'https://graph.facebook.com/v24.0'
 ): Promise<{ id: string }> {
-  const response = await fetch(
-    `https://graph.facebook.com/v24.0/${commentId}/replies`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message,
-        access_token: accessToken,
-      }),
-    }
-  );
+  const response = await fetch(`${baseUrl}/${commentId}/replies`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message,
+      access_token: accessToken,
+    }),
+  });
 
   if (!response.ok) {
     const error = await response.json();

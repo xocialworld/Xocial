@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-    withErrorHandler,
-    APIError,
-} from '@/lib/api-middleware';
+import { withErrorHandler, APIError } from '@/lib/api-middleware';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 import { generateState, storeOAuthState } from '@/lib/oauth/state-manager';
@@ -11,7 +8,7 @@ import { getFacebookAuthUrl } from '@/lib/oauth/facebook';
 import { getLinkedInAuthUrl } from '@/lib/oauth/linkedin';
 import { getTikTokAuthUrl } from '@/lib/oauth/tiktok';
 import { generatePKCE, getTwitterAuthUrl } from '@/lib/platforms/twitter';
-import { getInstagramAuthUrl } from '@/lib/oauth/instagram';
+import { getInstagramAuthUrl, getInstagramFacebookAuthUrl } from '@/lib/oauth/instagram';
 import { OAUTH_CONFIG, OAuthPlatform } from '@/lib/oauth/oauth-config';
 import { getOAuthAppOrigin, sanitizeOAuthRedirect } from '@/lib/oauth/redirect';
 
@@ -21,178 +18,228 @@ import { getOAuthAppOrigin, sanitizeOAuthRedirect } from '@/lib/oauth/redirect';
  * Follows SRS pattern: /api/auth/connect
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-    const searchParams = request.nextUrl.searchParams;
-    const platform = searchParams.get('platform') as OAuthPlatform;
-    const appUrl = getOAuthAppOrigin(request);
-    const redirectUrl = sanitizeOAuthRedirect(searchParams.get('redirect'), appUrl);
+  const searchParams = request.nextUrl.searchParams;
+  const platform = searchParams.get('platform') as OAuthPlatform;
+  const instagramConnection = searchParams.get('connection') || 'instagram_login';
+  const appUrl = getOAuthAppOrigin(request);
+  const redirectUrl = sanitizeOAuthRedirect(searchParams.get('redirect'), appUrl);
 
-    if (!platform) {
-        throw new APIError(400, 'Platform parameter is required', 'MISSING_PLATFORM');
-    }
+  if (!platform) {
+    throw new APIError(400, 'Platform parameter is required', 'MISSING_PLATFORM');
+  }
 
-    if (!OAUTH_CONFIG[platform]) {
-        throw new APIError(400, `Invalid platform: ${platform}`, 'INVALID_PLATFORM');
-    }
+  if (!OAUTH_CONFIG[platform]) {
+    throw new APIError(400, `Invalid platform: ${platform}`, 'INVALID_PLATFORM');
+  }
 
-    const { user, workspace, usage, limits } = await requireWorkspaceContext(request, {
-        roles: ['owner', 'admin', 'manager'],
-    });
+  const { user, workspace, usage, limits } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager'],
+  });
 
-    if (usage.social_profiles_count >= limits.max_social_profiles) {
-        throw new APIError(
-            402,
-            `Social account limit reached for your ${limits.plan} plan`,
-            'PLAN_LIMIT_EXCEEDED',
-            {
-                current: usage.social_profiles_count,
-                limit: limits.max_social_profiles,
-            }
-        );
-    }
+  if (usage.social_profiles_count >= limits.max_social_profiles) {
+    throw new APIError(
+      402,
+      `Social account limit reached for your ${limits.plan} plan`,
+      'PLAN_LIMIT_EXCEEDED',
+      {
+        current: usage.social_profiles_count,
+        limit: limits.max_social_profiles,
+      }
+    );
+  }
 
-    // Generate and store state for CSRF protection
-    const state = generateState();
-    let pkce: { verifier: string; challenge: string } | undefined;
+  // Generate and store state for CSRF protection
+  const state = generateState();
+  let pkce: { verifier: string; challenge: string } | undefined;
 
-    // Generate PKCE for platforms that support it
-    if (platform === 'twitter' || platform === 'tiktok') {
-        pkce = generatePKCE();
-    }
+  // Generate PKCE for platforms that support it
+  if (platform === 'twitter' || platform === 'tiktok') {
+    pkce = generatePKCE();
+  }
 
-    // Store state in database
-    await storeOAuthState(user.id, platform, state, redirectUrl, {
-        pkceVerifier: pkce?.verifier,
-        workspaceId: workspace.id,
-    });
+  // Store state in database
+  await storeOAuthState(user.id, platform, state, redirectUrl, {
+    pkceVerifier: pkce?.verifier,
+    workspaceId: workspace.id,
+  });
 
-    // Get authorization URL for the platform
-    let authUrl: string;
-    try {
-        switch (platform) {
-            case 'youtube':
-                if (!process.env.YOUTUBE_CLIENT_ID || !process.env.YOUTUBE_CLIENT_SECRET) {
-                    throw new APIError(500, 'YouTube OAuth is not configured', 'YOUTUBE_OAUTH_NOT_CONFIGURED');
-                }
-                authUrl = getYouTubeAuthUrl(
-                    {
-                        clientId: process.env.YOUTUBE_CLIENT_ID!,
-                        clientSecret: process.env.YOUTUBE_CLIENT_SECRET!,
-                        redirectUri: `${appUrl}/api/auth/youtube/callback`,
-                    },
-                    state
-                );
-                break;
-
-            case 'facebook':
-                if (!process.env.FACEBOOK_APP_ID || !process.env.FACEBOOK_APP_SECRET) {
-                    throw new APIError(500, 'Facebook OAuth is not configured', 'FACEBOOK_OAUTH_NOT_CONFIGURED');
-                }
-                authUrl = getFacebookAuthUrl(
-                    {
-                        clientId: process.env.FACEBOOK_APP_ID!,
-                        clientSecret: process.env.FACEBOOK_APP_SECRET!,
-                        redirectUri: `${appUrl}/api/auth/facebook/callback`,
-                        configurationId: process.env.FACEBOOK_LOGIN_CONFIG_ID,
-                    },
-                    state,
-                    false
-                );
-                break;
-
-            case 'instagram':
-                {
-                    const instagramClientId = process.env.FACEBOOK_APP_ID;
-                    const instagramClientSecret = process.env.FACEBOOK_APP_SECRET;
-
-                    if (!instagramClientId || !instagramClientSecret) {
-                        throw new APIError(500, 'Instagram OAuth is not configured', 'INSTAGRAM_OAUTH_NOT_CONFIGURED');
-                    }
-
-                    authUrl = getInstagramAuthUrl(
-                        {
-                            clientId: instagramClientId,
-                            clientSecret: instagramClientSecret,
-                            redirectUri: `${appUrl}/api/auth/instagram/callback`,
-                            configurationId: process.env.INSTAGRAM_LOGIN_CONFIG_ID,
-                        },
-                        state
-                    );
-                }
-                break;
-
-            case 'twitter':
-                if (!process.env.TWITTER_CLIENT_ID || !process.env.TWITTER_CLIENT_SECRET) {
-                    throw new APIError(500, 'Twitter OAuth is not configured', 'TWITTER_OAUTH_NOT_CONFIGURED');
-                }
-                logger.info('[OAuth Connect] Initiating Twitter OAuth', {
-                    userId: user.id,
-                    redirectUri: `${appUrl}/api/auth/twitter/callback`,
-                    clientIdPrefix: process.env.TWITTER_CLIENT_ID.substring(0, 10) + '...',
-                    hasPkce: !!pkce,
-                    pkceChallengeLength: pkce?.challenge.length,
-                });
-                authUrl = getTwitterAuthUrl(
-                    {
-                        clientId: process.env.TWITTER_CLIENT_ID!,
-                        clientSecret: process.env.TWITTER_CLIENT_SECRET!,
-                        redirectUri: `${appUrl}/api/auth/twitter/callback`,
-                    },
-                    state,
-                    pkce!.challenge
-                );
-                logger.info('[OAuth Connect] Twitter auth URL generated', {
-                    authUrlLength: authUrl.length,
-                    authUrlPrefix: authUrl.substring(0, 60) + '...',
-                });
-                break;
-
-            case 'linkedin':
-                if (!process.env.LINKEDIN_CLIENT_ID || !process.env.LINKEDIN_CLIENT_SECRET) {
-                    throw new APIError(500, 'LinkedIn OAuth is not configured', 'LINKEDIN_OAUTH_NOT_CONFIGURED');
-                }
-                authUrl = getLinkedInAuthUrl(
-                    {
-                        clientId: process.env.LINKEDIN_CLIENT_ID!,
-                        clientSecret: process.env.LINKEDIN_CLIENT_SECRET!,
-                        redirectUri: `${appUrl}/api/auth/linkedin/callback`,
-                    },
-                    state
-                );
-                break;
-
-            case 'tiktok':
-                if (!process.env.TIKTOK_CLIENT_KEY || !process.env.TIKTOK_CLIENT_SECRET) {
-                    throw new APIError(500, 'TikTok OAuth is not configured', 'TIKTOK_OAUTH_NOT_CONFIGURED');
-                }
-                authUrl = getTikTokAuthUrl(
-                    {
-                        clientKey: process.env.TIKTOK_CLIENT_KEY!,
-                        clientSecret: process.env.TIKTOK_CLIENT_SECRET!,
-                        redirectUri: `${appUrl}/api/auth/tiktok/callback`,
-                    },
-                    state
-                );
-                break;
-            default:
-                throw new APIError(400, `Platform ${platform} is not yet implemented`, 'PLATFORM_NOT_IMPLEMENTED');
-        }
-
-        logger.info(`[OAuth Connect] Redirecting user ${user.id} to ${platform} OAuth`);
-
-        return NextResponse.redirect(authUrl);
-    } catch (error) {
-        logger.error(`[OAuth Connect] Error initiating ${platform} OAuth:`, error as Error);
-
-        if (error instanceof APIError) {
-            throw error;
-        }
-
-        throw new APIError(
+  // Get authorization URL for the platform
+  let authUrl: string;
+  try {
+    switch (platform) {
+      case 'youtube':
+        if (!process.env.YOUTUBE_CLIENT_ID || !process.env.YOUTUBE_CLIENT_SECRET) {
+          throw new APIError(
             500,
-            `Failed to initiate ${platform} OAuth flow`,
-            'OAUTH_INIT_FAILED'
+            'YouTube OAuth is not configured',
+            'YOUTUBE_OAUTH_NOT_CONFIGURED'
+          );
+        }
+        authUrl = getYouTubeAuthUrl(
+          {
+            clientId: process.env.YOUTUBE_CLIENT_ID!,
+            clientSecret: process.env.YOUTUBE_CLIENT_SECRET!,
+            redirectUri: `${appUrl}/api/auth/youtube/callback`,
+          },
+          state
+        );
+        break;
+
+      case 'facebook':
+        if (!process.env.FACEBOOK_APP_ID || !process.env.FACEBOOK_APP_SECRET) {
+          throw new APIError(
+            500,
+            'Facebook OAuth is not configured',
+            'FACEBOOK_OAUTH_NOT_CONFIGURED'
+          );
+        }
+        authUrl = getFacebookAuthUrl(
+          {
+            clientId: process.env.FACEBOOK_APP_ID!,
+            clientSecret: process.env.FACEBOOK_APP_SECRET!,
+            redirectUri: `${appUrl}/api/auth/facebook/callback`,
+            configurationId: process.env.FACEBOOK_LOGIN_CONFIG_ID,
+          },
+          state,
+          false
+        );
+        break;
+
+      case 'instagram':
+        {
+          if (instagramConnection === 'facebook_page') {
+            const configId =
+              process.env.INSTAGRAM_FACEBOOK_LOGIN_CONFIG_ID ||
+              process.env.INSTAGRAM_LOGIN_CONFIG_ID;
+
+            if (!process.env.FACEBOOK_APP_ID || !process.env.FACEBOOK_APP_SECRET || !configId) {
+              throw new APIError(
+                500,
+                'Instagram via Facebook Page is not configured',
+                'INSTAGRAM_FACEBOOK_LOGIN_NOT_CONFIGURED'
+              );
+            }
+
+            authUrl = getInstagramFacebookAuthUrl(
+              {
+                clientId: process.env.FACEBOOK_APP_ID!,
+                clientSecret: process.env.FACEBOOK_APP_SECRET!,
+                redirectUri: `${appUrl}/api/auth/instagram/facebook/callback`,
+                configurationId: configId,
+              },
+              state
+            );
+            break;
+          }
+
+          if (instagramConnection !== 'instagram_login') {
+            throw new APIError(
+              400,
+              `Unsupported Instagram connection method: ${instagramConnection}`,
+              'INVALID_INSTAGRAM_CONNECTION'
+            );
+          }
+
+          if (!process.env.INSTAGRAM_CLIENT_ID || !process.env.INSTAGRAM_CLIENT_SECRET) {
+            throw new APIError(
+              500,
+              'Instagram Login is not configured',
+              'INSTAGRAM_LOGIN_NOT_CONFIGURED'
+            );
+          }
+
+          authUrl = getInstagramAuthUrl(
+            {
+              clientId: process.env.INSTAGRAM_CLIENT_ID!,
+              clientSecret: process.env.INSTAGRAM_CLIENT_SECRET!,
+              redirectUri: `${appUrl}/api/auth/instagram/callback`,
+            },
+            state
+          );
+        }
+        break;
+
+      case 'twitter':
+        if (!process.env.TWITTER_CLIENT_ID || !process.env.TWITTER_CLIENT_SECRET) {
+          throw new APIError(
+            500,
+            'Twitter OAuth is not configured',
+            'TWITTER_OAUTH_NOT_CONFIGURED'
+          );
+        }
+        logger.info('[OAuth Connect] Initiating Twitter OAuth', {
+          userId: user.id,
+          redirectUri: `${appUrl}/api/auth/twitter/callback`,
+          clientIdPrefix: process.env.TWITTER_CLIENT_ID.substring(0, 10) + '...',
+          hasPkce: !!pkce,
+          pkceChallengeLength: pkce?.challenge.length,
+        });
+        authUrl = getTwitterAuthUrl(
+          {
+            clientId: process.env.TWITTER_CLIENT_ID!,
+            clientSecret: process.env.TWITTER_CLIENT_SECRET!,
+            redirectUri: `${appUrl}/api/auth/twitter/callback`,
+          },
+          state,
+          pkce!.challenge
+        );
+        logger.info('[OAuth Connect] Twitter auth URL generated', {
+          authUrlLength: authUrl.length,
+          authUrlPrefix: authUrl.substring(0, 60) + '...',
+        });
+        break;
+
+      case 'linkedin':
+        if (!process.env.LINKEDIN_CLIENT_ID || !process.env.LINKEDIN_CLIENT_SECRET) {
+          throw new APIError(
+            500,
+            'LinkedIn OAuth is not configured',
+            'LINKEDIN_OAUTH_NOT_CONFIGURED'
+          );
+        }
+        authUrl = getLinkedInAuthUrl(
+          {
+            clientId: process.env.LINKEDIN_CLIENT_ID!,
+            clientSecret: process.env.LINKEDIN_CLIENT_SECRET!,
+            redirectUri: `${appUrl}/api/auth/linkedin/callback`,
+          },
+          state
+        );
+        break;
+
+      case 'tiktok':
+        if (!process.env.TIKTOK_CLIENT_KEY || !process.env.TIKTOK_CLIENT_SECRET) {
+          throw new APIError(500, 'TikTok OAuth is not configured', 'TIKTOK_OAUTH_NOT_CONFIGURED');
+        }
+        authUrl = getTikTokAuthUrl(
+          {
+            clientKey: process.env.TIKTOK_CLIENT_KEY!,
+            clientSecret: process.env.TIKTOK_CLIENT_SECRET!,
+            redirectUri: `${appUrl}/api/auth/tiktok/callback`,
+          },
+          state
+        );
+        break;
+      default:
+        throw new APIError(
+          400,
+          `Platform ${platform} is not yet implemented`,
+          'PLATFORM_NOT_IMPLEMENTED'
         );
     }
+
+    logger.info(`[OAuth Connect] Redirecting user ${user.id} to ${platform} OAuth`);
+
+    return NextResponse.redirect(authUrl);
+  } catch (error) {
+    logger.error(`[OAuth Connect] Error initiating ${platform} OAuth:`, error as Error);
+
+    if (error instanceof APIError) {
+      throw error;
+    }
+
+    throw new APIError(500, `Failed to initiate ${platform} OAuth flow`, 'OAUTH_INIT_FAILED');
+  }
 });
 
 export const runtime = 'nodejs';

@@ -2,7 +2,7 @@
 
 /**
  * Environment Variables Checker
- * 
+ *
  * This script checks if all required environment variables are set up correctly
  * before running the application.
  */
@@ -24,7 +24,8 @@ const colors = {
 const { reset, red, green, yellow, blue, cyan, bold } = colors;
 
 // Detect if running in production
-const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+const isProduction =
+  process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
 
 // Required environment variables
 const REQUIRED_VARS = [
@@ -81,10 +82,41 @@ const OPTIONAL_VARS = [
   // OAuth credentials per platform
   { name: 'FACEBOOK_APP_ID', description: 'Meta App ID', example: '123456789012345' },
   { name: 'FACEBOOK_APP_SECRET', description: 'Meta App Secret', example: 'a1b2c3...' },
-  { name: 'FACEBOOK_WEBHOOK_VERIFY_TOKEN', description: 'Meta webhook token', example: 'random-hex' },
-  { name: 'INSTAGRAM_CLIENT_ID', description: 'Instagram Direct Login Client ID (not required for Phase 1 Meta/Facebook Login)', example: '123456789012345' },
-  { name: 'INSTAGRAM_CLIENT_SECRET', description: 'Instagram Direct Login Client Secret (not required for Phase 1 Meta/Facebook Login)', example: 'a1b2c3...' },
-  { name: 'INSTAGRAM_WEBHOOK_VERIFY_TOKEN', description: 'Instagram webhook token', example: 'random-hex' },
+  {
+    name: 'FACEBOOK_LOGIN_CONFIG_ID',
+    description: 'Facebook Page Login for Business Config ID',
+    example: '123456789012345',
+  },
+  {
+    name: 'INSTAGRAM_FACEBOOK_LOGIN_CONFIG_ID',
+    description: 'Instagram via Facebook Page Login Config ID',
+    example: '123456789012345',
+  },
+  {
+    name: 'INSTAGRAM_LOGIN_CONFIG_ID',
+    description: 'Legacy fallback for Instagram via Facebook Page Login Config ID',
+    example: '123456789012345',
+  },
+  {
+    name: 'FACEBOOK_WEBHOOK_VERIFY_TOKEN',
+    description: 'Meta webhook token',
+    example: 'random-hex',
+  },
+  {
+    name: 'INSTAGRAM_CLIENT_ID',
+    description: 'Instagram Login Client ID',
+    example: '123456789012345',
+  },
+  {
+    name: 'INSTAGRAM_CLIENT_SECRET',
+    description: 'Instagram Login Client Secret',
+    example: 'a1b2c3...',
+  },
+  {
+    name: 'INSTAGRAM_WEBHOOK_VERIFY_TOKEN',
+    description: 'Instagram webhook token',
+    example: 'random-hex',
+  },
   { name: 'TWITTER_CLIENT_ID', description: 'Twitter Client ID', example: 'xxx' },
   { name: 'TWITTER_CLIENT_SECRET', description: 'Twitter Client Secret', example: 'xxx' },
   { name: 'LINKEDIN_CLIENT_ID', description: 'LinkedIn Client ID', example: 'xxx' },
@@ -96,9 +128,13 @@ const OPTIONAL_VARS = [
 ];
 
 function printHeader() {
-  console.log(`\n${cyan}${bold}═══════════════════════════════════════════════════════════${reset}`);
+  console.log(
+    `\n${cyan}${bold}═══════════════════════════════════════════════════════════${reset}`
+  );
   console.log(`${cyan}${bold}   XOCIAL - Environment Variables Checker${reset}`);
-  console.log(`${cyan}${bold}═══════════════════════════════════════════════════════════${reset}\n`);
+  console.log(
+    `${cyan}${bold}═══════════════════════════════════════════════════════════${reset}\n`
+  );
 }
 
 function checkEnvFile() {
@@ -113,7 +149,7 @@ function checkEnvFile() {
     console.log(`  2. Add your environment variables (see template below)\n`);
     console.log(`${bold}📚 For detailed setup instructions:${reset}`);
     console.log(`  ${cyan}Read: ./ENV_SETUP.md${reset}\n`);
-    
+
     printEnvTemplate();
     return false;
   }
@@ -127,7 +163,7 @@ function loadEnvFile() {
   const envContent = fs.readFileSync(envPath, 'utf-8');
   const envVars = {};
 
-  envContent.split('\n').forEach(line => {
+  envContent.split('\n').forEach((line) => {
     const trimmed = line.trim();
     if (trimmed && !trimmed.startsWith('#')) {
       const [key, ...valueParts] = trimmed.split('=');
@@ -142,14 +178,15 @@ function loadEnvFile() {
 
 function checkRequiredVars(envVars) {
   console.log(`${bold}Checking Required Variables:${reset}\n`);
-  
+
   let allPresent = true;
   const missing = [];
   const invalid = [];
 
   REQUIRED_VARS.forEach(({ name, description, example, getFrom }) => {
     const value = envVars[name];
-    const isPresent = value && value.length > 0 && !value.includes('your_') && !value.includes('your-');
+    const isPresent =
+      value && value.length > 0 && !value.includes('your_') && !value.includes('your-');
 
     if (isPresent) {
       // Extra validations for certain vars
@@ -195,16 +232,17 @@ function checkRequiredVars(envVars) {
 
 function checkProductionRequiredVars(envVars) {
   if (PRODUCTION_REQUIRED_VARS.length === 0) return true;
-  
+
   console.log(`${bold}Checking Production-Only Variables:${reset}`);
   console.log(`${yellow}(Required in production, optional in development)${reset}\n`);
-  
+
   let allPresent = true;
   const warnings = [];
 
   PRODUCTION_REQUIRED_VARS.forEach(({ name, description, example, getFrom, devNote }) => {
     const value = envVars[name];
-    const isPresent = value && value.length > 0 && !value.includes('your_') && !value.includes('your-');
+    const isPresent =
+      value && value.length > 0 && !value.includes('your_') && !value.includes('your-');
 
     if (isPresent) {
       const validationError = validateVar(name, value);
@@ -263,7 +301,7 @@ function checkProductionRequiredVars(envVars) {
 
 function checkOptionalVars(envVars) {
   console.log(`${bold}Checking Optional Variables:${reset}\n`);
-  
+
   OPTIONAL_VARS.forEach(({ name, description, example }) => {
     const value = envVars[name];
     const isPresent = value && value.length > 0;
@@ -315,13 +353,17 @@ function printEnvTemplate() {
 }
 
 function printSummary(allGood) {
-  console.log(`${cyan}${bold}═══════════════════════════════════════════════════════════${reset}\n`);
-  
+  console.log(
+    `${cyan}${bold}═══════════════════════════════════════════════════════════${reset}\n`
+  );
+
   if (allGood) {
     console.log(`${green}${bold}✓ All required environment variables are configured!${reset}\n`);
     if (!isProduction) {
       console.log(`${cyan}Running in: ${bold}Development Mode${reset}`);
-      console.log(`${yellow}Note: Some production-only variables may show warnings above.${reset}\n`);
+      console.log(
+        `${yellow}Note: Some production-only variables may show warnings above.${reset}\n`
+      );
     }
     console.log(`${bold}Next steps:${reset}`);
     console.log(`  1. Run database migrations (see README.md)`);
@@ -329,8 +371,8 @@ function printSummary(allGood) {
   } else {
     if (isProduction) {
       console.log(`${red}${bold}✗ Production environment setup is incomplete${reset}\n`);
-  } else {
-    console.log(`${red}${bold}✗ Environment setup is incomplete${reset}\n`);
+    } else {
+      console.log(`${red}${bold}✗ Environment setup is incomplete${reset}\n`);
     }
     console.log(`${bold}Please fix the issues above before running the application.${reset}\n`);
     console.log(`${bold}📚 Resources:${reset}`);
@@ -363,7 +405,7 @@ function main() {
   printHeader();
 
   const envFileExists = checkEnvFile();
-  
+
   if (!envFileExists) {
     process.exit(1);
   }

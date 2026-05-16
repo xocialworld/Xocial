@@ -2,12 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { APIError, handleAPIError } from '@/lib/api-middleware';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
 import {
+  getInstagramGraphBaseUrl,
   getInstagramComments,
   replyToInstagramComment,
 } from '@/lib/oauth/instagram';
 import { decryptToken } from '@/lib/encryption';
 
 export const dynamic = 'force-dynamic';
+
+function getConnectedVia(metadata: any): string | undefined {
+  if (!metadata) return undefined;
+  if (typeof metadata === 'string') {
+    try {
+      return JSON.parse(metadata)?.connected_via;
+    } catch {
+      return undefined;
+    }
+  }
+  return metadata.connected_via;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,12 +34,9 @@ export async function GET(request: NextRequest) {
       throw new APIError(400, 'accountId and mediaId are required');
     }
 
-    const {
-      data: account,
-      error: accountError,
-    } = await supabase
+    const { data: account, error: accountError } = await supabase
       .from('social_accounts')
-      .select('workspace_id, account_id, access_token, is_active')
+      .select('workspace_id, account_id, access_token, metadata, is_active')
       .eq('id', accountId)
       .eq('workspace_id', workspace.id)
       .eq('platform', 'instagram')
@@ -40,7 +50,12 @@ export async function GET(request: NextRequest) {
       throw new APIError(400, 'Instagram account is missing an access token');
     }
 
-    const comments = await getInstagramComments(mediaId, decryptToken(account.access_token));
+    const baseUrl = getInstagramGraphBaseUrl(getConnectedVia(account.metadata));
+    const comments = await getInstagramComments(
+      mediaId,
+      decryptToken(account.access_token),
+      baseUrl
+    );
     return NextResponse.json({ success: true, comments });
   } catch (error) {
     return handleAPIError(error);
@@ -58,12 +73,9 @@ export async function POST(request: NextRequest) {
       throw new APIError(400, 'accountId, commentId, and message are required');
     }
 
-    const {
-      data: account,
-      error: accountError,
-    } = await supabase
+    const { data: account, error: accountError } = await supabase
       .from('social_accounts')
-      .select('workspace_id, account_id, access_token, is_active')
+      .select('workspace_id, account_id, access_token, metadata, is_active')
       .eq('id', accountId)
       .eq('workspace_id', workspace.id)
       .eq('platform', 'instagram')
@@ -77,7 +89,13 @@ export async function POST(request: NextRequest) {
       throw new APIError(400, 'Instagram account is missing an access token');
     }
 
-    const response = await replyToInstagramComment(commentId, decryptToken(account.access_token), message);
+    const baseUrl = getInstagramGraphBaseUrl(getConnectedVia(account.metadata));
+    const response = await replyToInstagramComment(
+      commentId,
+      decryptToken(account.access_token),
+      message,
+      baseUrl
+    );
     return NextResponse.json({ success: true, response });
   } catch (error) {
     return handleAPIError(error);

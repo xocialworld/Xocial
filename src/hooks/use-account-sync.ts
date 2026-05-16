@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import type { SocialAccount } from '@/types';
@@ -24,11 +24,28 @@ export function useAccountSync({
     onAccountDelete,
     onAccountInsert,
 }: UseAccountSyncOptions = {}) {
+    const callbacksRef = useRef({
+        onAccountUpdate,
+        onAccountDelete,
+        onAccountInsert,
+    });
+
+    useEffect(() => {
+        callbacksRef.current = {
+            onAccountUpdate,
+            onAccountDelete,
+            onAccountInsert,
+        };
+    }, [onAccountUpdate, onAccountDelete, onAccountInsert]);
+
     useEffect(() => {
         if (!workspaceId) return;
 
         const supabase = createClient();
         let attempts = 0;
+        let isCleaningUp = false;
+        let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+        let activeChannel: ReturnType<typeof supabase.channel> | null = null;
 
         const subscribe = () => {
             const ch = supabase
@@ -47,7 +64,7 @@ export function useAccountSync({
                         toast.success(`${newAccount.account_name} connected successfully`, {
                             description: `${newAccount.platform} account is now active`,
                         });
-                        onAccountInsert?.(newAccount);
+                        callbacksRef.current.onAccountInsert?.(newAccount);
                     }
                 )
                 .on(
@@ -75,7 +92,7 @@ export function useAccountSync({
                                 description: 'Latest analytics data has been fetched',
                             });
                         }
-                        onAccountUpdate?.(updatedAccount);
+                        callbacksRef.current.onAccountUpdate?.(updatedAccount);
                     }
                 )
                 .on(
@@ -92,40 +109,62 @@ export function useAccountSync({
                         toast.info(`${deletedAccount.account_name} disconnected`, {
                             description: 'Account has been removed from your workspace',
                         });
-                        onAccountDelete?.(deletedAccount.id);
+                        callbacksRef.current.onAccountDelete?.(deletedAccount.id);
                     }
                 )
                 .subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
                         console.log('[Real-time] Subscribed to account updates');
                         attempts = 0;
-                    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                        return;
+                    }
+
+                    if (status === 'CLOSED') {
+                        if (process.env.NODE_ENV === 'development' && !isCleaningUp) {
+                            console.warn('[Real-time] Channel closed');
+                        }
+                        return;
+                    }
+
+                    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                        if (isCleaningUp) return;
                         const isDev = process.env.NODE_ENV === 'development';
                         if (isDev) {
                             console.warn('[Real-time] Channel status:', status, '- attempting reconnect');
                         } else if (attempts === 0) {
-                            toast.error('Real-time sync issue', { description: 'Reconnecting…' });
+                            toast.error('Real-time sync issue', {
+                                id: `account-sync-${workspaceId}`,
+                                description: 'Reconnecting...',
+                            });
                         }
                         if (attempts < 3) {
                             attempts++;
                             const delay = Math.min(1000 * attempts, 4000);
-                            setTimeout(() => {
-                                try { supabase.removeChannel(ch); } catch {}
+                            reconnectTimer = setTimeout(() => {
+                                if (isCleaningUp) return;
+                                try { supabase.removeChannel(ch); } catch { }
                                 subscribe();
                             }, delay);
                         }
                     }
                 });
+            activeChannel = ch;
             return ch;
         };
 
-        const channel = subscribe();
+        subscribe();
 
         return () => {
             console.log('[Real-time] Unsubscribing from account updates');
-            try { supabase.removeChannel(channel); } catch {}
+            isCleaningUp = true;
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+            }
+            if (activeChannel) {
+                try { supabase.removeChannel(activeChannel); } catch { }
+            }
         };
-    }, [workspaceId, onAccountUpdate, onAccountDelete, onAccountInsert]);
+    }, [workspaceId]);
 }
 
 /**

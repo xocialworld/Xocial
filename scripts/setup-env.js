@@ -2,7 +2,7 @@
 
 /**
  * Interactive Environment Setup Wizard
- * 
+ *
  * This script helps developers set up their .env.local file
  * by generating secure secrets and prompting for required credentials.
  */
@@ -31,12 +31,12 @@ const { reset, red, green, yellow, blue, cyan, bold } = colors;
 // Create readline interface
 const rl = readline.createInterface({
   input: process.stdin,
-  output: process.stdout
+  output: process.stdout,
 });
 
 // Promisify readline question
 function question(query) {
-  return new Promise(resolve => rl.question(query, resolve));
+  return new Promise((resolve) => rl.question(query, resolve));
 }
 
 /**
@@ -61,7 +61,9 @@ function printBanner() {
   console.clear();
   console.log(`${cyan}${bold}═══════════════════════════════════════════════════════════${reset}`);
   console.log(`${cyan}${bold}   XOCIAL - Environment Setup Wizard${reset}`);
-  console.log(`${cyan}${bold}═══════════════════════════════════════════════════════════${reset}\n`);
+  console.log(
+    `${cyan}${bold}═══════════════════════════════════════════════════════════${reset}\n`
+  );
   console.log(`${yellow}This wizard will help you set up your .env.local file.${reset}`);
   console.log(`${yellow}Press Ctrl+C at any time to cancel.${reset}\n`);
 }
@@ -80,7 +82,7 @@ function checkExistingEnv() {
 async function confirm(message, defaultValue = false) {
   const defaultText = defaultValue ? 'Y/n' : 'y/N';
   const answer = await question(`${message} ${cyan}(${defaultText})${reset}: `);
-  
+
   if (!answer) return defaultValue;
   return answer.toLowerCase().startsWith('y');
 }
@@ -93,12 +95,12 @@ async function promptWithValidation(message, validator, defaultValue = '') {
     const defaultText = defaultValue ? ` ${cyan}(default: ${defaultValue})${reset}` : '';
     const answer = await question(`${message}${defaultText}: `);
     const value = answer || defaultValue;
-    
+
     if (!validator) return value;
-    
+
     const validation = validator(value);
     if (validation === true) return value;
-    
+
     console.log(`${red}✗ ${validation}${reset}\n`);
   }
 }
@@ -109,60 +111,59 @@ async function promptWithValidation(message, validator, defaultValue = '') {
 async function setup() {
   try {
     printBanner();
-    
+
     // Check if .env.local exists
     const envExists = checkExistingEnv();
     if (envExists) {
       console.log(`${yellow}⚠️  .env.local already exists!${reset}\n`);
       const shouldContinue = await confirm('Do you want to backup and recreate it?', false);
-      
+
       if (!shouldContinue) {
-        console.log(`\n${cyan}Setup cancelled. Your existing .env.local was not modified.${reset}\n`);
+        console.log(
+          `\n${cyan}Setup cancelled. Your existing .env.local was not modified.${reset}\n`
+        );
         rl.close();
         return;
       }
-      
+
       // Backup existing file
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const backupPath = `.env.local.backup.${timestamp}`;
       fs.copyFileSync('.env.local', backupPath);
       console.log(`${green}✓ Backed up to: ${backupPath}${reset}\n`);
     }
-    
+
     console.log(`${bold}Let's set up your environment variables!${reset}\n`);
-    
+
     // Collect environment variables
     const envVars = {};
-    
+
     // ─── Supabase Configuration ───
     console.log(`${cyan}${bold}━━━ Supabase Configuration ━━━${reset}\n`);
     console.log(`Get these from: ${blue}https://app.supabase.com/project/_/settings/api${reset}\n`);
-    
-    envVars.NEXT_PUBLIC_SUPABASE_URL = await promptWithValidation(
-      'Supabase Project URL',
-      (val) => {
-        if (!val) return 'This field is required';
-        if (!val.match(/^https:\/\/.+\.supabase\.co$/)) {
-          return 'Must be a valid Supabase URL (https://*.supabase.co)';
-        }
-        return true;
+
+    envVars.NEXT_PUBLIC_SUPABASE_URL = await promptWithValidation('Supabase Project URL', (val) => {
+      if (!val) return 'This field is required';
+      if (!val.match(/^https:\/\/.+\.supabase\.co$/)) {
+        return 'Must be a valid Supabase URL (https://*.supabase.co)';
       }
-    );
-    
+      return true;
+    });
+
     envVars.NEXT_PUBLIC_SUPABASE_ANON_KEY = await promptWithValidation(
       'Supabase Anon Key',
-      (val) => val ? true : 'This field is required'
+      (val) => (val ? true : 'This field is required')
     );
-    
+
     envVars.SUPABASE_SERVICE_ROLE_KEY = await promptWithValidation(
       'Supabase Service Role Key',
-      (val) => val ? true : 'This field is required'
+      (val) => (val ? true : 'This field is required')
     );
-    
+
     // ─── Vercel AI Gateway Configuration ───
     console.log(`\n${cyan}${bold}━━━ Vercel AI Gateway Configuration ━━━${reset}\n`);
     console.log(`Get from: ${blue}https://vercel.com/dashboard/ai-gateway${reset}\n`);
-    
+
     envVars.VERCEL_AI_GATEWAY_API_KEY = await promptWithValidation(
       'Vercel AI Gateway API Key',
       (val) => {
@@ -171,32 +172,32 @@ async function setup() {
         return true;
       }
     );
-    
+
     // ─── Security & Encryption ───
     console.log(`\n${cyan}${bold}━━━ Security & Encryption ━━━${reset}\n`);
     console.log(`${yellow}Generating secure secrets...${reset}\n`);
-    
+
     envVars.ENCRYPTION_KEY = await generateSecret(32);
     console.log(`${green}✓ Generated ENCRYPTION_KEY${reset}`);
-    
+
     envVars.CRON_SECRET = await generateSecret(32);
     console.log(`${green}✓ Generated CRON_SECRET${reset}`);
-    
+
     // ─── Application URL ───
     console.log(`\n${cyan}${bold}━━━ Application Configuration ━━━${reset}\n`);
-    
+
     envVars.NEXT_PUBLIC_APP_URL = await promptWithValidation(
       'Application URL',
       null,
       'http://localhost:3000'
     );
-    
+
     // ─── Optional OAuth Credentials ───
     console.log(`\n${cyan}${bold}━━━ OAuth Credentials (Optional) ━━━${reset}\n`);
     console.log(`${yellow}You can skip these and add them later if needed.${reset}\n`);
-    
+
     const setupOAuth = await confirm('Do you want to set up OAuth credentials now?', false);
-    
+
     if (setupOAuth) {
       // Facebook
       const setupFacebook = await confirm('\nSet up Facebook/Meta OAuth?', false);
@@ -204,20 +205,25 @@ async function setup() {
         envVars.FACEBOOK_APP_ID = await question('Facebook App ID: ');
         envVars.FACEBOOK_APP_SECRET = await question('Facebook App Secret: ');
         envVars.FACEBOOK_LOGIN_CONFIG_ID = await question('Facebook Login Config ID (optional): ');
-        envVars.INSTAGRAM_LOGIN_CONFIG_ID = await question('Instagram Login Config ID for Meta Login (optional): ');
+        envVars.INSTAGRAM_FACEBOOK_LOGIN_CONFIG_ID = await question(
+          'Instagram via Facebook Page Config ID (optional): '
+        );
+        envVars.INSTAGRAM_LOGIN_CONFIG_ID = await question(
+          'Legacy Instagram Meta Login Config ID fallback (optional): '
+        );
         envVars.FACEBOOK_WEBHOOK_VERIFY_TOKEN = await generateSecret(32);
         console.log(`${green}✓ Generated webhook verify token${reset}`);
       }
-      
+
       // Instagram
-      const setupInstagram = await confirm('\nSet up Instagram Direct Login credentials? (not required for Phase 1 Meta/Facebook Login)', false);
+      const setupInstagram = await confirm('\nSet up Instagram Login credentials?', false);
       if (setupInstagram) {
-        envVars.INSTAGRAM_CLIENT_ID = await question('Instagram Direct Login Client ID: ');
-        envVars.INSTAGRAM_CLIENT_SECRET = await question('Instagram Direct Login Client Secret: ');
+        envVars.INSTAGRAM_CLIENT_ID = await question('Instagram Login Client ID: ');
+        envVars.INSTAGRAM_CLIENT_SECRET = await question('Instagram Login Client Secret: ');
         envVars.INSTAGRAM_WEBHOOK_VERIFY_TOKEN = await generateSecret(32);
         console.log(`${green}✓ Generated webhook verify token${reset}`);
       }
-      
+
       // Twitter
       const setupTwitter = await confirm('\nSet up Twitter/X OAuth?', false);
       if (setupTwitter) {
@@ -225,21 +231,21 @@ async function setup() {
         envVars.TWITTER_CLIENT_SECRET = await question('Twitter Client Secret: ');
         envVars.TWITTER_BEARER_TOKEN = await question('Twitter Bearer Token (optional): ');
       }
-      
+
       // LinkedIn
       const setupLinkedIn = await confirm('\nSet up LinkedIn OAuth?', false);
       if (setupLinkedIn) {
         envVars.LINKEDIN_CLIENT_ID = await question('LinkedIn Client ID: ');
         envVars.LINKEDIN_CLIENT_SECRET = await question('LinkedIn Client Secret: ');
       }
-      
+
       // YouTube
       const setupYouTube = await confirm('\nSet up YouTube OAuth?', false);
       if (setupYouTube) {
         envVars.YOUTUBE_CLIENT_ID = await question('YouTube Client ID: ');
         envVars.YOUTUBE_CLIENT_SECRET = await question('YouTube Client Secret: ');
       }
-      
+
       // TikTok
       const setupTikTok = await confirm('\nSet up TikTok OAuth?', false);
       if (setupTikTok) {
@@ -247,10 +253,10 @@ async function setup() {
         envVars.TIKTOK_CLIENT_SECRET = await question('TikTok Client Secret: ');
       }
     }
-    
+
     // ─── Write .env.local file ───
     console.log(`\n${cyan}${bold}━━━ Writing .env.local ━━━${reset}\n`);
-    
+
     let envContent = `# ═══════════════════════════════════════════════════════════
 # XOCIAL PLATFORM - Environment Variables
 # ═══════════════════════════════════════════════════════════
@@ -268,7 +274,7 @@ async function setup() {
 NODE_ENV=development
 
 `;
-    
+
     // Add Supabase section
     if (envVars.NEXT_PUBLIC_SUPABASE_URL) {
       envContent += `# ───────────────────────────────────────────────────────────
@@ -280,7 +286,7 @@ SUPABASE_SERVICE_ROLE_KEY=${envVars.SUPABASE_SERVICE_ROLE_KEY}
 
 `;
     }
-    
+
     // Add Vercel AI Gateway section
     if (envVars.VERCEL_AI_GATEWAY_API_KEY) {
       envContent += `# ───────────────────────────────────────────────────────────
@@ -290,7 +296,7 @@ VERCEL_AI_GATEWAY_API_KEY=${envVars.VERCEL_AI_GATEWAY_API_KEY}
 
 `;
     }
-    
+
     // Add Security section
     envContent += `# ───────────────────────────────────────────────────────────
 # SECURITY & ENCRYPTION
@@ -299,7 +305,7 @@ ENCRYPTION_KEY=${envVars.ENCRYPTION_KEY}
 CRON_SECRET=${envVars.CRON_SECRET}
 
 `;
-    
+
     // Add App URL
     envContent += `# ───────────────────────────────────────────────────────────
 # APPLICATION CONFIGURATION
@@ -307,7 +313,7 @@ CRON_SECRET=${envVars.CRON_SECRET}
 NEXT_PUBLIC_APP_URL=${envVars.NEXT_PUBLIC_APP_URL}
 
 `;
-    
+
     // Add OAuth sections if configured
     if (envVars.FACEBOOK_APP_ID) {
       envContent += `# ───────────────────────────────────────────────────────────
@@ -316,12 +322,13 @@ NEXT_PUBLIC_APP_URL=${envVars.NEXT_PUBLIC_APP_URL}
 FACEBOOK_APP_ID=${envVars.FACEBOOK_APP_ID}
 FACEBOOK_APP_SECRET=${envVars.FACEBOOK_APP_SECRET}
 ${envVars.FACEBOOK_LOGIN_CONFIG_ID ? `FACEBOOK_LOGIN_CONFIG_ID=${envVars.FACEBOOK_LOGIN_CONFIG_ID}` : ''}
+${envVars.INSTAGRAM_FACEBOOK_LOGIN_CONFIG_ID ? `INSTAGRAM_FACEBOOK_LOGIN_CONFIG_ID=${envVars.INSTAGRAM_FACEBOOK_LOGIN_CONFIG_ID}` : ''}
 ${envVars.INSTAGRAM_LOGIN_CONFIG_ID ? `INSTAGRAM_LOGIN_CONFIG_ID=${envVars.INSTAGRAM_LOGIN_CONFIG_ID}` : ''}
 FACEBOOK_WEBHOOK_VERIFY_TOKEN=${envVars.FACEBOOK_WEBHOOK_VERIFY_TOKEN}
 
 `;
     }
-    
+
     if (envVars.INSTAGRAM_CLIENT_ID) {
       envContent += `# ───────────────────────────────────────────────────────────
 # OAUTH - INSTAGRAM
@@ -332,7 +339,7 @@ INSTAGRAM_WEBHOOK_VERIFY_TOKEN=${envVars.INSTAGRAM_WEBHOOK_VERIFY_TOKEN}
 
 `;
     }
-    
+
     if (envVars.TWITTER_CLIENT_ID) {
       envContent += `# ───────────────────────────────────────────────────────────
 # OAUTH - TWITTER / X
@@ -343,7 +350,7 @@ ${envVars.TWITTER_BEARER_TOKEN ? `TWITTER_BEARER_TOKEN=${envVars.TWITTER_BEARER_
 
 `;
     }
-    
+
     if (envVars.LINKEDIN_CLIENT_ID) {
       envContent += `# ───────────────────────────────────────────────────────────
 # OAUTH - LINKEDIN
@@ -353,7 +360,7 @@ LINKEDIN_CLIENT_SECRET=${envVars.LINKEDIN_CLIENT_SECRET}
 
 `;
     }
-    
+
     if (envVars.YOUTUBE_CLIENT_ID) {
       envContent += `# ───────────────────────────────────────────────────────────
 # OAUTH - YOUTUBE
@@ -363,7 +370,7 @@ YOUTUBE_CLIENT_SECRET=${envVars.YOUTUBE_CLIENT_SECRET}
 
 `;
     }
-    
+
     if (envVars.TIKTOK_CLIENT_KEY) {
       envContent += `# ───────────────────────────────────────────────────────────
 # OAUTH - TIKTOK
@@ -373,33 +380,38 @@ TIKTOK_CLIENT_SECRET=${envVars.TIKTOK_CLIENT_SECRET}
 
 `;
     }
-    
+
     // Write the file
     fs.writeFileSync('.env.local', envContent);
-    
+
     console.log(`${green}${bold}✓ Successfully created .env.local${reset}\n`);
-    
+
     // ─── Summary ───
-    console.log(`${cyan}${bold}═══════════════════════════════════════════════════════════${reset}`);
+    console.log(
+      `${cyan}${bold}═══════════════════════════════════════════════════════════${reset}`
+    );
     console.log(`${green}${bold}✓ Environment Setup Complete!${reset}`);
-    console.log(`${cyan}${bold}═══════════════════════════════════════════════════════════${reset}\n`);
-    
+    console.log(
+      `${cyan}${bold}═══════════════════════════════════════════════════════════${reset}\n`
+    );
+
     console.log(`${bold}Next steps:${reset}\n`);
     console.log(`  1. Verify your setup: ${cyan}npm run check-env${reset}`);
     console.log(`  2. Run database migrations (if needed)`);
     console.log(`  3. Start development: ${cyan}npm run dev${reset}\n`);
-    
+
     console.log(`${bold}Important:${reset}\n`);
     console.log(`  • Your .env.local file contains sensitive secrets`);
     console.log(`  • Never commit it to version control`);
     console.log(`  • Keep your secrets safe and secure\n`);
-    
+
     if (!setupOAuth) {
-      console.log(`${yellow}Note: You skipped OAuth setup. You can add credentials later by editing .env.local${reset}\n`);
+      console.log(
+        `${yellow}Note: You skipped OAuth setup. You can add credentials later by editing .env.local${reset}\n`
+      );
     }
-    
+
     rl.close();
-    
   } catch (error) {
     console.error(`\n${red}${bold}✗ Error during setup:${reset}`, error.message);
     console.error(error.stack);

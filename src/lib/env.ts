@@ -34,16 +34,22 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
 
   // Encryption & Security
-  ENCRYPTION_KEY: z.string().length(64, {
-    message: 'ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)',
-  }).regex(/^[0-9a-f]{64}$/i, {
-    message: 'ENCRYPTION_KEY must be a valid hex string',
-  }),
+  ENCRYPTION_KEY: z
+    .string()
+    .length(64, {
+      message: 'ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)',
+    })
+    .regex(/^[0-9a-f]{64}$/i, {
+      message: 'ENCRYPTION_KEY must be a valid hex string',
+    }),
   // CRON_SECRET is only required in production (for Vercel cron jobs)
   // In development, it's optional since cron jobs don't run locally
-  CRON_SECRET: z.string().min(32, {
-    message: 'CRON_SECRET must be at least 32 characters for security',
-  }).optional(),
+  CRON_SECRET: z
+    .string()
+    .min(32, {
+      message: 'CRON_SECRET must be at least 32 characters for security',
+    })
+    .optional(),
 
   // App Configuration
   NEXT_PUBLIC_APP_URL: z.string().url().optional(),
@@ -52,8 +58,11 @@ const envSchema = z.object({
   // OAuth - Facebook
   FACEBOOK_APP_ID: z.string().optional(),
   FACEBOOK_APP_SECRET: z.string().optional(),
+  FACEBOOK_LOGIN_CONFIG_ID: z.string().optional(),
+  INSTAGRAM_LOGIN_CONFIG_ID: z.string().optional(),
+  INSTAGRAM_FACEBOOK_LOGIN_CONFIG_ID: z.string().optional(),
 
-  // OAuth - Instagram Direct Login (not used by Phase 1 Facebook Login flow)
+  // OAuth - Instagram Login
   INSTAGRAM_CLIENT_ID: z.string().optional(),
   INSTAGRAM_CLIENT_SECRET: z.string().optional(),
 
@@ -118,7 +127,9 @@ function validateEnv(): Env {
         });
 
         console.error('');
-        console.error('Please check your .env.local file and ensure all required variables are set.');
+        console.error(
+          'Please check your .env.local file and ensure all required variables are set.'
+        );
         console.error('');
       }
 
@@ -150,7 +161,11 @@ try {
 } catch (error) {
   console.error('Failed to validate environment variables:', error);
   // In development/build, provide mock values to allow partial functionality
-  if (process.env.NODE_ENV === 'development' || process.env.CI === '1' || process.env.VERCEL === '1') {
+  if (
+    process.env.NODE_ENV === 'development' ||
+    process.env.CI === '1' ||
+    process.env.VERCEL === '1'
+  ) {
     console.warn('⚠️  Running with potentially missing env vars (Build/Dev mode)');
     validatedEnv = process.env as unknown as Env;
   } else {
@@ -169,7 +184,7 @@ export const env = validatedEnv;
  */
 export const isFeatureEnabled = {
   facebook: () => !!(env.FACEBOOK_APP_ID && env.FACEBOOK_APP_SECRET),
-  instagram: () => !!(env.FACEBOOK_APP_ID && env.FACEBOOK_APP_SECRET),
+  instagram: () => !!(env.INSTAGRAM_CLIENT_ID && env.INSTAGRAM_CLIENT_SECRET),
   twitter: () => !!(env.TWITTER_CLIENT_ID && env.TWITTER_CLIENT_SECRET),
   linkedin: () => !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET),
   youtube: () => !!(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET),

@@ -5,10 +5,12 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { decryptToken } from '@/lib/encryption';
+import { getInstagramGraphBaseUrl } from '@/lib/oauth/instagram';
 
 export interface InstagramConfig {
   accessToken: string;
   instagramAccountId: string;
+  baseUrl?: string;
 }
 
 export interface InstagramPost {
@@ -31,6 +33,7 @@ export class InstagramClient {
   constructor(config: InstagramConfig) {
     this.accessToken = config.accessToken;
     this.instagramAccountId = config.instagramAccountId;
+    this.baseUrl = config.baseUrl || this.baseUrl;
   }
 
   /**
@@ -71,7 +74,8 @@ export class InstagramClient {
 
     const children = await Promise.all(
       post.mediaUrls.slice(0, 10).map(async (mediaUrl) => {
-        const isVideo = mediaUrl.toLowerCase().includes('.mp4') || mediaUrl.toLowerCase().includes('video');
+        const isVideo =
+          mediaUrl.toLowerCase().includes('.mp4') || mediaUrl.toLowerCase().includes('video');
         const containerId = await this.createMediaContainer({
           ...(isVideo ? { video_url: mediaUrl, media_type: 'VIDEO' } : { image_url: mediaUrl }),
           caption: '',
@@ -159,7 +163,9 @@ export class InstagramClient {
 
       if (!response.ok) {
         const error = await response.json().catch(() => null);
-        throw new Error(error?.error?.message || 'Failed to check Instagram media container status');
+        throw new Error(
+          error?.error?.message || 'Failed to check Instagram media container status'
+        );
       }
 
       const data = await response.json();
@@ -238,7 +244,8 @@ export class InstagramClient {
   async getAccountInfo(): Promise<any> {
     const url = `${this.baseUrl}/${this.instagramAccountId}`;
     const params = new URLSearchParams({
-      fields: 'username,name,profile_picture_url,followers_count,follows_count,media_count,biography',
+      fields:
+        'username,name,profile_picture_url,followers_count,follows_count,media_count,biography',
       access_token: this.accessToken,
     });
 
@@ -258,7 +265,8 @@ export class InstagramClient {
   async getRecentMedia(limit: number = 25): Promise<any[]> {
     const url = `${this.baseUrl}/${this.instagramAccountId}/media`;
     const params = new URLSearchParams({
-      fields: 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count',
+      fields:
+        'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count',
       limit: limit.toString(),
       access_token: this.accessToken,
     });
@@ -360,7 +368,7 @@ export async function createInstagramClient(accountId: string): Promise<Instagra
 
   const { data: account, error } = await supabase
     .from('social_accounts')
-    .select('account_id, access_token, is_active')
+    .select('account_id, access_token, is_active, metadata')
     .eq('id', accountId)
     .eq('platform', 'instagram')
     .single();
@@ -375,9 +383,20 @@ export async function createInstagramClient(accountId: string): Promise<Instagra
 
   // Decrypt token
   const accessToken = decryptToken(account.access_token);
+  let metadata: Record<string, any> = {};
+  if (typeof account.metadata === 'string') {
+    try {
+      metadata = JSON.parse(account.metadata || '{}') || {};
+    } catch {
+      metadata = {};
+    }
+  } else if (account.metadata && typeof account.metadata === 'object') {
+    metadata = account.metadata as Record<string, any>;
+  }
 
   return new InstagramClient({
     accessToken,
     instagramAccountId: account.account_id,
+    baseUrl: getInstagramGraphBaseUrl(metadata.connected_via),
   });
 }

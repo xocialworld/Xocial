@@ -1,11 +1,10 @@
 import { NextRequest } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
   validateRequest,
-  getUserWorkspace,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { z } from 'zod';
 
 /**
@@ -21,13 +20,11 @@ const rescheduleSchema = z.object({
  * Reschedule a post to a new date/time
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-
   // Validate request
   const validatedData = await validateRequest(request, rescheduleSchema);
-
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager', 'creator'],
+  });
 
   // Update post scheduled_at
   const { data: post, error } = await supabase
@@ -48,4 +45,3 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     message: 'Post rescheduled successfully',
   });
 });
-

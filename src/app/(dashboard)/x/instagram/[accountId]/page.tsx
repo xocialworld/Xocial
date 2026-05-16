@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Instagram, ArrowLeft, RefreshCw, TrendingUp, Eye, ThumbsUp, MessageSquare, Image as ImageIcon, Upload } from 'lucide-react';
 import { toast } from 'sonner';
+import { fetchWithWorkspace } from '@/lib/fetch-with-workspace';
+import { useSelectedWorkspace } from '@/store/workspaceStore';
 
 interface ChannelData {
     account: any;
@@ -23,17 +25,21 @@ export default function InstagramChannelPage() {
     const params = useParams();
     const router = useRouter();
     const accountId = params.accountId as string;
+    const selectedWorkspace = useSelectedWorkspace();
 
     const [data, setData] = useState<ChannelData | null>(null);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
 
     const fetchChannelData = useCallback(async () => {
+        if (!selectedWorkspace?.id) return;
+
         try {
             setLoading(true);
+            const workspaceFetchOptions = { workspaceId: selectedWorkspace.id };
             const [accountRes, postsRes] = await Promise.all([
-                fetch(`/api/accounts/${accountId}`),
-                fetch(`/api/posts?accountId=${accountId}&limit=20`),
+                fetchWithWorkspace(`/api/accounts/${accountId}`, workspaceFetchOptions),
+                fetchWithWorkspace(`/api/posts?account_id=${encodeURIComponent(accountId)}&limit=20`, workspaceFetchOptions),
             ]);
 
             if (!accountRes.ok) throw new Error('Failed to fetch account');
@@ -43,7 +49,7 @@ export default function InstagramChannelPage() {
 
             setData({
                 account: accountData.data,
-                posts: postsData.data || [],
+                posts: postsData.data?.posts || postsData.posts || [],
                 stats: {
                     followers: accountData.data.metadata?.followers_count || accountData.data.follower_count || 0,
                     following: accountData.data.metadata?.follows_count || 0,
@@ -56,7 +62,7 @@ export default function InstagramChannelPage() {
         } finally {
             setLoading(false);
         }
-    }, [accountId]);
+    }, [accountId, selectedWorkspace?.id]);
 
     useEffect(() => {
         if (accountId) {

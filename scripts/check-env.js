@@ -82,8 +82,8 @@ const OPTIONAL_VARS = [
   { name: 'FACEBOOK_APP_ID', description: 'Meta App ID', example: '123456789012345' },
   { name: 'FACEBOOK_APP_SECRET', description: 'Meta App Secret', example: 'a1b2c3...' },
   { name: 'FACEBOOK_WEBHOOK_VERIFY_TOKEN', description: 'Meta webhook token', example: 'random-hex' },
-  { name: 'INSTAGRAM_CLIENT_ID', description: 'Instagram Client ID (often same as FB App ID)', example: '123456789012345' },
-  { name: 'INSTAGRAM_CLIENT_SECRET', description: 'Instagram Client Secret (FB App Secret)', example: 'a1b2c3...' },
+  { name: 'INSTAGRAM_CLIENT_ID', description: 'Instagram Direct Login Client ID (not required for Phase 1 Meta/Facebook Login)', example: '123456789012345' },
+  { name: 'INSTAGRAM_CLIENT_SECRET', description: 'Instagram Direct Login Client Secret (not required for Phase 1 Meta/Facebook Login)', example: 'a1b2c3...' },
   { name: 'INSTAGRAM_WEBHOOK_VERIFY_TOKEN', description: 'Instagram webhook token', example: 'random-hex' },
   { name: 'TWITTER_CLIENT_ID', description: 'Twitter Client ID', example: 'xxx' },
   { name: 'TWITTER_CLIENT_SECRET', description: 'Twitter Client Secret', example: 'xxx' },
@@ -380,4 +380,3 @@ function main() {
 }
 
 main();
-

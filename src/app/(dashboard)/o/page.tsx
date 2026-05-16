@@ -37,6 +37,19 @@ const statusColors: Record<string, { bg: string; text: string }> = {
   rejected: { bg: 'bg-red-100', text: 'text-red-700' },
 };
 
+function toDateParam(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function toTimeParam(date: Date) {
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
 function OPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -206,7 +219,7 @@ function OPage() {
             const date = selectedDate ?? new Date();
             const prefillDate = new Date(date);
             prefillDate.setHours(10, 0, 0, 0);
-            router.push(`/c?date=${encodeURIComponent(prefillDate.toISOString())}`);
+            router.push(`/c?date=${toDateParam(prefillDate)}&time=${toTimeParam(prefillDate)}`);
           }}
           activeFiltersCount={statusFilters.length}
           onToggleFilters={() => setShowFilters(!showFilters)}
@@ -345,7 +358,7 @@ function OPage() {
               onNewPost={(date, hour) => {
                 const prefillDate = new Date(date);
                 prefillDate.setHours(hour, 0, 0, 0);
-                router.push(`/c?date=${encodeURIComponent(prefillDate.toISOString())}`);
+                router.push(`/c?date=${toDateParam(prefillDate)}&time=${toTimeParam(prefillDate)}`);
               }}
             />
           )}
@@ -432,4 +445,3 @@ export default function CalendarPage() {
     </Suspense>
   );
 }
-

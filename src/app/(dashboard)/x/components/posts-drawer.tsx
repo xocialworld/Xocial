@@ -20,6 +20,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { SocialAccount, Post } from '@/types';
 import { toast } from 'sonner';
 import { usePostsSync } from '@/hooks/use-account-sync';
+import { fetchWithWorkspace } from '@/lib/fetch-with-workspace';
 
 interface PostsDrawerProps {
     account: SocialAccount | null;
@@ -89,7 +90,7 @@ export function PostsDrawer({ account, isOpen, onClose, onPostClick }: PostsDraw
                 params.append('post_type', selectedPostType);
             }
 
-            const response = await fetch(
+            const response = await fetchWithWorkspace(
                 `/api/accounts/${account.id}/posts?${params.toString()}`
             );
 
@@ -163,7 +164,7 @@ export function PostsDrawer({ account, isOpen, onClose, onPostClick }: PostsDraw
                 params.append('post_type', selectedPostType);
             }
 
-            const response = await fetch(
+            const response = await fetchWithWorkspace(
                 `/api/accounts/${account.id}/posts?${params.toString()}`
             );
 

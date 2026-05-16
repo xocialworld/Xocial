@@ -22,6 +22,7 @@ export type PlatformContent = {
   text: string;
   mediaUrls?: string[];
   link?: string;
+  mediaType?: 'IMAGE' | 'VIDEO' | 'REELS' | 'CAROUSEL_ALBUM';
 };
 
 export interface PublishRequest {
@@ -74,6 +75,7 @@ export class PlatformPublisher {
           text: platformSpecific.text ?? request.content.text,
           mediaUrls: platformSpecific.mediaUrls ?? request.content.mediaUrls,
           link: platformSpecific.link ?? request.content.link,
+          mediaType: platformSpecific.mediaType ?? request.content.mediaType,
         };
 
         const result = await retryWithBackoff(
@@ -311,13 +313,25 @@ export class PlatformPublisher {
       throw new Error('Instagram requires at least one image or video');
     }
 
-    const isVideo = content.mediaUrls[0].includes('.mp4') || content.mediaUrls[0].includes('video');
+    if (content.mediaUrls.length > 1) {
+      return await client.publishCarousel({
+        caption: content.text,
+        mediaUrls: content.mediaUrls,
+        mediaType: 'CAROUSEL_ALBUM',
+      });
+    }
+
+    const isVideo =
+      content.mediaType === 'VIDEO' ||
+      content.mediaType === 'REELS' ||
+      content.mediaUrls[0].includes('.mp4') ||
+      content.mediaUrls[0].includes('video');
 
     if (isVideo) {
       return await client.publishVideo({
         caption: content.text,
         videoUrl: content.mediaUrls[0],
-        mediaType: 'VIDEO',
+        mediaType: content.mediaType === 'REELS' ? 'REELS' : 'VIDEO',
       });
     } else {
       return await client.publishImage({
@@ -442,6 +456,7 @@ export class PlatformPublisher {
       tags: this.extractHashtags(content.text),
       categoryId: isShort ? '10' : '22', // 10 for Shorts, 22 for People & Blogs
       privacyStatus: scheduledFor ? 'private' : 'public',
+      publishAt: scheduledFor?.toISOString(),
       thumbnailUrl: content.mediaUrls[1], // Second media item as thumbnail if available
     });
 

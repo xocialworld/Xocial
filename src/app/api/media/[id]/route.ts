@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { getWorkspaceFromRequest } from '@/lib/api-middleware';
+import { handleAPIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export async function GET(
   request: NextRequest,
@@ -8,17 +8,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+    const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     const { data: media, error } = await supabase
       .from('media')
@@ -40,10 +30,7 @@ export async function GET(
     });
   } catch (error) {
     console.error('Media get error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch media' },
-      { status: 500 }
-    );
+    return handleAPIError(error);
   }
 }
 
@@ -53,20 +40,10 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     const body = await request.json();
     const { title, alt_text, tags } = body;
-
-    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
 
     const { data: media, error } = await supabase
       .from('media')
@@ -94,10 +71,7 @@ export async function PUT(
     });
   } catch (error) {
     console.error('Media update error:', error);
-    return NextResponse.json(
-      { error: 'Failed to update media' },
-      { status: 500 }
-    );
+    return handleAPIError(error);
   }
 }
 
@@ -107,17 +81,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+    const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     // 1. Try to find in media_assets (new table)
     const { data: asset, error: assetError } = await supabase
@@ -209,10 +173,6 @@ export async function DELETE(
 
   } catch (error) {
     console.error('Media delete error:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete media' },
-      { status: 500 }
-    );
+    return handleAPIError(error);
   }
 }
-

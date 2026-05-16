@@ -5,6 +5,15 @@ const state: any = {
   error: null,
   refetch: jest.fn(),
 };
+const mockRouterPush = jest.fn();
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: mockRouterPush,
+  }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 jest.mock('@/hooks/use-accounts', () => ({
   useAccounts: () => state,
   __setAccounts: (a: any[]) => (state.accounts = a),
@@ -26,6 +35,10 @@ const mockAccountsPayload = (accounts: any[]) => ({
 describe('UnifiedPostComposer connection status', () => {
   beforeEach(() => {
     jest.resetAllMocks();
+    state.accounts = [];
+    state.loading = false;
+    state.error = null;
+    state.refetch = jest.fn();
     (global as any).fetch = jest.fn();
   });
 
@@ -102,7 +115,7 @@ describe('UnifiedPostComposer connection status', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText(/account\(s\) offline/i)
+        screen.getByText(/1 offline - Schedule only/i)
       ).toBeInTheDocument()
     );
   });

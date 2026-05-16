@@ -8,11 +8,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, Send, Twitter } from 'lucide-react';
 import { toast } from 'sonner';
+import { fetchWithWorkspace } from '@/lib/fetch-with-workspace';
+import { useSelectedWorkspace } from '@/store/workspaceStore';
 
 export default function PostToTwitterPage() {
     const params = useParams();
     const router = useRouter();
     const accountId = params.accountId as string;
+    const selectedWorkspace = useSelectedWorkspace();
 
     const [account, setAccount] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -22,8 +25,12 @@ export default function PostToTwitterPage() {
     const MAX_CHARS = 280;
 
     const fetchAccount = useCallback(async () => {
+        if (!selectedWorkspace?.id) return;
+
         try {
-            const response = await fetch(`/api/accounts/${accountId}`);
+            const response = await fetchWithWorkspace(`/api/accounts/${accountId}`, {
+                workspaceId: selectedWorkspace.id,
+            });
             if (!response.ok) throw new Error('Failed to fetch account');
             const data = await response.json();
             setAccount(data.data);
@@ -32,7 +39,7 @@ export default function PostToTwitterPage() {
         } finally {
             setLoading(false);
         }
-    }, [accountId]);
+    }, [accountId, selectedWorkspace?.id]);
 
     useEffect(() => {
         fetchAccount();

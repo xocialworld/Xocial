@@ -1,38 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { handleAPIError, APIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      throw new APIError(401, 'Unauthorized');
-    }
-
-    // Get user's workspace
-    const { data: workspaceMember, error: workspaceError } = await supabase
-      .from('workspace_members')
-      .select('workspace_id')
-      .eq('user_id', user.id)
-      .single();
-
-    if (workspaceError || !workspaceMember) {
-      throw new APIError(404, 'No workspace found');
-    }
+    const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     // Fetch templates
     const { data: templates, error: templatesError } = await supabase
       .from('templates')
       .select('*')
-      .eq('workspace_id', workspaceMember.workspace_id)
+      .eq('workspace_id', workspace.id)
       .order('created_at', { ascending: false });
 
     if (templatesError) {
@@ -47,41 +27,25 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      throw new APIError(401, 'Unauthorized');
-    }
-
-    // Get user's workspace
-    const { data: workspaceMember, error: workspaceError } = await supabase
-      .from('workspace_members')
-      .select('workspace_id')
-      .eq('user_id', user.id)
-      .single();
-
-    if (workspaceError || !workspaceMember) {
-      throw new APIError(404, 'No workspace found');
-    }
+    const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     const body = await request.json();
-    const { name, description, content, category, platforms, tags, is_public } = body;
+    const { name, description, content, category, platforms, tags, is_public, workspace_id } = body;
 
     // Validate required fields
     if (!name || !content || !category || !platforms || platforms.length === 0) {
       throw new APIError(400, 'Missing required fields');
     }
 
+    if (workspace_id && workspace_id !== workspace.id) {
+      throw new APIError(400, 'workspace_id must match the selected workspace');
+    }
+
     // Create template
     const { data: template, error: createError } = await supabase
       .from('templates')
       .insert({
-        workspace_id: workspaceMember.workspace_id,
+        workspace_id: workspace.id,
         created_by: user.id,
         name,
         description: description || null,
@@ -105,4 +69,3 @@ export async function POST(request: NextRequest) {
     return handleAPIError(error);
   }
 }
-

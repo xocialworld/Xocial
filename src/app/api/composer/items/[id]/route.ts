@@ -4,7 +4,18 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import {
+    APIError,
+    createServiceRoleClient,
+    handleAPIError,
+    requireAuth,
+} from '@/lib/api-middleware';
+import {
+    assertContentMutable,
+    assertMediaInWorkspace,
+    assertSocialAccountsInWorkspace,
+    requireWorkspaceContext,
+} from '@/lib/workspace-context';
 
 // GET - Fetch a single content item
 export async function GET(
@@ -13,11 +24,31 @@ export async function GET(
 ) {
     const params = await props.params;
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        await requireAuth(request);
+        const serviceClient = createServiceRoleClient();
+        const { data: existing } = await serviceClient
+            .from('content_items')
+            .select('workspace_id, is_internal_only')
+            .eq('id', params.id)
+            .maybeSingle();
 
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!existing) {
+            return NextResponse.json(
+                { error: 'Content item not found' },
+                { status: 404 }
+            );
+        }
+
+        const { userClient: supabase, role } = await requireWorkspaceContext(request, {
+            workspaceId: existing.workspace_id,
+            roles: ['owner', 'admin', 'manager', 'creator', 'analyst', 'client'],
+        });
+
+        if (role === 'client' && existing.is_internal_only) {
+            return NextResponse.json(
+                { error: 'Content item not found' },
+                { status: 404 }
+            );
         }
 
         const { data: item, error } = await supabase
@@ -94,10 +125,7 @@ export async function GET(
 
     } catch (error) {
         console.error('Content item GET error:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch content item' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }
 
@@ -108,13 +136,6 @@ export async function PATCH(
 ) {
     const params = await props.params;
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
         const body = await request.json();
         const {
             title,
@@ -125,7 +146,9 @@ export async function PATCH(
         } = body;
 
         // Fetch existing item
-        const { data: existingItem, error: fetchError } = await supabase
+        await requireAuth(request);
+        const serviceClient = createServiceRoleClient();
+        const { data: existingItem, error: fetchError } = await serviceClient
             .from('content_items')
             .select('workspace_id, status')
             .eq('id', params.id)
@@ -138,20 +161,24 @@ export async function PATCH(
             );
         }
 
-        // Verify membership
-        const { data: membership } = await supabase
-            .from('workspace_members')
-            .select('role')
-            .eq('workspace_id', existingItem.workspace_id)
-            .eq('user_id', user.id)
-            .single();
+        const { user, userClient: supabase, workspace, role } = await requireWorkspaceContext(request, {
+            workspaceId: existingItem.workspace_id,
+            roles: ['owner', 'admin', 'manager', 'creator'],
+        });
 
-        if (!membership) {
-            return NextResponse.json(
-                { error: 'Not a member of this workspace' },
-                { status: 403 }
-            );
-        }
+        assertContentMutable(existingItem.status, role);
+
+        const variantList = Array.isArray(variants) ? variants : [];
+        await assertSocialAccountsInWorkspace(
+            supabase,
+            workspace.id,
+            variantList.map((variant: any) => variant.social_account_id)
+        );
+        await assertMediaInWorkspace(
+            supabase,
+            workspace.id,
+            variantList.flatMap((variant: any) => variant.media_ids || [])
+        );
 
         // Build update object
         const updateData: any = {};
@@ -161,6 +188,17 @@ export async function PATCH(
         if (scheduled_at !== undefined) updateData.scheduled_at = scheduled_at;
         if (body.drafted_at !== undefined) updateData.drafted_at = body.drafted_at;
         if (body.approval_workflow_id !== undefined) updateData.approval_workflow_id = body.approval_workflow_id;
+        if (body.is_internal_only !== undefined) updateData.is_internal_only = body.is_internal_only;
+        if (status === 'approved') {
+            updateData.approved_at = new Date().toISOString();
+            updateData.approved_by = user.id;
+            updateData.locked_at = new Date().toISOString();
+            updateData.locked_by = user.id;
+        }
+        if (status === 'scheduled') {
+            updateData.locked_at = updateData.locked_at || new Date().toISOString();
+            updateData.locked_by = updateData.locked_by || user.id;
+        }
 
         // Update content item
         if (Object.keys(updateData).length > 0) {
@@ -180,14 +218,30 @@ export async function PATCH(
 
         // Update variants if provided
         if (variants !== undefined) {
-            for (const variant of variants) {
+            for (const variant of variantList) {
                 if (variant.id) {
                     // Update existing variant
                     const { id, ...variantData } = variant;
+                    const { data: ownedVariant } = await supabase
+                        .from('content_variants')
+                        .select('id')
+                        .eq('id', id)
+                        .eq('content_item_id', params.id)
+                        .maybeSingle();
+
+                    if (!ownedVariant) {
+                        throw new APIError(
+                            400,
+                            'Variant does not belong to this content item',
+                            'INVALID_WORKSPACE_RESOURCE'
+                        );
+                    }
+
                     await supabase
                         .from('content_variants')
                         .update(variantData)
-                        .eq('id', id);
+                        .eq('id', id)
+                        .eq('content_item_id', params.id);
                 } else {
                     // Create new variant
                     await supabase.from('content_variants').insert({
@@ -215,10 +269,7 @@ export async function PATCH(
 
     } catch (error) {
         console.error('Content item PATCH error:', error);
-        return NextResponse.json(
-            { error: 'Failed to update content item' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }
 
@@ -229,15 +280,10 @@ export async function DELETE(
 ) {
     const params = await props.params;
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
         // Fetch existing item
-        const { data: existingItem, error: fetchError } = await supabase
+        await requireAuth(request);
+        const serviceClient = createServiceRoleClient();
+        const { data: existingItem, error: fetchError } = await serviceClient
             .from('content_items')
             .select('workspace_id, status')
             .eq('id', params.id)
@@ -250,20 +296,10 @@ export async function DELETE(
             );
         }
 
-        // Verify admin/owner role
-        const { data: membership } = await supabase
-            .from('workspace_members')
-            .select('role')
-            .eq('workspace_id', existingItem.workspace_id)
-            .eq('user_id', user.id)
-            .single();
-
-        if (!membership || !['owner', 'admin', 'manager'].includes(membership.role)) {
-            return NextResponse.json(
-                { error: 'Insufficient permissions to delete content' },
-                { status: 403 }
-            );
-        }
+        const { userClient: supabase } = await requireWorkspaceContext(request, {
+            workspaceId: existingItem.workspace_id,
+            roles: ['owner', 'admin', 'manager'],
+        });
 
         // Cannot delete published content
         if (existingItem.status === 'published') {
@@ -294,9 +330,6 @@ export async function DELETE(
 
     } catch (error) {
         console.error('Content item DELETE error:', error);
-        return NextResponse.json(
-            { error: 'Failed to delete content item' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }

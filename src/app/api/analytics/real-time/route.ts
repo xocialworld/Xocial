@@ -1,11 +1,10 @@
 import { NextRequest } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
-  getUserWorkspace,
   successResponse,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,8 +40,7 @@ type AnalyticsRow = {
  * Returns aggregated engagement metrics for the last N minutes (default 60)
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-  const workspace = await getUserWorkspace(user.id, supabase);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
   const searchParams = request.nextUrl.searchParams;
   const minutes = Math.min(

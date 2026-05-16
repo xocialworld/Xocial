@@ -7,23 +7,23 @@ describe('Homepage', () => {
     render(<Home />);
     const brandElements = screen.getAllByText(/Xocial/i);
     expect(brandElements.length).toBeGreaterThan(0);
-    expect(screen.getByText(/Command Center/i)).toBeInTheDocument();
+    expect(screen.getByText(/Finally Solved/i)).toBeInTheDocument();
   });
 
   it('explains features in content', () => {
     render(<Home />);
     // Public homepage now has footer links, so we don't check for their absence globally.
     // Instead we check for presence of feature descriptions.
-    expect(screen.getAllByText(/Multi-Account Management/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Visual Calendar/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/AI Content Assistant/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Analytics & Insights/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/AI Assistant/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Deep Analytics/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Smart Scheduling/i).length).toBeGreaterThan(0);
   });
 
   it('has a features section anchor', () => {
     render(<Home />);
-    const featuresHeader = screen.getAllByText(/Why XOCIAL/i)[0];
-    expect(featuresHeader).toBeInTheDocument();
+    expect(screen.getByText(/Everything you need/i)).toBeInTheDocument();
+    expect(document.querySelector('#features')).toBeInTheDocument();
   });
 
   it('has signup CTA', () => {

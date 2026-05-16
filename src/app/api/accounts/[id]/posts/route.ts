@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     withErrorHandler,
-    requireAuth,
-    successResponse,
     APIError,
 } from '@/lib/api-middleware';
-import { createClient } from '@/lib/supabase/server';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { decryptToken } from '@/lib/encryption';
 import { getYouTubeChannelVideos, getYouTubeVideoStats } from '@/lib/oauth/youtube';
 import { getTwitterUserTweets } from '@/lib/platforms/twitter';
@@ -19,7 +17,9 @@ import { getTwitterUserTweets } from '@/lib/platforms/twitter';
  * - cursor (optional): Pagination cursor (published_at timestamp)
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-    const { user, supabase } = await requireAuth(request);
+    const { userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+        roles: ['owner', 'admin', 'manager', 'creator', 'analyst', 'client'],
+    });
 
     // Extract account ID from URL path
     const url = new URL(request.url);
@@ -36,27 +36,16 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 100);
     const cursor = searchParams.get('cursor'); // ISO timestamp for pagination
 
-    // Verify account belongs to user's workspace
+    // Verify account belongs to the selected workspace
     const { data: account, error: accountError } = await supabase
         .from('social_accounts')
         .select('id, platform, workspace_id, account_id, access_token')
         .eq('id', accountId)
+        .eq('workspace_id', workspace.id)
         .single();
 
     if (accountError || !account) {
         throw new APIError(404, 'Social account not found', 'ACCOUNT_NOT_FOUND');
-    }
-
-    // Verify user has access to this workspace
-    const { data: membership } = await supabase
-        .from('workspace_members')
-        .select('id')
-        .eq('workspace_id', account.workspace_id)
-        .eq('user_id', user.id)
-        .single();
-
-    if (!membership) {
-        throw new APIError(403, 'You do not have access to this account', 'FORBIDDEN');
     }
 
     // Build query to fetch platform posts
@@ -77,7 +66,8 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
       scheduled_at,
       created_at,
       external_post_id
-    `)
+        `)
+        .eq('workspace_id', workspace.id)
         .eq('social_account_id', account.id)
         .eq('status', 'published')
         .contains('platforms', [platform])

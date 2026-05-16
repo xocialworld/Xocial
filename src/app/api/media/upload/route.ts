@@ -1,25 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { getWorkspaceFromRequest, APIError } from '@/lib/api-middleware';
+import { APIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
     console.log('[Upload] Starting upload request...');
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error('[Upload] Auth error:', authError);
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+    const { user, workspace } = await requireWorkspaceContext(request);
     console.log('[Upload] Workspace:', workspace.id);
 
     const formData = await request.formData();
@@ -123,7 +112,7 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
   } catch (error: any) {
     console.error('[Upload] Uncaught error:', error);
-    const status = error?.status || 500;
+    const status = error?.statusCode || error?.status || 500;
     const message = error?.message || 'Failed to upload media';
     return NextResponse.json({ error: message }, { status });
   }

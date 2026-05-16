@@ -8,6 +8,7 @@ import {
 } from '@/lib/oauth/facebook';
 import { logger } from '@/lib/logger';
 import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
+import { upsertSocialComment } from '@/lib/sync/social-comments';
 
 interface SyncResult {
     synced: number;
@@ -67,7 +68,7 @@ export async function syncFacebookPosts(
 
                 // Fetch insights
                 try {
-                    const insights = await getFacebookPostInsights(accessToken, post.id);
+                    const insights = await getFacebookPostInsights(post.id, accessToken);
                     if (postId) {
                         const analyticsData = {
                             post_id: postId,
@@ -134,7 +135,7 @@ export async function syncFacebookAnalytics(accountId: string): Promise<SyncResu
 
         for (const post of posts || []) {
             try {
-                const insights = await getFacebookPostInsights(accessToken, post.external_post_id);
+                const insights = await getFacebookPostInsights(post.external_post_id, accessToken);
 
                 const analyticsData = {
                     post_id: post.id,
@@ -184,19 +185,24 @@ export async function syncFacebookComments(postId: string): Promise<SyncResult> 
         for (const comment of comments) {
             try {
                 const commentData = {
+                    workspace_id: post.workspace_id,
                     post_id: postId,
+                    social_account_id: account.id,
+                    platform: 'facebook' as const,
+                    external_post_id: post.external_post_id,
                     external_comment_id: comment.id,
                     author_name: comment.from?.name || 'Unknown',
+                    author_handle: comment.from?.id || null,
                     author_avatar: null,
                     content: comment.message,
-                    likes: comment.like_count || 0,
+                    like_count: comment.like_count || 0,
                     reply_count: comment.comment_count || 0,
-                    created_at: comment.created_time ? new Date(comment.created_time).toISOString() : new Date().toISOString(),
+                    raw: comment,
+                    created_time: comment.created_time ? new Date(comment.created_time).toISOString() : null,
+                    fetched_at: new Date().toISOString(),
                 };
 
-                await supabase.from('comments').upsert(commentData, {
-                    onConflict: 'post_id,external_comment_id',
-                });
+                await upsertSocialComment(supabase as any, commentData);
 
                 result.synced++;
             } catch (error: any) {

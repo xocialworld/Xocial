@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
-  getUserWorkspace,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { uploadYouTubeVideo, setYouTubeVideoThumbnail, updateYouTubeVideo } from '@/lib/oauth/youtube';
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
@@ -39,8 +38,10 @@ const publishSchema = z.object({
 });
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-  
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager'],
+  });
+
   // Parse and validate request body
   const body = await request.json();
   const validation = publishSchema.safeParse(body);
@@ -52,9 +53,6 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   }
   
   const { accountId, videoUrl, title, description, tags, categoryId, privacyStatus, thumbnailUrl } = validation.data;
-  
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
   
   // Get YouTube account with access token
   const { data: account, error: accountError } = await supabase
@@ -174,4 +172,3 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5 minutes for large video uploads
-

@@ -181,7 +181,7 @@ export function WorkspaceSwitcher() {
                             <CommandItem
                                 onSelect={() => {
                                     setOpen(false);
-                                    toast.info("Create Workspace feature coming soon");
+                                    router.push("/settings/workspace/create");
                                 }}
                             >
                                 <Plus className="mr-2 h-5 w-5" />

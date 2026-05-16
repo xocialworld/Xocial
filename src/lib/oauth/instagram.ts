@@ -7,6 +7,7 @@ export interface InstagramOAuthConfig {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
+  configurationId?: string;
 }
 
 /**
@@ -17,15 +18,32 @@ export function getInstagramAuthUrl(
   config: InstagramOAuthConfig,
   state: string
 ): string {
+  const scopes = [
+    'instagram_basic',
+    'instagram_content_publish',
+    'pages_show_list',
+    'pages_read_engagement',
+    'pages_manage_posts',
+    'pages_read_user_content',
+    'pages_manage_engagement',
+  ];
+
   const params = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     state,
-    scope: 'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement',
     response_type: 'code',
   });
 
-  return `https://www.facebook.com/v18.0/dialog/oauth?${params.toString()}`;
+  if (config.configurationId) {
+    params.set('config_id', config.configurationId);
+    params.set('override_default_response_type', 'true');
+  } else {
+    params.set('scope', scopes.join(','));
+    params.set('auth_type', 'rerequest');
+  }
+
+  return `https://www.facebook.com/v24.0/dialog/oauth?${params.toString()}`;
 }
 
 /**
@@ -43,7 +61,7 @@ export async function exchangeInstagramCode(
   });
 
   const response = await fetch(
-    `https://graph.facebook.com/v18.0/oauth/access_token?${params.toString()}`
+    `https://graph.facebook.com/v24.0/oauth/access_token?${params.toString()}`
   );
 
   if (!response.ok) {
@@ -268,7 +286,7 @@ export async function publishInstagramMedia(
 export async function getInstagramMediaInsights(
   mediaId: string,
   accessToken: string
-): Promise<any> {
+): Promise<any[]> {
   const metrics = [
     'impressions',
     'reach',
@@ -287,7 +305,8 @@ export async function getInstagramMediaInsights(
     throw new Error('Failed to fetch Instagram media insights');
   }
 
-  return response.json();
+  const data = await response.json();
+  return data.data || [];
 }
 
 /**
@@ -297,7 +316,7 @@ export async function getInstagramAccountInsights(
   igAccountId: string,
   accessToken: string,
   period: 'day' | 'week' | 'days_28' = 'day'
-): Promise<any> {
+): Promise<any[]> {
   const metrics = [
     'impressions',
     'reach',
@@ -313,7 +332,8 @@ export async function getInstagramAccountInsights(
     throw new Error('Failed to fetch Instagram account insights');
   }
 
-  return response.json();
+  const data = await response.json();
+  return data.data || [];
 }
 
 
@@ -324,7 +344,7 @@ export async function getInstagramAccountInsights(
 export async function getInstagramComments(
   mediaId: string,
   accessToken: string
-): Promise<any> {
+): Promise<any[]> {
   const response = await fetch(
     `https://graph.facebook.com/v24.0/${mediaId}/comments?fields=id,text,username,timestamp,like_count,replies&access_token=${accessToken}`
   );
@@ -333,7 +353,8 @@ export async function getInstagramComments(
     throw new Error('Failed to fetch Instagram comments');
   }
 
-  return response.json();
+  const data = await response.json();
+  return data.data || [];
 }
 
 /**
@@ -365,4 +386,3 @@ export async function replyToInstagramComment(
 
   return response.json();
 }
-

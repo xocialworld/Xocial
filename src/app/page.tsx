@@ -255,7 +255,7 @@ export default function Home() {
       </section>
 
       {/* Features Grid Section */}
-      <section className="py-20 sm:py-24 lg:py-32">
+      <section id="features" className="py-20 sm:py-24 lg:py-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-16 lg:mb-20">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary-100 text-secondary-700 mb-6">

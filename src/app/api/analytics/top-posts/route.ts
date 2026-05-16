@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { checkRateLimit, getWorkspaceFromRequest } from '@/lib/api-middleware';
+import { checkRateLimit, handleAPIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     // Rate limit top posts analytics
     const limited = checkRateLimit(`${user.id}:analytics:top-posts`, 60, 60_000);
@@ -35,8 +27,6 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
 
     // Get posts with their analytics
     const { data: posts } = await supabase
@@ -143,10 +133,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     logger.error('Top posts error', error as Error);
-    return NextResponse.json(
-      { error: 'Failed to fetch top posts' },
-      { status: 500 }
-    );
+    return handleAPIError(error);
   }
 }
 
@@ -184,4 +171,3 @@ function extractContentSnippet(content: any): string {
 
   return '';
 }
-

@@ -17,14 +17,69 @@ export type FetchWithWorkspaceOptions = RequestInit & {
   workspaceId?: string;
   /** Skip workspace header (for auth/public endpoints) */
   skipWorkspace?: boolean;
+  /** Require a hydrated selected workspace before sending the request */
+  requireWorkspace?: boolean;
 };
+
+export class WorkspaceNotReadyError extends Error {
+  code = 'WORKSPACE_NOT_READY';
+
+  constructor(message = 'Select a workspace before continuing') {
+    super(message);
+    this.name = 'WorkspaceNotReadyError';
+  }
+}
+
+function normalizeWorkspaceId(workspaceId?: string | null): string | undefined {
+  const normalized = workspaceId?.trim();
+  return normalized || undefined;
+}
 
 /**
  * Get the currently selected workspace ID from the store
  * Safe to call outside React components
  */
 export function getSelectedWorkspaceId(): string | undefined {
-  return useWorkspaceStore.getState().selectedWorkspace?.id;
+  return normalizeWorkspaceId(useWorkspaceStore.getState().selectedWorkspace?.id);
+}
+
+/**
+ * Get the selected workspace ID only after the persisted workspace store has hydrated.
+ */
+export function getHydratedSelectedWorkspaceId(): string | undefined {
+  const state = useWorkspaceStore.getState();
+  if (!state._hasHydrated) {
+    return undefined;
+  }
+  return normalizeWorkspaceId(state.selectedWorkspace?.id);
+}
+
+export function getWorkspaceNotReadyMessage(hasHydrated?: boolean): string {
+  return hasHydrated === false
+    ? 'Workspace is still loading. Please try again in a moment.'
+    : 'Select a workspace before continuing';
+}
+
+/**
+ * Resolve a workspace ID and fail fast if the client has not hydrated or no workspace is selected.
+ */
+export function requireHydratedWorkspaceId(workspaceId?: string): string {
+  const explicitWorkspaceId = normalizeWorkspaceId(workspaceId);
+  if (explicitWorkspaceId) {
+    return explicitWorkspaceId;
+  }
+
+  const state = useWorkspaceStore.getState();
+  if (!state._hasHydrated) {
+    throw new WorkspaceNotReadyError(getWorkspaceNotReadyMessage(false));
+  }
+
+  const selectedWorkspaceId = normalizeWorkspaceId(state.selectedWorkspace?.id);
+  if (!selectedWorkspaceId) {
+    throw new WorkspaceNotReadyError(getWorkspaceNotReadyMessage(true));
+  }
+
+  return selectedWorkspaceId;
 }
 
 /**
@@ -36,7 +91,7 @@ export function addWorkspaceHeaders(
 ): Headers {
   const headers = new Headers(existingHeaders);
   
-  const wsId = workspaceId || getSelectedWorkspaceId();
+  const wsId = normalizeWorkspaceId(workspaceId) || getHydratedSelectedWorkspaceId();
   if (wsId) {
     headers.set('x-workspace-id', wsId);
   }
@@ -70,13 +125,22 @@ export async function fetchWithWorkspace(
   input: RequestInfo | URL,
   options?: FetchWithWorkspaceOptions
 ): Promise<Response> {
-  const { workspaceId, skipWorkspace, ...fetchOptions } = options || {};
+  const {
+    workspaceId,
+    skipWorkspace,
+    requireWorkspace = true,
+    ...fetchOptions
+  } = options || {};
   
   if (skipWorkspace) {
     return fetch(input, fetchOptions);
   }
   
-  const headers = addWorkspaceHeaders(fetchOptions.headers, workspaceId);
+  const resolvedWorkspaceId = requireWorkspace
+    ? requireHydratedWorkspaceId(workspaceId)
+    : normalizeWorkspaceId(workspaceId) || getHydratedSelectedWorkspaceId();
+
+  const headers = addWorkspaceHeaders(fetchOptions.headers, resolvedWorkspaceId);
   
   // Ensure Content-Type is set for JSON requests
   if (fetchOptions.body && typeof fetchOptions.body === 'string' && !headers.has('Content-Type')) {
@@ -166,11 +230,14 @@ export async function deleteWithWorkspace(
 export function buildUrlWithWorkspace(
   baseUrl: string,
   params?: Record<string, string | number | boolean | undefined>,
-  workspaceId?: string
+  workspaceId?: string,
+  options?: { requireWorkspace?: boolean }
 ): string {
   const url = new URL(baseUrl, window.location.origin);
   
-  const wsId = workspaceId || getSelectedWorkspaceId();
+  const wsId = options?.requireWorkspace === false
+    ? normalizeWorkspaceId(workspaceId) || getHydratedSelectedWorkspaceId()
+    : requireHydratedWorkspaceId(workspaceId);
   if (wsId) {
     url.searchParams.set('workspaceId', wsId);
   }
@@ -185,4 +252,3 @@ export function buildUrlWithWorkspace(
   
   return url.toString();
 }
-

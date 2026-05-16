@@ -4,17 +4,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Upload, Instagram } from 'lucide-react';
 import { toast } from 'sonner';
+import { fetchWithWorkspace } from '@/lib/fetch-with-workspace';
+import { useSelectedWorkspace } from '@/store/workspaceStore';
 
 export default function PublishToInstagramPage() {
     const params = useParams();
     const router = useRouter();
     const accountId = params.accountId as string;
+    const selectedWorkspace = useSelectedWorkspace();
 
     const [account, setAccount] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -22,11 +24,15 @@ export default function PublishToInstagramPage() {
 
     const [mediaUrl, setMediaUrl] = useState('');
     const [caption, setCaption] = useState('');
-    const [mediaType, setMediaType] = useState<'IMAGE' | 'VIDEO' | 'REELS'>('IMAGE');
+    const [mediaType, setMediaType] = useState<'IMAGE' | 'VIDEO' | 'REELS' | 'CAROUSEL_ALBUM'>('IMAGE');
 
     const fetchAccount = useCallback(async () => {
+        if (!selectedWorkspace?.id) return;
+
         try {
-            const response = await fetch(`/api/accounts/${accountId}`);
+            const response = await fetchWithWorkspace(`/api/accounts/${accountId}`, {
+                workspaceId: selectedWorkspace.id,
+            });
             if (!response.ok) throw new Error('Failed to fetch account');
             const data = await response.json();
             setAccount(data.data);
@@ -36,15 +42,24 @@ export default function PublishToInstagramPage() {
         } finally {
             setLoading(false);
         }
-    }, [accountId]);
+    }, [accountId, selectedWorkspace?.id]);
 
     useEffect(() => {
         fetchAccount();
     }, [accountId, fetchAccount]);
 
     const handlePublish = async () => {
-        if (!mediaUrl) {
+        const mediaSources = mediaUrl
+            .split(/[\n,]/)
+            .map((url) => url.trim())
+            .filter(Boolean);
+
+        if (mediaSources.length === 0) {
             toast.error('Please provide a media URL');
+            return;
+        }
+        if (mediaType === 'CAROUSEL_ALBUM' && mediaSources.length < 2) {
+            toast.error('Carousels require at least two media URLs');
             return;
         }
         if (caption.length > 2200) {
@@ -55,12 +70,14 @@ export default function PublishToInstagramPage() {
         try {
             setPublishing(true);
 
-            const response = await fetch('/api/instagram/publish', {
+            const response = await fetchWithWorkspace('/api/instagram/publish', {
                 method: 'POST',
+                workspaceId: selectedWorkspace?.id,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     accountId,
-                    mediaUrl,
+                    mediaUrl: mediaSources[0],
+                    mediaUrls: mediaSources,
                     caption,
                     mediaType,
                 }),
@@ -126,23 +143,29 @@ export default function PublishToInstagramPage() {
                                 <SelectItem value="IMAGE">Image</SelectItem>
                                 <SelectItem value="VIDEO">Video</SelectItem>
                                 <SelectItem value="REELS">Reels</SelectItem>
+                                <SelectItem value="CAROUSEL_ALBUM">Carousel</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
 
                     <div className="space-y-2">
                         <Label htmlFor="mediaUrl">
-                            Media URL <span className="text-red-500">*</span>
+                            Media URL{mediaType === 'CAROUSEL_ALBUM' ? 's' : ''} <span className="text-red-500">*</span>
                         </Label>
-                        <Input
+                        <Textarea
                             id="mediaUrl"
-                            placeholder="https://example.com/image.jpg"
+                            placeholder={mediaType === 'CAROUSEL_ALBUM'
+                                ? "https://example.com/image-1.jpg\nhttps://example.com/image-2.jpg"
+                                : "https://example.com/image.jpg"}
                             value={mediaUrl}
                             onChange={(e) => setMediaUrl(e.target.value)}
+                            rows={mediaType === 'CAROUSEL_ALBUM' ? 4 : 2}
                             disabled={publishing}
                         />
                         <p className="text-xs text-muted-foreground">
-                            Direct link to your {mediaType.toLowerCase()} file
+                            {mediaType === 'CAROUSEL_ALBUM'
+                                ? 'Direct links to 2-10 public media files, one per line or comma-separated'
+                                : `Direct link to your ${mediaType.toLowerCase()} file`}
                         </p>
                     </div>
 

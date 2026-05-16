@@ -9,11 +9,14 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Send, Linkedin } from 'lucide-react';
 import { toast } from 'sonner';
+import { fetchWithWorkspace } from '@/lib/fetch-with-workspace';
+import { useSelectedWorkspace } from '@/store/workspaceStore';
 
 export default function PublishToLinkedInPage() {
     const params = useParams();
     const router = useRouter();
     const accountId = params.accountId as string;
+    const selectedWorkspace = useSelectedWorkspace();
 
     const [account, setAccount] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -24,8 +27,12 @@ export default function PublishToLinkedInPage() {
     const MAX_CHARS = 3000;
 
     const fetchAccount = useCallback(async () => {
+        if (!selectedWorkspace?.id) return;
+
         try {
-            const response = await fetch(`/api/accounts/${accountId}`);
+            const response = await fetchWithWorkspace(`/api/accounts/${accountId}`, {
+                workspaceId: selectedWorkspace.id,
+            });
             if (!response.ok) throw new Error('Failed to fetch account');
             const data = await response.json();
             setAccount(data.data);
@@ -34,7 +41,7 @@ export default function PublishToLinkedInPage() {
         } finally {
             setLoading(false);
         }
-    }, [accountId]);
+    }, [accountId, selectedWorkspace?.id]);
 
     useEffect(() => {
         fetchAccount();

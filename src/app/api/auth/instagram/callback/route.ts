@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     requireAuth,
-    getUserWorkspace,
     APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 import {
     exchangeInstagramCode,
     getInstagramBusinessAccounts,
 } from '@/lib/oauth/instagram';
-import { getFacebookPages } from '@/lib/oauth/facebook';
+import { exchangeForLongLivedToken, getFacebookPages } from '@/lib/oauth/facebook';
 import { verifyOAuthState } from '@/lib/oauth/state-manager';
 import { encryptToken } from '@/lib/encryption';
+import { buildOAuthRedirectUrl, getOAuthAppOrigin } from '@/lib/oauth/redirect';
 
 /**
  * GET /api/auth/instagram/callback
@@ -21,8 +22,11 @@ import { encryptToken } from '@/lib/encryption';
  * Instagram uses Facebook's Graph API for business accounts
  */
 export async function GET(request: NextRequest) {
+    const origin = getOAuthAppOrigin(request);
+    let callbackRedirectUrl: string | undefined;
+
     try {
-        const { user, supabase } = await requireAuth(request);
+        const { user } = await requireAuth(request);
 
         const searchParams = request.nextUrl.searchParams;
         const code = searchParams.get('code');
@@ -50,11 +54,18 @@ export async function GET(request: NextRequest) {
                 'INVALID_STATE'
             );
         }
+        callbackRedirectUrl = stateVerification.redirectUrl;
 
-        const origin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin || 'http://localhost:3000';
+        const instagramClientId = process.env.FACEBOOK_APP_ID;
+        const instagramClientSecret = process.env.FACEBOOK_APP_SECRET;
+
+        if (!instagramClientId || !instagramClientSecret) {
+            throw new APIError(500, 'Instagram OAuth is not configured', 'CONFIGURATION_ERROR');
+        }
+
         const config = {
-            clientId: process.env.INSTAGRAM_CLIENT_ID!,
-            clientSecret: process.env.INSTAGRAM_CLIENT_SECRET!,
+            clientId: instagramClientId,
+            clientSecret: instagramClientSecret,
             redirectUri: `${origin}/api/auth/instagram/callback`,
         };
 
@@ -66,21 +77,28 @@ export async function GET(request: NextRequest) {
         const tokenResponse = await exchangeInstagramCode(config, code);
         logger.info('[Instagram Callback] Token exchanged successfully');
 
+        const longLivedToken = await exchangeForLongLivedToken(
+            config.clientId,
+            config.clientSecret,
+            tokenResponse.access_token
+        );
+        logger.info('[Instagram Callback] Exchanged for long-lived token');
+
         // Get Facebook pages (Instagram business accounts are linked to Facebook pages)
-        const pages = await getFacebookPages(tokenResponse.access_token);
+        const pages = await getFacebookPages(longLivedToken.access_token);
         logger.info(`[Instagram Callback] Found ${pages.length} Facebook pages`);
 
         if (pages.length === 0) {
             throw new APIError(404, 'No Facebook pages found. Instagram business accounts must be linked to a Facebook page.', 'NO_PAGES');
         }
 
-        // Get user's workspace context from state
-        let workspaceId = stateVerification.workspaceId;
-
+        const workspaceId = stateVerification.workspaceId;
         if (!workspaceId) {
-            logger.warn('[Instagram Callback] No workspaceId in state, falling back to default workspace');
-            const workspace = await getUserWorkspace(user.id, supabase);
-            workspaceId = workspace.id;
+            throw new APIError(
+                400,
+                'Workspace context is missing from OAuth state. Please restart the connection from the selected workspace.',
+                'WORKSPACE_REQUIRED'
+            );
         }
 
         logger.info(`[Instagram Callback] Target workspace ID: ${workspaceId}`);
@@ -93,8 +111,10 @@ export async function GET(request: NextRequest) {
                 if (igAccount) {
                     instagramAccounts.push({
                         ...igAccount,
+                        pageId: page.id,
                         pageAccessToken: page.access_token,
                         pageName: page.name,
+                        pageTasks: page.tasks || [],
                     });
                 }
             } catch (error) {
@@ -110,14 +130,37 @@ export async function GET(request: NextRequest) {
             );
         }
 
+        const { userClient: workspaceSupabase, usage, limits } = await requireWorkspaceContext(request, {
+            workspaceId,
+            roles: ['owner', 'admin', 'manager'],
+        });
+
+        if (
+            limits.max_social_profiles !== null &&
+            limits.max_social_profiles !== undefined &&
+            usage.social_profiles_count + instagramAccounts.length > limits.max_social_profiles
+        ) {
+            throw new APIError(
+                402,
+                `Connecting these Instagram accounts would exceed your ${limits.plan} social account limit`,
+                'PLAN_LIMIT_EXCEEDED',
+                {
+                    current: usage.social_profiles_count,
+                    adding: instagramAccounts.length,
+                    limit: limits.max_social_profiles,
+                }
+            );
+        }
+
         // Store each Instagram account
         const accounts = await Promise.all(
             instagramAccounts.map(async (igAccount) => {
                 logger.info(`[Instagram Callback] Processing account: ${igAccount.username} (${igAccount.id})`);
 
                 const encryptedAccessToken = encryptToken(igAccount.pageAccessToken);
+                const encryptedUserToken = encryptToken(longLivedToken.access_token);
 
-                const { data, error } = await supabase
+                const { data, error } = await workspaceSupabase
                     .from('social_accounts')
                     .upsert(
                         {
@@ -130,14 +173,19 @@ export async function GET(request: NextRequest) {
                             account_avatar: igAccount.profile_picture_url,
                             follower_count: igAccount.followers_count || 0,
                             access_token: encryptedAccessToken,
-                            refresh_token: null, // Instagram uses long-lived tokens
-                            token_expires_at: null, // Long-lived tokens don't expire
+                            refresh_token: encryptedUserToken,
+                            token_expires_at: new Date(
+                                Date.now() + (longLivedToken.expires_in || 5184000) * 1000
+                            ).toISOString(),
                             connected_at: new Date().toISOString(),
                             is_active: true,
                             metadata: {
                                 followsCount: igAccount.follows_count,
                                 mediaCount: igAccount.media_count,
-                                pageName: igAccount.pageName,
+                                facebook_page_id: igAccount.pageId,
+                                facebook_page_name: igAccount.pageName,
+                                facebook_page_tasks: igAccount.pageTasks,
+                                connected_via: 'facebook_login',
                             },
                         },
                         {
@@ -160,25 +208,25 @@ export async function GET(request: NextRequest) {
         logger.info(`[Instagram Callback] Successfully stored ${accounts.length} accounts`);
 
         // Redirect to the original redirect URL with success message
-        const redirectUrl = stateVerification.redirectUrl || '/x';
-        const successUrl = new URL(redirectUrl, origin);
-        successUrl.searchParams.set('success', 'instagram_connected');
-        successUrl.searchParams.set('accounts', accounts.length.toString());
+        const successUrl = buildOAuthRedirectUrl(callbackRedirectUrl, origin, {
+            success: 'instagram_connected',
+            accounts: accounts.length,
+        });
 
         return NextResponse.redirect(successUrl.toString());
     } catch (error) {
         console.error('[Instagram Callback] Error:', error);
 
-        const origin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin || 'http://localhost:3000';
-        const errorUrl = new URL('/x', origin);
+        const errorMessage =
+            error instanceof APIError
+                ? error.message
+                : error instanceof Error
+                    ? error.message
+                    : 'Failed to connect Instagram account';
 
-        if (error instanceof APIError) {
-            errorUrl.searchParams.set('error', error.message);
-        } else if (error instanceof Error) {
-            errorUrl.searchParams.set('error', error.message);
-        } else {
-            errorUrl.searchParams.set('error', 'Failed to connect Instagram account');
-        }
+        const errorUrl = buildOAuthRedirectUrl(callbackRedirectUrl, origin, {
+            error: errorMessage,
+        });
 
         return NextResponse.redirect(errorUrl.toString());
     }

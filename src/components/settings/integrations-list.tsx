@@ -20,44 +20,52 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useAccounts } from "@/hooks/use-accounts";
 import { toast } from "sonner";
+import { useWorkspaceContext } from "@/hooks/use-workspace-fetch";
+import { fetchWithWorkspace, getWorkspaceNotReadyMessage } from "@/lib/fetch-with-workspace";
 
 interface IntegrationsListProps {
-    workspaceId: string;
+    workspaceId?: string;
 }
 
 const platformConfig = {
     instagram: {
         name: "Instagram",
+        description: "Professional account via Meta Login",
         icon: Instagram,
         color: "from-pink-500 to-purple-500",
         bgColor: "bg-gradient-to-br from-pink-500 to-purple-500"
     },
     facebook: {
         name: "Facebook",
+        description: "Facebook Page connection",
         icon: Facebook,
         color: "from-blue-600 to-blue-500",
         bgColor: "bg-blue-600"
     },
     twitter: {
         name: "X (Twitter)",
+        description: "Profile connection",
         icon: Twitter,
         color: "from-gray-900 to-gray-800",
         bgColor: "bg-black"
     },
     linkedin: {
         name: "LinkedIn",
+        description: "Profile or Page connection",
         icon: Linkedin,
         color: "from-blue-700 to-blue-600",
         bgColor: "bg-blue-700"
     },
     youtube: {
         name: "YouTube",
+        description: "Channel connection",
         icon: Youtube,
         color: "from-red-600 to-red-500",
         bgColor: "bg-red-600"
     },
     tiktok: {
         name: "TikTok",
+        description: "Profile connection",
         icon: () => <span className="text-lg font-bold">T</span>,
         color: "from-pink-500 via-black to-cyan-400",
         bgColor: "bg-black"
@@ -78,12 +86,23 @@ function formatLastSync(dateStr: string | null): string {
 export function IntegrationsList({ workspaceId }: IntegrationsListProps) {
     const { accounts, loading, refetch } = useAccounts();
     const [syncing, setSyncing] = useState<string | null>(null);
+    const workspaceContext = useWorkspaceContext();
+    const activeWorkspaceId = workspaceId || workspaceContext.workspaceId;
+    const workspaceReady = workspaceContext.isReady && !!activeWorkspaceId;
 
     const handleSync = async (account: any) => {
+        if (!workspaceReady || !activeWorkspaceId) {
+            toast.error(getWorkspaceNotReadyMessage(workspaceContext.hasHydrated));
+            return;
+        }
+
         setSyncing(account.id);
         try {
-            const response = await fetch(`/api/accounts/${account.id}/sync-posts`, {
+            const params = new URLSearchParams({ workspaceId: activeWorkspaceId });
+            const response = await fetchWithWorkspace(`/api/accounts/${account.id}/sync-posts?${params.toString()}`, {
                 method: 'POST',
+                workspaceId: activeWorkspaceId,
+                body: JSON.stringify({ workspaceId: activeWorkspaceId }),
             });
             if (!response.ok) throw new Error('Sync failed');
             toast.success(`Synced ${account.platform} successfully`);
@@ -96,7 +115,19 @@ export function IntegrationsList({ workspaceId }: IntegrationsListProps) {
         }
     };
 
-    const connectedPlatforms = new Set(accounts.map(acc => acc.platform.toLowerCase()));
+    const handleConnect = (platform: string) => {
+        if (!workspaceReady || !activeWorkspaceId) {
+            toast.error(getWorkspaceNotReadyMessage(workspaceContext.hasHydrated));
+            return;
+        }
+
+        const params = new URLSearchParams({
+            platform,
+            workspaceId: activeWorkspaceId,
+            redirect: '/settings?tab=integrations',
+        });
+        window.location.href = `/api/auth/connect?${params.toString()}`;
+    };
 
     // Connected accounts from API
     const connected = accounts.filter(acc => acc.is_active);
@@ -191,7 +222,8 @@ export function IntegrationsList({ workspaceId }: IntegrationsListProps) {
                                             variant="ghost"
                                             size="sm"
                                             onClick={() => handleSync(account)}
-                                            disabled={syncing === account.id}
+                                            disabled={syncing === account.id || !workspaceReady}
+                                            title={!workspaceReady ? getWorkspaceNotReadyMessage(workspaceContext.hasHydrated) : undefined}
                                             className="h-9 px-3"
                                         >
                                             <RefreshCw className={cn(
@@ -239,16 +271,23 @@ export function IntegrationsList({ workspaceId }: IntegrationsListProps) {
                                         <p className="font-medium text-secondary-700">
                                             {config?.name || platformKey}
                                         </p>
-                                        <p className="text-xs text-secondary-500">Not connected</p>
+                                        <p className="text-xs text-secondary-500">
+                                            {config?.description || "Not connected"}
+                                        </p>
                                     </div>
                                 </div>
 
-                                <Link href={`/api/auth/connect?platform=${platformKey}&workspaceId=${workspaceId}`}>
-                                    <Button size="sm" variant="outline" className="h-8">
-                                        <Plus className="h-3.5 w-3.5 mr-1" />
-                                        Connect
-                                    </Button>
-                                </Link>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8"
+                                    onClick={() => handleConnect(platformKey)}
+                                    disabled={!workspaceReady}
+                                    title={!workspaceReady ? getWorkspaceNotReadyMessage(workspaceContext.hasHydrated) : undefined}
+                                >
+                                    <Plus className="h-3.5 w-3.5 mr-1" />
+                                    Connect
+                                </Button>
                             </div>
                         );
                     })}

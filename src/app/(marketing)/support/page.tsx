@@ -77,16 +77,16 @@ export default function SupportPage() {
           <div className="p-12">
             <form onSubmit={submit} className="grid gap-6">
               <div>
-                <label className="block text-sm font-medium text-secondary-700 mb-1">Name</label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} required placeholder="John Doe" />
+                <label htmlFor="support-name" className="block text-sm font-medium text-secondary-700 mb-1">Name</label>
+                <Input id="support-name" value={name} onChange={(e) => setName(e.target.value)} required placeholder="John Doe" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-secondary-700 mb-1">Email</label>
-                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="john@example.com" />
+                <label htmlFor="support-email" className="block text-sm font-medium text-secondary-700 mb-1">Email</label>
+                <Input id="support-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="john@example.com" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-secondary-700 mb-1">Message</label>
-                <Textarea value={message} onChange={(e) => setMessage(e.target.value)} required placeholder="How can we help you?" className="min-h-[120px]" />
+                <label htmlFor="support-message" className="block text-sm font-medium text-secondary-700 mb-1">Message</label>
+                <Textarea id="support-message" value={message} onChange={(e) => setMessage(e.target.value)} required placeholder="How can we help you?" className="min-h-[120px]" />
               </div>
               <Button type="submit" size="lg" className="w-full" disabled={status === 'submitting'}>{status === 'submitting' ? 'Sending...' : 'Send Message'}</Button>
 

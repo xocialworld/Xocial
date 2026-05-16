@@ -6,17 +6,46 @@ import { Button } from '@/components/ui/button';
 import { Instagram, Facebook, Twitter, Youtube, Linkedin, Music } from 'lucide-react';
 import { getPlatformGradient, platformNames, type Platform } from '@/lib/platform-colors';
 import { LucideIcon } from 'lucide-react';
+import { useWorkspaceContext } from '@/hooks/use-workspace-fetch';
+import { getWorkspaceNotReadyMessage } from '@/lib/fetch-with-workspace';
+import { toast } from 'sonner';
 
 interface PlatformOption {
     id: Platform;
     name: string;
     icon: LucideIcon;
     available: boolean;
+    connectLabel?: string;
+    description?: string;
+    requirements?: string[];
 }
 
 const platforms: PlatformOption[] = [
-    { id: 'instagram', name: platformNames.instagram, icon: Instagram, available: true },
-    { id: 'facebook', name: platformNames.facebook, icon: Facebook, available: true },
+    {
+        id: 'instagram',
+        name: platformNames.instagram,
+        icon: Instagram,
+        available: true,
+        connectLabel: 'Connect Instagram Professional Account via Meta Login',
+        description: 'Use this for Instagram Business or Creator accounts linked to a Facebook Page.',
+        requirements: [
+            'Business or Creator Instagram account',
+            'Linked Facebook Page with your Page access',
+            'Meta permissions approved or your account added as a tester',
+        ],
+    },
+    {
+        id: 'facebook',
+        name: platformNames.facebook,
+        icon: Facebook,
+        available: true,
+        connectLabel: 'Connect Facebook Page',
+        description: 'Use this for Facebook Page publishing, analytics, and comments.',
+        requirements: [
+            'Page access with create or manage permissions',
+            'Meta permissions approved or your account added as a tester',
+        ],
+    },
     { id: 'twitter', name: platformNames.twitter, icon: Twitter, available: true },
     { id: 'youtube', name: platformNames.youtube, icon: Youtube, available: true },
     { id: 'linkedin', name: platformNames.linkedin, icon: Linkedin, available: true },
@@ -28,24 +57,25 @@ interface PlatformSelectionDialogProps {
     onOpenChange: (open: boolean) => void;
 }
 
-import { useSelectedWorkspace } from '@/store/workspaceStore';
-import { toast } from 'sonner';
-
-// ... imports
-
 export function PlatformSelectionDialog({ open, onOpenChange }: PlatformSelectionDialogProps) {
     const [connecting, setConnecting] = useState<Platform | null>(null);
-    const selectedWorkspace = useSelectedWorkspace();
+    const { workspaceId, isReady, hasHydrated } = useWorkspaceContext();
 
     const handleConnect = async (platform: Platform) => {
-        if (!selectedWorkspace) {
-            toast.error('Please select a workspace first');
+        if (!isReady || !workspaceId) {
+            toast.error(getWorkspaceNotReadyMessage(hasHydrated));
             return;
         }
 
         setConnecting(platform);
-        // Redirect to OAuth flow
-        window.location.href = `/api/auth/connect?platform=${platform}&workspaceId=${selectedWorkspace.id}`;
+
+        const params = new URLSearchParams({
+            platform,
+            workspaceId,
+            redirect: '/x',
+        });
+
+        window.location.href = `/api/auth/connect?${params.toString()}`;
     };
 
     return (
@@ -58,43 +88,65 @@ export function PlatformSelectionDialog({ open, onOpenChange }: PlatformSelectio
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid grid-cols-2 gap-4 py-6 md:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 py-6 sm:grid-cols-2">
                     {platforms.map((platform) => {
                         const Icon = platform.icon;
                         const gradient = getPlatformGradient(platform.id);
                         const isConnecting = connecting === platform.id;
+                        const isDisabled = !isReady || !platform.available || isConnecting;
 
                         return (
                             <button
                                 key={platform.id}
                                 onClick={() => handleConnect(platform.id)}
-                                disabled={!platform.available || isConnecting}
+                                disabled={isDisabled}
                                 className={`
-                  group relative overflow-hidden rounded-xl p-6
-                  transition-all duration-300
-                  ${platform.available
-                                        ? 'hover:scale-105 hover:shadow-xl cursor-pointer'
+                                    group relative min-h-[172px] overflow-hidden rounded-xl p-5 text-left
+                                    transition-all duration-300
+                                    ${!isDisabled
+                                        ? 'hover:-translate-y-0.5 hover:shadow-xl cursor-pointer'
                                         : 'opacity-50 cursor-not-allowed'
                                     }
-                  ${isConnecting ? 'animate-pulse' : ''}
-                `}
+                                    ${isConnecting ? 'animate-pulse' : ''}
+                                `}
                             >
-                                {/* Gradient background */}
                                 <div
                                     className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-90 group-hover:opacity-100 transition-opacity`}
                                 />
 
-                                {/* Content */}
-                                <div className="relative flex flex-col items-center gap-3 text-white">
-                                    <Icon className="h-12 w-12" />
-                                    <span className="font-semibold">{platform.name}</span>
+                                <div className="relative flex h-full flex-col gap-3 text-white">
+                                    <div className="flex items-start gap-3">
+                                        <Icon className="h-8 w-8 flex-shrink-0" />
+                                        <div className="min-w-0">
+                                            <span className="block text-sm font-semibold leading-5">
+                                                {platform.connectLabel || platform.name}
+                                            </span>
+                                            {platform.description && (
+                                                <span className="mt-1 block text-xs leading-5 text-white/85">
+                                                    {platform.description}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {platform.requirements && (
+                                        <ul className="mt-auto space-y-1 text-xs leading-5 text-white/85">
+                                            {platform.requirements.map((requirement) => (
+                                                <li key={requirement} className="flex gap-2">
+                                                    <span aria-hidden="true">-</span>
+                                                    <span>{requirement}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+
                                     {!platform.available && (
-                                        <span className="text-xs bg-white/20 px-2 py-1 rounded">
+                                        <span className="w-fit rounded bg-white/20 px-2 py-1 text-xs">
                                             Coming Soon
                                         </span>
                                     )}
                                     {isConnecting && (
-                                        <span className="text-xs">Connecting...</span>
+                                        <span className="text-xs">Redirecting to authorization...</span>
                                     )}
                                 </div>
                             </button>

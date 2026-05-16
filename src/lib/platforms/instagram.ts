@@ -15,7 +15,8 @@ export interface InstagramPost {
   caption: string;
   imageUrl?: string;
   videoUrl?: string;
-  mediaType?: 'IMAGE' | 'VIDEO' | 'CAROUSEL_ALBUM';
+  mediaUrls?: string[];
+  mediaType?: 'IMAGE' | 'VIDEO' | 'REELS' | 'CAROUSEL_ALBUM';
   location?: {
     id: string;
     name: string;
@@ -55,10 +56,41 @@ export class InstagramClient {
     const containerId = await this.createMediaContainer({
       video_url: post.videoUrl!,
       caption: post.caption,
-      media_type: 'VIDEO',
+      media_type: post.mediaType === 'REELS' ? 'REELS' : 'VIDEO',
     });
+    await this.waitForContainerReady(containerId);
 
     // Step 2: Publish the container
+    return await this.publishContainer(containerId);
+  }
+
+  async publishCarousel(post: InstagramPost): Promise<{ id: string }> {
+    if (!post.mediaUrls || post.mediaUrls.length < 2) {
+      throw new Error('Instagram carousel publishing requires at least two media URLs');
+    }
+
+    const children = await Promise.all(
+      post.mediaUrls.slice(0, 10).map(async (mediaUrl) => {
+        const isVideo = mediaUrl.toLowerCase().includes('.mp4') || mediaUrl.toLowerCase().includes('video');
+        const containerId = await this.createMediaContainer({
+          ...(isVideo ? { video_url: mediaUrl, media_type: 'VIDEO' } : { image_url: mediaUrl }),
+          caption: '',
+          is_carousel_item: true,
+        });
+        if (isVideo) {
+          await this.waitForContainerReady(containerId);
+        }
+        return containerId;
+      })
+    );
+
+    const containerId = await this.createMediaContainer({
+      caption: post.caption,
+      media_type: 'CAROUSEL',
+      children,
+    });
+    await this.waitForContainerReady(containerId);
+
     return await this.publishContainer(containerId);
   }
 
@@ -70,6 +102,8 @@ export class InstagramClient {
     video_url?: string;
     caption: string;
     media_type?: string;
+    is_carousel_item?: boolean;
+    children?: string[];
   }): Promise<string> {
     const url = `${this.baseUrl}/${this.instagramAccountId}/media`;
 
@@ -84,7 +118,19 @@ export class InstagramClient {
 
     if (params.video_url) {
       body.video_url = params.video_url;
-      body.media_type = 'VIDEO';
+      body.media_type = params.media_type || 'VIDEO';
+    }
+
+    if (params.media_type && !body.media_type) {
+      body.media_type = params.media_type;
+    }
+
+    if (params.is_carousel_item) {
+      body.is_carousel_item = true;
+    }
+
+    if (params.children?.length) {
+      body.children = params.children.join(',');
     }
 
     const response = await fetch(url, {
@@ -100,6 +146,37 @@ export class InstagramClient {
 
     const data = await response.json();
     return data.id;
+  }
+
+  private async waitForContainerReady(containerId: string): Promise<void> {
+    const params = new URLSearchParams({
+      fields: 'status_code',
+      access_token: this.accessToken,
+    });
+
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const response = await fetch(`${this.baseUrl}/${containerId}?${params.toString()}`);
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.error?.message || 'Failed to check Instagram media container status');
+      }
+
+      const data = await response.json();
+      const status = data.status_code;
+
+      if (!status || status === 'FINISHED') {
+        return;
+      }
+
+      if (status === 'ERROR' || status === 'EXPIRED') {
+        throw new Error(`Instagram media container is not publishable: ${status}`);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    throw new Error('Instagram media container was not ready before the publish timeout');
   }
 
   /**
@@ -304,4 +381,3 @@ export async function createInstagramClient(accountId: string): Promise<Instagra
     instagramAccountId: account.account_id,
   });
 }
-

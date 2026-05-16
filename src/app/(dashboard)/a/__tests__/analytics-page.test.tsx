@@ -81,6 +81,6 @@ describe('AnalyticsPage', () => {
       </QueryClientProvider>
     );
     await userEvent.click(screen.getByRole('tab', { name: /performance/i }));
-    expect(screen.getByText(/navigation timing/i)).toBeInTheDocument();
+    expect(await screen.findByText(/navigation timing/i)).toBeInTheDocument();
   });
 });

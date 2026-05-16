@@ -16,7 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import { Spinner } from "@/components/ui/spinner";
 
-import { createWorkspaceSchema, type CreateWorkspaceInput } from "@/lib/validations";
+import { createWorkspaceSchema } from "@/lib/validations";
 
 type CreateWorkspaceValues = z.infer<typeof createWorkspaceSchema>;
 
@@ -49,11 +49,17 @@ function CreateWorkspaceForm() {
             });
 
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || "Failed to create workspace");
+                const error = await response.json().catch(() => null);
+                throw new Error(
+                    error?.error?.message ||
+                    error?.message ||
+                    "Failed to create workspace"
+                );
             }
 
             const { data: result } = await response.json();
+
+            let didSelectCreatedWorkspace = false;
 
             // Refresh workspaces list
             const workspacesRes = await fetch(`/api/workspaces?t=${Date.now()}`, {
@@ -73,10 +79,28 @@ function CreateWorkspaceForm() {
 
                 setWorkspaces(formattedWorkspaces);
                 selectWorkspace(result.workspace.id);
+                didSelectCreatedWorkspace = true;
+            }
+
+            if (!didSelectCreatedWorkspace) {
+                const currentWorkspaces = useWorkspaceStore.getState().workspaces;
+                setWorkspaces([
+                    ...currentWorkspaces.filter((workspace) => workspace.id !== result.workspace.id),
+                    {
+                        id: result.workspace.id,
+                        name: result.workspace.name,
+                        slug: result.workspace.slug,
+                        role: "owner",
+                        logo_url: result.workspace.logo_url,
+                    },
+                ]);
+                selectWorkspace(result.workspace.id);
             }
 
             toast.success("Workspace created successfully");
+            useWorkspaceStore.getState().invalidateWorkspaces();
             router.push(nextUrl);
+            router.refresh();
         } catch (error: any) {
             toast.error(error.message);
         } finally {

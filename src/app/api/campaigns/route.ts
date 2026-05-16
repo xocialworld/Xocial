@@ -9,13 +9,12 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
-  getUserWorkspace,
   getPagination,
   validateRequest,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 
 /**
@@ -37,11 +36,8 @@ const createCampaignSchema = z.object({
  * List all campaigns for workspace
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
   const { page, limit, offset } = getPagination(request);
-
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
 
   // Get query parameters
   const searchParams = request.nextUrl.searchParams;
@@ -89,13 +85,10 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
  * Create a new campaign
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
   // Validate request body
   const validatedData = await validateRequest(request, createCampaignSchema);
-
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
 
   // Create campaign
   const { data: campaign, error } = await supabase
@@ -126,4 +119,3 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 });
 
 export const dynamic = 'force-dynamic';
-

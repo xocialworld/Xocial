@@ -9,12 +9,11 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
-  getUserWorkspace,
   validateRequest,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 
 /**
@@ -39,9 +38,7 @@ export const GET = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
-  const { user, supabase } = await requireAuth(request);
-  
-  const workspace = await getUserWorkspace(user.id);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
   const { id } = await params;
 
   // Fetch campaign with related data
@@ -123,9 +120,7 @@ export const PATCH = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
-  const { user, supabase } = await requireAuth(request);
-  
-  const workspace = await getUserWorkspace(user.id);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
   const updates = await validateRequest(request, updateCampaignSchema);
   const { id } = await params;
 
@@ -163,9 +158,7 @@ export const DELETE = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
-  const { user, supabase } = await requireAuth(request);
-  
-  const workspace = await getUserWorkspace(user.id);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
   const { id } = await params;
 
   // Delete campaign (posts will have campaign_id set to NULL due to ON DELETE SET NULL)
@@ -189,4 +182,3 @@ export const DELETE = withErrorHandler(async (
 });
 
 export const dynamic = 'force-dynamic';
-

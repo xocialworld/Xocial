@@ -6,7 +6,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import {
+  createServiceRoleClient,
+  handleAPIError,
+  requireAuth,
+} from '@/lib/api-middleware';
+import {
+  assertMediaInWorkspace,
+  assertSocialAccountsInWorkspace,
+  requireWorkspaceContext,
+} from '@/lib/workspace-context';
 import { platformPublisher, type Platform, type PublishResult } from '@/lib/platforms/publisher';
 
 export async function POST(
@@ -15,17 +24,10 @@ export async function POST(
 ) {
   const params = await props.params;
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     // Fetch content item with variants
-    const { data: item, error: fetchError } = await supabase
+    await requireAuth(request);
+    const serviceClient = createServiceRoleClient();
+    const { data: item, error: fetchError } = await serviceClient
       .from('content_items')
       .select(
         `
@@ -53,17 +55,10 @@ export async function POST(
       return NextResponse.json({ error: 'Content item not found' }, { status: 404 });
     }
 
-    // Verify membership
-    const { data: membership } = await supabase
-      .from('workspace_members')
-      .select('role')
-      .eq('workspace_id', item.workspace_id)
-      .eq('user_id', user.id)
-      .single();
-
-    if (!membership) {
-      return NextResponse.json({ error: 'Not a member of this workspace' }, { status: 403 });
-    }
+    const { userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+      workspaceId: item.workspace_id,
+      roles: ['owner', 'admin', 'manager'],
+    });
 
     // Check if approval is required and approved
     const approvalInstance = item.approval_instance?.[0];
@@ -95,6 +90,17 @@ export async function POST(
       );
     }
 
+    await assertSocialAccountsInWorkspace(
+      supabase,
+      workspace.id,
+      publishableVariants.map((variant: any) => variant.social_account_id)
+    );
+    await assertMediaInWorkspace(
+      supabase,
+      workspace.id,
+      publishableVariants.flatMap((variant: any) => variant.media_ids || [])
+    );
+
     // Build account IDs map
     const accountIds: Partial<Record<Platform, string>> = {};
     for (const variant of publishableVariants) {
@@ -110,6 +116,7 @@ export async function POST(
         const { data: mediaAssets } = await supabase
           .from('media_assets')
           .select('url, storage_path')
+          .eq('workspace_id', workspace.id)
           .in('id', variant.media_ids);
 
         if (mediaAssets) {
@@ -229,7 +236,6 @@ export async function POST(
     });
   } catch (error) {
     console.error('Publish content error:', error);
-    return NextResponse.json({ error: 'Failed to publish content' }, { status: 500 });
+    return handleAPIError(error);
   }
 }
-

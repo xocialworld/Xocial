@@ -519,6 +519,7 @@ export async function publishToYouTube(config: {
   tags?: string[];
   categoryId?: string;
   privacyStatus?: 'public' | 'unlisted' | 'private';
+  publishAt?: string;
   thumbnailUrl?: string;
 }): Promise<{ id: string; url: string }> {
   console.log('[YouTube] Publishing video:', { 
@@ -537,6 +538,7 @@ export async function publishToYouTube(config: {
     tags: config.tags,
     categoryId: config.categoryId,
     privacyStatus: config.privacyStatus || 'public',
+    publishAt: config.publishAt,
   });
 
   // Upload thumbnail if provided

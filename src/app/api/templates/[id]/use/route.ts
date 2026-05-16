@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { handleAPIError, APIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,42 +10,27 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const supabase = await createClient();
+    const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+    const { data: template, error: fetchError } = await supabase
+      .from('templates')
+      .select('usage_count')
+      .eq('id', id)
+      .eq('workspace_id', workspace.id)
+      .single();
 
-    if (userError || !user) {
-      throw new APIError(401, 'Unauthorized');
+    if (fetchError || !template) {
+      throw new APIError(404, 'Template not found');
     }
 
-    // Increment usage count
-    const { error: updateError } = await supabase.rpc('increment_template_usage', {
-      template_id: id,
-    });
+    const { error: updateError } = await supabase
+      .from('templates')
+      .update({ usage_count: (template.usage_count || 0) + 1 })
+      .eq('id', id)
+      .eq('workspace_id', workspace.id);
 
     if (updateError) {
-      // If the RPC doesn't exist, use a direct update
-      const { data: template, error: fetchError } = await supabase
-        .from('templates')
-        .select('usage_count')
-        .eq('id', id)
-        .single();
-
-      if (fetchError || !template) {
-        throw new APIError(404, 'Template not found');
-      }
-
-      const { error: directUpdateError } = await supabase
-        .from('templates')
-        .update({ usage_count: template.usage_count + 1 })
-        .eq('id', id);
-
-      if (directUpdateError) {
-        throw new APIError(500, 'Failed to update template usage');
-      }
+      throw new APIError(500, 'Failed to update template usage');
     }
 
     return NextResponse.json({ success: true });
@@ -53,4 +38,3 @@ export async function POST(
     return handleAPIError(error);
   }
 }
-

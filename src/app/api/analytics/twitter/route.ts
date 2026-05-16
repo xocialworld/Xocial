@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     withErrorHandler,
-    requireAuth,
-    getUserWorkspace,
     checkRateLimit,
     APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 import { getTwitterUser } from '@/lib/platforms/twitter';
@@ -20,7 +19,7 @@ import { getTwitterUser } from '@/lib/platforms/twitter';
  * - endDate: ISO date (optional)
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-    const { user, supabase } = await requireAuth(request);
+    const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     // Basic rate limiting
     const limited = checkRateLimit(`${user.id}:analytics:twitter`, 60, 60_000);
@@ -36,9 +35,6 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     if (!accountId) {
         throw new APIError(400, 'accountId parameter is required', 'MISSING_ACCOUNT_ID');
     }
-
-    // Get user's workspace
-    const workspace = await getUserWorkspace(user.id, supabase);
 
     // Get Twitter account
     const { data: account, error: accountError } = await supabase

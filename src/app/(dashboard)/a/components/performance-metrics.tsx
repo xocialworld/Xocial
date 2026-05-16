@@ -117,7 +117,7 @@ export function PerformanceMetrics() {
 
             <Card className="border-secondary-100 shadow-lg bg-white/90">
                 <CardHeader>
-                    <CardTitle>Performance Breakdown</CardTitle>
+                    <CardTitle>Navigation Timing Breakdown</CardTitle>
                     <CardDescription>Waterfall visualization of page load sequence</CardDescription>
                 </CardHeader>
                 <CardContent>

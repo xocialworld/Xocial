@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     requireAuth,
-    getUserWorkspace,
     APIError,
     ensureUserProfile,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 import {
     exchangeTwitterCode,
@@ -143,13 +143,35 @@ export async function GET(request: NextRequest) {
         // Ensure profile exists to satisfy RLS before workspace resolution
         await ensureUserProfile(user, supabase);
 
-        // Get user's workspace context from state
-        let workspaceId = stateVerification.workspaceId;
-
+        const workspaceId = stateVerification.workspaceId;
         if (!workspaceId) {
-            logger.warn('[Twitter OAuth] No workspaceId in state, falling back to default workspace');
-            const workspace = await getUserWorkspace(user.id, supabase);
-            workspaceId = workspace.id;
+            throw new APIError(
+                400,
+                'Workspace context is missing from OAuth state. Please restart the connection from the selected workspace.',
+                'WORKSPACE_REQUIRED'
+            );
+        }
+
+        const { userClient: workspaceSupabase, usage, limits } = await requireWorkspaceContext(request, {
+            workspaceId,
+            roles: ['owner', 'admin', 'manager'],
+        });
+
+        if (
+            limits.max_social_profiles !== null &&
+            limits.max_social_profiles !== undefined &&
+            usage.social_profiles_count + 1 > limits.max_social_profiles
+        ) {
+            throw new APIError(
+                402,
+                `Connecting this account would exceed your ${limits.plan} social account limit`,
+                'PLAN_LIMIT_EXCEEDED',
+                {
+                    current: usage.social_profiles_count,
+                    adding: 1,
+                    limit: limits.max_social_profiles,
+                }
+            );
         }
 
         logger.info('[Twitter OAuth] Workspace context resolved', { workspaceId });
@@ -162,7 +184,7 @@ export async function GET(request: NextRequest) {
 
         // Store Twitter account
         logger.info('[Twitter OAuth] Storing account in database');
-        const { data: accountData, error: dbError } = await supabase
+        const { data: accountData, error: dbError } = await workspaceSupabase
             .from('social_accounts')
             .upsert(
                 {

@@ -203,15 +203,17 @@ async function setup() {
       if (setupFacebook) {
         envVars.FACEBOOK_APP_ID = await question('Facebook App ID: ');
         envVars.FACEBOOK_APP_SECRET = await question('Facebook App Secret: ');
+        envVars.FACEBOOK_LOGIN_CONFIG_ID = await question('Facebook Login Config ID (optional): ');
+        envVars.INSTAGRAM_LOGIN_CONFIG_ID = await question('Instagram Login Config ID for Meta Login (optional): ');
         envVars.FACEBOOK_WEBHOOK_VERIFY_TOKEN = await generateSecret(32);
         console.log(`${green}✓ Generated webhook verify token${reset}`);
       }
       
       // Instagram
-      const setupInstagram = await confirm('\nSet up Instagram OAuth?', false);
+      const setupInstagram = await confirm('\nSet up Instagram Direct Login credentials? (not required for Phase 1 Meta/Facebook Login)', false);
       if (setupInstagram) {
-        envVars.INSTAGRAM_CLIENT_ID = await question('Instagram Client ID: ');
-        envVars.INSTAGRAM_CLIENT_SECRET = await question('Instagram Client Secret: ');
+        envVars.INSTAGRAM_CLIENT_ID = await question('Instagram Direct Login Client ID: ');
+        envVars.INSTAGRAM_CLIENT_SECRET = await question('Instagram Direct Login Client Secret: ');
         envVars.INSTAGRAM_WEBHOOK_VERIFY_TOKEN = await generateSecret(32);
         console.log(`${green}✓ Generated webhook verify token${reset}`);
       }
@@ -313,6 +315,8 @@ NEXT_PUBLIC_APP_URL=${envVars.NEXT_PUBLIC_APP_URL}
 # ───────────────────────────────────────────────────────────
 FACEBOOK_APP_ID=${envVars.FACEBOOK_APP_ID}
 FACEBOOK_APP_SECRET=${envVars.FACEBOOK_APP_SECRET}
+${envVars.FACEBOOK_LOGIN_CONFIG_ID ? `FACEBOOK_LOGIN_CONFIG_ID=${envVars.FACEBOOK_LOGIN_CONFIG_ID}` : ''}
+${envVars.INSTAGRAM_LOGIN_CONFIG_ID ? `INSTAGRAM_LOGIN_CONFIG_ID=${envVars.INSTAGRAM_LOGIN_CONFIG_ID}` : ''}
 FACEBOOK_WEBHOOK_VERIFY_TOKEN=${envVars.FACEBOOK_WEBHOOK_VERIFY_TOKEN}
 
 `;
@@ -413,4 +417,3 @@ rl.on('SIGINT', () => {
 
 // Run the setup
 setup();
-

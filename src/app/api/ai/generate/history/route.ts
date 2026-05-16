@@ -1,15 +1,15 @@
 import { NextRequest } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
-  getWorkspaceFromRequest,
   successResponse,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager', 'creator', 'analyst'],
+  });
 
   const limit = Math.min(
     50,
@@ -31,4 +31,3 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     history: data ?? [],
   });
 });
-

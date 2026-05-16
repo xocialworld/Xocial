@@ -1,6 +1,6 @@
-import { createClient } from "@/lib/supabase/server";
-import { NextRequest, NextResponse } from "next/server";
-import { APIError, errorResponse, successResponse, validateRequest, requireAuth, getWorkspaceFromRequest } from "@/lib/api-middleware";
+import { NextRequest } from "next/server";
+import { APIError, errorResponse, successResponse, validateRequest } from "@/lib/api-middleware";
+import { requireWorkspaceContext } from "@/lib/workspace-context";
 import { z } from "zod";
 
 // Fetch media assets
@@ -11,10 +11,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    const { user, supabase } = await requireAuth(request);
-
-    // Use the standard helper to resolve workspace from query/header/user default
-    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+    const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     let query = supabase
       .from('media_assets')
@@ -52,12 +49,7 @@ const deleteSchema = z.object({
 export async function DELETE(request: NextRequest) {
   try {
     const body = await validateRequest(request, deleteSchema);
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      throw new APIError(401, 'Unauthorized');
-    }
+    const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     // Get the asset to find its storage path (if we were deleting from storage too)
     // For now, we assume RLS handles permission to delete
@@ -65,6 +57,7 @@ export async function DELETE(request: NextRequest) {
       .from('media_assets')
       .select('*')
       .eq('id', body.id)
+      .eq('workspace_id', workspace.id)
       .single();
 
     if (!asset) {
@@ -78,7 +71,8 @@ export async function DELETE(request: NextRequest) {
     const { error } = await supabase
       .from('media_assets')
       .delete()
-      .eq('id', body.id);
+      .eq('id', body.id)
+      .eq('workspace_id', workspace.id);
 
     if (error) throw error;
 

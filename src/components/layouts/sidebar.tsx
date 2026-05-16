@@ -8,38 +8,32 @@ import {
   Calendar,
   Sparkles,
   BarChart3,
-  Lightbulb,
   Menu,
   X,
   Keyboard,
   ChevronsLeft,
   ChevronsRight,
   MessageCircle,
-  Users,
+  LayoutDashboard,
+  FileText,
+  Image,
+  Megaphone,
+  CheckSquare,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { KeyboardShortcutsHelp, useKeyboardShortcutsHelp } from "@/components/shared/keyboard-shortcuts-help";
 
 const navigation = [
   {
-    name: "Accounts",
-    shortName: "X",
+    name: "Dashboard",
+    shortName: "D",
     href: "/x",
-    icon: Users,
+    icon: LayoutDashboard,
     shortcut: "⌥X",
-    description: "Manage connected accounts",
+    description: "Workspace overview",
     color: "text-blue-500",
     bgColor: "bg-blue-500/10"
-  },
-  {
-    name: "Organize",
-    shortName: "O",
-    href: "/o",
-    icon: Calendar,
-    shortcut: "⌥O",
-    description: "Calendar & scheduling",
-    color: "text-green-500",
-    bgColor: "bg-green-500/10"
   },
   {
     name: "Create",
@@ -52,17 +46,47 @@ const navigation = [
     bgColor: "bg-purple-500/10"
   },
   {
-    name: "Influence",
+    name: "Calendar",
+    shortName: "Cal",
+    href: "/o",
+    icon: Calendar,
+    shortcut: "⌥O",
+    description: "Plan and schedule",
+    color: "text-green-500",
+    bgColor: "bg-green-500/10"
+  },
+  {
+    name: "Content/Posts",
+    shortName: "P",
+    href: "/posts",
+    icon: FileText,
+    shortcut: "⌥P",
+    description: "Manage content",
+    color: "text-cyan-500",
+    bgColor: "bg-cyan-500/10"
+  },
+  {
+    name: "Media",
+    shortName: "M",
+    href: "/media",
+    icon: Image,
+    shortcut: "⌥M",
+    description: "Assets library",
+    color: "text-teal-500",
+    bgColor: "bg-teal-500/10"
+  },
+  {
+    name: "Inbox/Engagement",
     shortName: "I",
     href: "/i",
     icon: MessageCircle,
     shortcut: "⌥I",
-    description: "Community & reach",
+    description: "Replies and mentions",
     color: "text-pink-500",
     bgColor: "bg-pink-500/10"
   },
   {
-    name: "Analyze",
+    name: "Analytics",
     shortName: "A",
     href: "/a",
     icon: BarChart3,
@@ -72,14 +96,34 @@ const navigation = [
     bgColor: "bg-orange-500/10"
   },
   {
-    name: "Leverage",
-    shortName: "L",
-    href: "/l",
-    icon: Lightbulb,
-    shortcut: "⌥L",
-    description: "AI & automation",
-    color: "text-yellow-500",
-    bgColor: "bg-yellow-500/10"
+    name: "Campaigns",
+    shortName: "Cm",
+    href: "/campaigns",
+    icon: Megaphone,
+    shortcut: "⌥G",
+    description: "Track campaigns",
+    color: "text-amber-500",
+    bgColor: "bg-amber-500/10"
+  },
+  {
+    name: "Approvals",
+    shortName: "Ap",
+    href: "/approvals",
+    icon: CheckSquare,
+    shortcut: "⌥R",
+    description: "Review workflow",
+    color: "text-indigo-500",
+    bgColor: "bg-indigo-500/10"
+  },
+  {
+    name: "Settings",
+    shortName: "S",
+    href: "/settings",
+    icon: Settings,
+    shortcut: "⌥S",
+    description: "Workspace settings",
+    color: "text-slate-400",
+    bgColor: "bg-slate-500/10"
   },
 ];
 

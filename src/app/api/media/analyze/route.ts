@@ -9,12 +9,11 @@ import { z } from 'zod';
 import { env } from '@/lib/env';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
   validateRequest,
-  getWorkspaceFromRequest,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 
 /**
@@ -30,9 +29,7 @@ const analyzeSchema = z.object({
  * Analyze image and generate metadata
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-  
-  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
   const { mediaId, url } = await validateRequest(request, analyzeSchema);
 
   logger.info('Media analysis requested', {
@@ -173,4 +170,3 @@ Respond with ONLY this JSON object, no extra commentary or text.`,
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-

@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
-  getUserWorkspace,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 import { z } from 'zod';
@@ -18,7 +17,9 @@ import { z } from 'zod';
  * - maxResults?: number (default: 25, max: 50)
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager', 'creator', 'analyst', 'client'],
+  });
   
   const searchParams = request.nextUrl.searchParams;
   const accountId = searchParams.get('accountId');
@@ -31,9 +32,6 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   if (maxResults > 50) {
     throw new APIError(400, 'maxResults cannot exceed 50', 'INVALID_MAX_RESULTS');
   }
-  
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
   
   // Get YouTube account
   const { data: account, error: accountError } = await supabase
@@ -122,7 +120,9 @@ const createPlaylistSchema = z.object({
 });
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager'],
+  });
   
   const body = await request.json();
   const validation = createPlaylistSchema.safeParse(body);
@@ -134,9 +134,6 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   }
   
   const { accountId, title, description, privacyStatus } = validation.data;
-  
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
   
   // Get YouTube account
   const { data: account, error: accountError } = await supabase
@@ -214,4 +211,3 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 });
 
 export const runtime = 'nodejs';
-

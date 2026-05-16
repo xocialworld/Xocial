@@ -4,11 +4,12 @@ import PricingPage from '../(marketing)/pricing/page'
 describe('PricingPage', () => {
   it('renders plan cards and toggles yearly pricing', () => {
     render(<PricingPage />)
-    expect(screen.getByText(/Pricing/)).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /Pro/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /simple, transparent pricing/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Growth/i })).toBeInTheDocument()
+    expect(screen.getAllByText(/\/yr/).length).toBeGreaterThan(0)
     const toggle = screen.getByLabelText('Toggle yearly pricing')
     fireEvent.click(toggle)
-    expect(screen.getAllByText(/\/ yr/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/\/mo/).length).toBeGreaterThan(0)
   })
   it('updates estimate when inputs change', () => {
     render(<PricingPage />)

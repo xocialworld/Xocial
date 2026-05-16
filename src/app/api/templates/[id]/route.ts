@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { handleAPIError, APIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,21 +10,13 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      throw new APIError(401, 'Unauthorized');
-    }
+    const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     const { data: template, error } = await supabase
       .from('templates')
       .select('*')
       .eq('id', id)
+      .eq('workspace_id', workspace.id)
       .single();
 
     if (error || !template) {
@@ -43,22 +35,14 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      throw new APIError(401, 'Unauthorized');
-    }
+    const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     // Verify ownership
     const { data: template, error: fetchError } = await supabase
       .from('templates')
       .select('created_by')
       .eq('id', id)
+      .eq('workspace_id', workspace.id)
       .single();
 
     if (fetchError || !template) {
@@ -73,7 +57,8 @@ export async function DELETE(
     const { error: deleteError } = await supabase
       .from('templates')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('workspace_id', workspace.id);
 
     if (deleteError) {
       throw new APIError(500, 'Failed to delete template');
@@ -91,22 +76,14 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      throw new APIError(401, 'Unauthorized');
-    }
+    const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     // Verify ownership
     const { data: template, error: fetchError } = await supabase
       .from('templates')
       .select('created_by')
       .eq('id', id)
+      .eq('workspace_id', workspace.id)
       .single();
 
     if (fetchError || !template) {
@@ -118,12 +95,20 @@ export async function PATCH(
     }
 
     const body = await request.json();
+    const {
+      id: _id,
+      workspace_id: _workspaceId,
+      created_by: _createdBy,
+      created_at: _createdAt,
+      ...updates
+    } = body;
 
     // Update template
     const { data: updated, error: updateError } = await supabase
       .from('templates')
-      .update(body)
+      .update(updates)
       .eq('id', id)
+      .eq('workspace_id', workspace.id)
       .select()
       .single();
 
@@ -136,4 +121,3 @@ export async function PATCH(
     return handleAPIError(error);
   }
 }
-

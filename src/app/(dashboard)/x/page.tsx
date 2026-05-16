@@ -31,6 +31,7 @@ import {
 import { platformNames, type Platform } from "@/lib/platform-colors";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { formatOAuthErrorMessage, formatOAuthSuccessMessage } from "@/lib/oauth/messages";
 
 // Platform options for multi-select filter
 const platformOptions: MultiSelectOption[] = Object.entries(platformNames).map(
@@ -77,16 +78,18 @@ export default function XPage() {
   useEffect(() => {
     const success = searchParams.get("success");
     const error = searchParams.get("error");
+    const accounts = searchParams.get("accounts");
     if (success) {
-      toast.success(success);
+      toast.success(formatOAuthSuccessMessage(success, accounts));
     }
     if (error) {
-      toast.error(error);
+      toast.error(formatOAuthErrorMessage(error));
     }
     if (success || error) {
       const url = new URL(window.location.href);
       url.searchParams.delete("success");
       url.searchParams.delete("error");
+      url.searchParams.delete("accounts");
       window.history.replaceState({}, "", url.toString());
     }
   }, [searchParams]);

@@ -15,10 +15,10 @@
 import { NextRequest } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,31 +81,15 @@ async function tableExists(supabase: any, tableName: string): Promise<boolean> {
 }
 
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
   const { searchParams } = new URL(request.url);
-  const workspaceId = searchParams.get('workspaceId') || searchParams.get('workspace_id');
+  const workspaceId = workspace.id;
   const from = searchParams.get('from') || searchParams.get('start');
   const to = searchParams.get('to') || searchParams.get('end');
   const platformFilter = searchParams.get('platform');
 
-  console.log('[Calendar API] Request:', { workspaceId, from, to, platformFilter, userId: user.id });
-
-  if (!workspaceId) {
-    throw new APIError(400, 'workspaceId is required', 'MISSING_WORKSPACE_ID');
-  }
-
-  // Verify user has access to this workspace
-  const { data: membership } = await supabase
-    .from('workspace_members')
-    .select('id')
-    .eq('workspace_id', workspaceId)
-    .eq('user_id', user.id)
-    .single();
-
-  if (!membership) {
-    throw new APIError(403, 'You do not have access to this workspace', 'FORBIDDEN');
-  }
+  console.log('[Calendar API] Request:', { workspaceId, from, to, platformFilter });
 
   const entries: CalendarEntry[] = [];
   const seenIds = new Set<string>(); // Track seen post IDs to avoid duplicates

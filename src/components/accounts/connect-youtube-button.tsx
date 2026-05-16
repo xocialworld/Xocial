@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Youtube } from 'lucide-react';
 import { toast } from 'sonner';
+import { useWorkspaceContext } from '@/hooks/use-workspace-fetch';
+import { getWorkspaceNotReadyMessage } from '@/lib/fetch-with-workspace';
 
 interface ConnectYouTubeButtonProps {
     redirectPath?: string;
@@ -32,8 +34,14 @@ export function ConnectYouTubeButton({
     fullWidth = false,
 }: ConnectYouTubeButtonProps) {
     const [isConnecting, setIsConnecting] = useState(false);
+    const { workspaceId, isReady, hasHydrated } = useWorkspaceContext();
 
     const handleConnect = async () => {
+        if (!isReady || !workspaceId) {
+            toast.error(getWorkspaceNotReadyMessage(hasHydrated));
+            return;
+        }
+
         setIsConnecting(true);
 
         try {
@@ -41,6 +49,7 @@ export function ConnectYouTubeButton({
             const params = new URLSearchParams({
                 platform: 'youtube',
                 redirect: redirectPath,
+                workspaceId,
             });
 
             const url = `/api/auth/connect?${params.toString()}`;
@@ -57,7 +66,8 @@ export function ConnectYouTubeButton({
     return (
         <Button
             onClick={handleConnect}
-            disabled={isConnecting}
+            disabled={isConnecting || !isReady}
+            title={!isReady ? getWorkspaceNotReadyMessage(hasHydrated) : undefined}
             variant={variant}
             size={size}
             className={`${fullWidth ? 'w-full' : ''} ${className}`}

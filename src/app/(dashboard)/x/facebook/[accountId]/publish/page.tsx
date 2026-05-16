@@ -10,11 +10,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Upload, Facebook } from 'lucide-react';
 import { toast } from 'sonner';
+import { fetchWithWorkspace } from '@/lib/fetch-with-workspace';
+import { useSelectedWorkspace } from '@/store/workspaceStore';
 
 export default function PublishToFacebookPage() {
     const params = useParams();
     const router = useRouter();
     const accountId = params.accountId as string;
+    const selectedWorkspace = useSelectedWorkspace();
 
     const [account, setAccount] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -25,8 +28,12 @@ export default function PublishToFacebookPage() {
     const [type, setType] = useState<'status' | 'link' | 'photo' | 'video'>('status');
 
     const fetchAccount = useCallback(async () => {
+        if (!selectedWorkspace?.id) return;
+
         try {
-            const response = await fetch(`/api/accounts/${accountId}`);
+            const response = await fetchWithWorkspace(`/api/accounts/${accountId}`, {
+                workspaceId: selectedWorkspace.id,
+            });
             if (!response.ok) throw new Error('Failed to fetch account');
             const data = await response.json();
             setAccount(data.data);
@@ -35,7 +42,7 @@ export default function PublishToFacebookPage() {
         } finally {
             setLoading(false);
         }
-    }, [accountId]);
+    }, [accountId, selectedWorkspace?.id]);
 
     useEffect(() => {
         fetchAccount();
@@ -50,8 +57,9 @@ export default function PublishToFacebookPage() {
         try {
             setPublishing(true);
 
-            const response = await fetch('/api/facebook/publish', {
+            const response = await fetchWithWorkspace('/api/facebook/publish', {
                 method: 'POST',
+                workspaceId: selectedWorkspace?.id,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     accountId,

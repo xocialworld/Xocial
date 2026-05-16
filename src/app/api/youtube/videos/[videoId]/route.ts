@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
-  getUserWorkspace,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { 
   updateYouTubeVideo, 
   getYouTubeVideoStats,
@@ -27,7 +26,9 @@ export const GET = withErrorHandler(async (
   { params }: { params: Promise<{ videoId: string }> }
 ) => {
   const { videoId } = await params;
-  const { user, supabase } = await requireAuth(request);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager', 'creator', 'analyst', 'client'],
+  });
   
   const searchParams = request.nextUrl.searchParams;
   const accountId = searchParams.get('accountId');
@@ -35,9 +36,6 @@ export const GET = withErrorHandler(async (
   if (!accountId) {
     throw new APIError(400, 'accountId parameter is required', 'MISSING_ACCOUNT_ID');
   }
-  
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
   
   // Get YouTube account
   const { data: account, error: accountError } = await supabase
@@ -120,7 +118,9 @@ export const PATCH = withErrorHandler(async (
   { params }: { params: Promise<{ videoId: string }> }
 ) => {
   const { videoId } = await params;
-  const { user, supabase } = await requireAuth(request);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager'],
+  });
   
   // Parse and validate request body
   const body = await request.json();
@@ -133,9 +133,6 @@ export const PATCH = withErrorHandler(async (
   }
   
   const { accountId, title, description, tags, privacyStatus, publishAt, thumbnailUrl, categoryId } = validation.data;
-  
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
   
   // Get YouTube account
   const { data: account, error: accountError } = await supabase
@@ -275,7 +272,9 @@ export const DELETE = withErrorHandler(async (
   { params }: { params: Promise<{ videoId: string }> }
 ) => {
   const { videoId } = await params;
-  const { user, supabase } = await requireAuth(request);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager'],
+  });
   
   const searchParams = request.nextUrl.searchParams;
   const accountId = searchParams.get('accountId');
@@ -283,9 +282,6 @@ export const DELETE = withErrorHandler(async (
   if (!accountId) {
     throw new APIError(400, 'accountId parameter is required', 'MISSING_ACCOUNT_ID');
   }
-  
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
   
   // Get YouTube account
   const { data: account, error: accountError } = await supabase
@@ -349,4 +345,3 @@ export const DELETE = withErrorHandler(async (
 });
 
 export const runtime = 'nodejs';
-

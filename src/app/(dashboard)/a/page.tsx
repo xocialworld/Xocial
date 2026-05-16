@@ -293,7 +293,7 @@ export default function AnalyticsPage() {
           </TabsTrigger>
           <TabsTrigger value="performance" className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary-500 rounded-none px-2 pb-3 pt-2 font-medium text-secondary-500 data-[state=active]:text-primary-600 gap-2">
             <Timer className="h-4 w-4" />
-            System
+            Performance
           </TabsTrigger>
         </TabsList>
 
@@ -379,7 +379,7 @@ export default function AnalyticsPage() {
                 System Health & Performance
               </h3>
               <p className="text-sm text-secondary-500 mt-1">
-                Real-time monitoring of application performance and responsiveness
+                Navigation timing and real-time monitoring of application performance and responsiveness
               </p>
             </div>
             <PerformanceMetrics />

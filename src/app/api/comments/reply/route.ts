@@ -4,43 +4,32 @@
  * Based on Xocial SRS Section 3.1.4
  */
 
-import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { handleAPIError, parseJSONBody, validateRequiredFields } from '@/lib/error-handler';
-import { APIError } from '@/lib/api-error';
+import { NextRequest, NextResponse } from 'next/server';
+import { APIError, withErrorHandler } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
-export async function POST(request: Request) {
-    try {
-        const supabase = await createClient();
+export const POST = withErrorHandler(async (request: NextRequest) => {
+        const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
-        // 1. Verify authentication
-        const {
-            data: { session },
-            error: authError,
-        } = await supabase.auth.getSession();
-
-        if (authError || !session) {
-            throw APIError.unauthorized('You must be logged in to reply to comments');
-        }
-
-        // 2. Parse and validate request body
-        const body = await parseJSONBody<{
+        const body = await request.json() as {
             comment_id: string;
             reply_text: string;
             post_id?: string;
-        }>(request);
-
-        validateRequiredFields(body, ['comment_id', 'reply_text']);
+        };
 
         const { comment_id, reply_text } = body;
 
+        if (!comment_id || !reply_text) {
+            throw new APIError(400, 'comment_id and reply_text are required', 'MISSING_FIELDS');
+        }
+
         // 3. Validate reply text
         if (!reply_text.trim()) {
-            throw APIError.validation('Reply text cannot be empty');
+            throw new APIError(400, 'Reply text cannot be empty', 'VALIDATION_ERROR');
         }
 
         if (reply_text.length > 2200) {
-            throw APIError.validation('Reply text is too long', {
+            throw new APIError(400, 'Reply text is too long', 'VALIDATION_ERROR', {
                 max_length: 2200,
                 current_length: reply_text.length,
             });
@@ -54,7 +43,7 @@ export async function POST(request: Request) {
             .single();
 
         if (commentError || !comment) {
-            throw APIError.notFound('Comment', 'The comment you are trying to reply to does not exist');
+            throw new APIError(404, 'Comment not found', 'COMMENT_NOT_FOUND');
         }
 
         // 5. Get the post to find the social account
@@ -62,22 +51,11 @@ export async function POST(request: Request) {
             .from('posts')
             .select('social_account_id, workspace_id')
             .eq('id', comment.post_id)
+            .eq('workspace_id', workspace.id)
             .single();
 
         if (postError || !post) {
-            throw APIError.notFound('Post');
-        }
-
-        // 6. Verify user has access to this workspace
-        const { data: membership, error: membershipError } = await supabase
-            .from('workspace_members')
-            .select('role')
-            .eq('workspace_id', post.workspace_id)
-            .eq('user_id', session.user.id)
-            .single();
-
-        if (membershipError || !membership) {
-            throw APIError.forbidden('You do not have access to this workspace');
+            throw new APIError(404, 'Post not found', 'POST_NOT_FOUND');
         }
 
         // 7. Get the social account credentials
@@ -85,10 +63,11 @@ export async function POST(request: Request) {
             .from('social_accounts')
             .select('platform, access_token, account_id')
             .eq('id', post.social_account_id)
+            .eq('workspace_id', workspace.id)
             .single();
 
         if (accountError || !account) {
-            throw APIError.notFound('Social account');
+            throw new APIError(404, 'Social account not found', 'ACCOUNT_NOT_FOUND');
         }
 
         // 8. Post reply to platform API
@@ -100,8 +79,8 @@ export async function POST(request: Request) {
                 post_id: comment.post_id,
                 external_comment_id: `reply_${Date.now()}`, // Temporary ID
                 platform: comment.platform,
-                author_name: session.user.email || 'You',
-                author_id: session.user.id,
+                author_name: user.email || 'You',
+                author_id: user.id,
                 content: reply_text,
                 parent_comment_id: comment_id,
                 is_reply: true,
@@ -113,7 +92,7 @@ export async function POST(request: Request) {
 
         if (replyError) {
             console.error('Failed to store reply:', replyError);
-            throw APIError.internal('Failed to post reply');
+            throw new APIError(500, 'Failed to post reply', 'DATABASE_ERROR');
         }
 
         // 9. Return success response
@@ -128,7 +107,4 @@ export async function POST(request: Request) {
             },
             { status: 201 }
         );
-    } catch (error) {
-        return handleAPIError(error);
-    }
-}
+});

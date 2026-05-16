@@ -7,6 +7,7 @@ export interface FacebookOAuthConfig {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
+  configurationId?: string;
 }
 
 export interface FacebookTokenResponse {
@@ -50,7 +51,6 @@ export function getFacebookAuthUrl(
   includeInstagramScopes: boolean = false
 ): string {
   const scopes = [
-    'email',
     'pages_show_list',
     'pages_read_engagement',
     'pages_manage_posts',
@@ -61,9 +61,7 @@ export function getFacebookAuthUrl(
   if (includeInstagramScopes) {
     scopes.push(
       'instagram_basic',
-      'instagram_content_publish',
-      'instagram_manage_comments',
-      'instagram_manage_insights'
+      'instagram_content_publish'
     );
   }
 
@@ -71,9 +69,16 @@ export function getFacebookAuthUrl(
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     state,
-    scope: scopes.join(','),
     response_type: 'code',
   });
+
+  if (config.configurationId) {
+    params.set('config_id', config.configurationId);
+    params.set('override_default_response_type', 'true');
+  } else {
+    params.set('scope', scopes.join(','));
+    params.set('auth_type', 'rerequest');
+  }
 
   return `https://www.facebook.com/v24.0/dialog/oauth?${params.toString()}`;
 }
@@ -166,8 +171,19 @@ export async function getFacebookProfile(
 export async function getFacebookPages(
   accessToken: string
 ): Promise<FacebookPage[]> {
+  const fields = [
+    'id',
+    'name',
+    'access_token',
+    'category',
+    'tasks',
+    'category_list',
+    'picture',
+    'fan_count',
+  ].join(',');
+
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/me/accounts?access_token=${accessToken}`
+    `https://graph.facebook.com/v24.0/me/accounts?fields=${fields}&access_token=${accessToken}`
   );
 
   if (!response.ok) {
@@ -310,7 +326,7 @@ export async function publishFacebookPost(
 export async function getFacebookPostInsights(
   postId: string,
   accessToken: string
-): Promise<any> {
+): Promise<any[]> {
   const metrics = [
     'post_impressions',
     'post_reach',
@@ -327,7 +343,8 @@ export async function getFacebookPostInsights(
     throw new Error('Failed to fetch Facebook post insights');
   }
 
-  return response.json();
+  const data = await response.json();
+  return data.data || [];
 }
 
 /**
@@ -346,4 +363,3 @@ export function verifyFacebookWebhook(
 
   return `sha256=${expectedSignature}` === signature;
 }
-

@@ -18,9 +18,9 @@ const requiredEnvVars = {
         'FACEBOOK_APP_ID': process.env.FACEBOOK_APP_ID,
         'FACEBOOK_APP_SECRET': process.env.FACEBOOK_APP_SECRET,
     },
-    'Instagram': {
-        'INSTAGRAM_CLIENT_ID': process.env.INSTAGRAM_CLIENT_ID,
-        'INSTAGRAM_CLIENT_SECRET': process.env.INSTAGRAM_CLIENT_SECRET,
+    'Instagram (via Meta/Facebook Login)': {
+        'FACEBOOK_APP_ID': process.env.FACEBOOK_APP_ID,
+        'FACEBOOK_APP_SECRET': process.env.FACEBOOK_APP_SECRET,
     },
     'Twitter': {
         'TWITTER_CLIENT_ID': process.env.TWITTER_CLIENT_ID,
@@ -92,7 +92,8 @@ for (const [platform, envVars] of Object.entries(requiredEnvVars)) {
 
     if (platformConfigured) {
         const appUrl = appConfig['App URL'] || 'http://localhost:3000';
-        const callbackUrl = `${appUrl}/api/auth/${platform.toLowerCase()}/callback`;
+        const platformSlug = platform.startsWith('Instagram') ? 'instagram' : platform.toLowerCase();
+        const callbackUrl = `${appUrl}/api/auth/${platformSlug}/callback`;
         console.log(`  📍 Callback URL: ${callbackUrl}`);
         console.log(`  ℹ️   Add this URL to your ${platform} OAuth app settings`);
     }

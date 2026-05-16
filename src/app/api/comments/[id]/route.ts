@@ -6,7 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { handleAPIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 // PATCH - Update a comment
 export async function PATCH(
@@ -15,12 +16,7 @@ export async function PATCH(
 ) {
     const params = await props.params;
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const { user, userClient: supabase, workspace, role } = await requireWorkspaceContext(request);
 
         const commentId = params.id;
         const body = await request.json();
@@ -29,8 +25,9 @@ export async function PATCH(
         // Get the existing comment
         const { data: existingComment, error: fetchError } = await supabase
             .from('content_comments')
-            .select('*, workspace_members!inner(role)')
+            .select('*')
             .eq('id', commentId)
+            .eq('workspace_id', workspace.id)
             .single();
 
         if (fetchError || !existingComment) {
@@ -42,9 +39,7 @@ export async function PATCH(
 
         // Check permissions
         const isAuthor = existingComment.author_id === user.id;
-        const isAdmin = ['owner', 'admin', 'manager'].includes(
-            existingComment.workspace_members?.role
-        );
+        const isAdmin = ['owner', 'admin', 'manager'].includes(role);
 
         // Only author can edit body (within 5 minutes)
         if (newBody !== undefined) {
@@ -98,6 +93,7 @@ export async function PATCH(
             .from('content_comments')
             .update(updateData)
             .eq('id', commentId)
+            .eq('workspace_id', workspace.id)
             .select(`
         *,
         author:profiles!author_id (
@@ -123,10 +119,7 @@ export async function PATCH(
 
     } catch (error) {
         console.error('Comment PATCH error:', error);
-        return NextResponse.json(
-            { error: 'Failed to update comment' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }
 
@@ -137,23 +130,16 @@ export async function DELETE(
 ) {
     const params = await props.params;
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const { user, userClient: supabase, workspace, role } = await requireWorkspaceContext(request);
 
         const commentId = params.id;
 
         // Get the existing comment with workspace member info
         const { data: existingComment, error: fetchError } = await supabase
             .from('content_comments')
-            .select(`
-        *,
-        workspace_members!inner(role, user_id)
-      `)
+            .select('*')
             .eq('id', commentId)
+            .eq('workspace_id', workspace.id)
             .single();
 
         if (fetchError || !existingComment) {
@@ -166,15 +152,7 @@ export async function DELETE(
         // Check permissions
         const isAuthor = existingComment.author_id === user.id;
 
-        // Check if user is admin in the workspace
-        const { data: membership } = await supabase
-            .from('workspace_members')
-            .select('role')
-            .eq('workspace_id', existingComment.workspace_id)
-            .eq('user_id', user.id)
-            .single();
-
-        const isAdmin = membership && ['owner', 'admin'].includes(membership.role);
+        const isAdmin = ['owner', 'admin'].includes(role);
 
         // Authors can delete within 5 minutes, admins can always delete
         if (!isAdmin) {
@@ -200,7 +178,8 @@ export async function DELETE(
         const { error: deleteError } = await supabase
             .from('content_comments')
             .delete()
-            .eq('id', commentId);
+            .eq('id', commentId)
+            .eq('workspace_id', workspace.id);
 
         if (deleteError) {
             console.error('Delete comment error:', deleteError);
@@ -217,9 +196,6 @@ export async function DELETE(
 
     } catch (error) {
         console.error('Comment DELETE error:', error);
-        return NextResponse.json(
-            { error: 'Failed to delete comment' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }

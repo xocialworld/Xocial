@@ -39,6 +39,45 @@ const EMPTY_CONTENT: CreateContent = {
     platformContent: {} as Record<Platform, string>,
 };
 
+type InitialSchedule = {
+    date: string;
+    time: string;
+};
+
+function formatLocalDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function formatLocalTime(date: Date): string {
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+}
+
+function parseInitialSchedule(dateParam: string | null, timeParam: string | null): InitialSchedule | undefined {
+    if (!dateParam) return undefined;
+
+    const cleanTime = timeParam && /^\d{2}:\d{2}$/.test(timeParam) ? timeParam : undefined;
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+        return {
+            date: dateParam,
+            time: cleanTime || '10:00',
+        };
+    }
+
+    const parsedDate = new Date(dateParam);
+    if (Number.isNaN(parsedDate.getTime())) return undefined;
+
+    return {
+        date: formatLocalDate(parsedDate),
+        time: cleanTime || formatLocalTime(parsedDate),
+    };
+}
+
 /**
  * Centralized post submission payload builder
  */
@@ -124,6 +163,7 @@ export function UnifiedPostComposer() {
     const [showMediaUpload, setShowMediaUpload] = useState(false);
     const [showMediaLibrary, setShowMediaLibrary] = useState(false);
     const [aiOptions, setAIOptions] = useState<AIGenerationOptions>({});
+    const [initialSchedule, setInitialSchedule] = useState<InitialSchedule | undefined>();
 
     // Get current workspace for proper scoping
     const workspace = useSelectedWorkspace();
@@ -147,16 +187,13 @@ export function UnifiedPostComposer() {
         if (prefillApplied.current) return;
 
         const dateParam = searchParams.get('date');
-        if (dateParam) {
-            try {
-                const prefillDate = new Date(dateParam);
-                if (!isNaN(prefillDate.getTime())) {
-                    console.log('[Composer] Prefilling date from URL:', prefillDate);
-                    prefillApplied.current = true;
-                }
-            } catch (e) {
-                console.warn('[Composer] Invalid date param:', dateParam);
-            }
+        const schedule = parseInitialSchedule(dateParam, searchParams.get('time'));
+
+        if (schedule) {
+            setInitialSchedule(schedule);
+            prefillApplied.current = true;
+        } else if (dateParam) {
+            console.warn('[Composer] Invalid date param:', dateParam);
         }
     }, [searchParams]);
 
@@ -640,9 +677,9 @@ export function UnifiedPostComposer() {
                     onMixedPublishSchedule={handleMixedPublishSchedule}
                     isLoading={isPublishing}
                     accounts={connectedAccounts}
+                    initialSchedule={initialSchedule}
                 />
             )}
         </div>
     );
 }
-

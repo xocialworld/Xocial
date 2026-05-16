@@ -238,6 +238,7 @@ export async function uploadYouTubeVideo(
     tags?: string[];
     categoryId?: string;
     privacyStatus?: 'private' | 'public' | 'unlisted';
+    publishAt?: string;
   }
 ): Promise<YouTubeVideo> {
   // First, insert video metadata
@@ -260,6 +261,7 @@ export async function uploadYouTubeVideo(
         },
         status: {
           privacyStatus: metadata.privacyStatus || 'private',
+          ...(metadata.publishAt ? { publishAt: metadata.publishAt } : {}),
         },
       }),
     }
@@ -676,4 +678,3 @@ export async function replyToYouTubeComment(
     throw new APIError(response.status || 400, message, 'YOUTUBE_API_ERROR');
   }
 }
-

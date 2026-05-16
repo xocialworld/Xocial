@@ -1,12 +1,10 @@
 import { NextRequest } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
   APIError,
-  getWorkspaceFromRequest,
-  checkWorkspaceAccess,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,14 +14,9 @@ export const dynamic = 'force-dynamic';
  */
 export const DELETE = withErrorHandler(async (request: NextRequest, props: { params: Promise<{ id: string }> }) => {
   const params = await props.params;
-  const { user, supabase } = await requireAuth(request);
-  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
-
-  // Require at least admin
-  const role = await checkWorkspaceAccess(user.id, workspace.id);
-  if (!['owner', 'admin', 'manager'].includes(role)) {
-    throw new APIError(403, 'Only admins and managers can remove members', 'FORBIDDEN');
-  }
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager'],
+  });
 
   const memberId = params.id;
   if (!memberId) {
@@ -65,20 +58,15 @@ export const DELETE = withErrorHandler(async (request: NextRequest, props: { par
  */
 export const PATCH = withErrorHandler(async (request: NextRequest, props: { params: Promise<{ id: string }> }) => {
   const params = await props.params;
-  const { user, supabase } = await requireAuth(request);
-  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin'],
+  });
 
   const body = await request.json();
   const { role: newRole } = body;
 
   if (!['admin', 'manager', 'creator', 'analyst'].includes(newRole)) {
     throw new APIError(400, 'Invalid role', 'VALIDATION_ERROR');
-  }
-
-  // Require at least admin
-  const currentUserRole = await checkWorkspaceAccess(user.id, workspace.id);
-  if (!['owner', 'admin'].includes(currentUserRole)) {
-    throw new APIError(403, 'Only owners and admins can update roles', 'FORBIDDEN');
   }
 
   const memberId = params.id;
@@ -122,5 +110,4 @@ export const PATCH = withErrorHandler(async (request: NextRequest, props: { para
 
   return successResponse({ member: updatedMember, message: 'Role updated successfully' });
 });
-
 

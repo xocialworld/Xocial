@@ -6,18 +6,20 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import {
+    APIError,
+    handleAPIError,
+} from '@/lib/api-middleware';
+import {
+    assertMediaInWorkspace,
+    assertSocialAccountsInWorkspace,
+    enforceLimit,
+    requireWorkspaceContext,
+} from '@/lib/workspace-context';
 
 // GET - List content items for a workspace
 export async function GET(request: NextRequest) {
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
         const searchParams = request.nextUrl.searchParams;
         const workspaceId = searchParams.get('workspace_id');
         const status = searchParams.get('status');
@@ -30,6 +32,11 @@ export async function GET(request: NextRequest) {
                 { status: 400 }
             );
         }
+
+        const { userClient: supabase, workspace, role } = await requireWorkspaceContext(request, {
+            workspaceId,
+            roles: ['owner', 'admin', 'manager', 'creator', 'analyst', 'client'],
+        });
 
         // Build query
         let query = supabase
@@ -63,9 +70,13 @@ export async function GET(request: NextRequest) {
           )
         )
       `, { count: 'exact' })
-            .eq('workspace_id', workspaceId)
+            .eq('workspace_id', workspace.id)
             .order('created_at', { ascending: false })
             .range(offset, offset + limit - 1);
+
+        if (role === 'client') {
+            query = query.eq('is_internal_only', false);
+        }
 
         if (status) {
             query = query.eq('status', status);
@@ -93,23 +104,13 @@ export async function GET(request: NextRequest) {
 
     } catch (error) {
         console.error('Content items GET error:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch content items' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }
 
 // POST - Create a new content item with variants
 export async function POST(request: NextRequest) {
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
         const body = await request.json();
         const {
             workspace_id,
@@ -127,30 +128,66 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Verify membership
-        const { data: membership } = await supabase
-            .from('workspace_members')
-            .select('role')
-            .eq('workspace_id', workspace_id)
-            .eq('user_id', user.id)
-            .single();
+        const { user, userClient: supabase, workspace, role, limits, usage } =
+            await requireWorkspaceContext(request, {
+                workspaceId: workspace_id,
+                roles: ['owner', 'admin', 'manager', 'creator'],
+            });
 
-        if (!membership) {
-            return NextResponse.json(
-                { error: 'Not a member of this workspace' },
-                { status: 403 }
-            );
+        const variantList = Array.isArray(variants) ? variants : [];
+        await assertSocialAccountsInWorkspace(
+            supabase,
+            workspace.id,
+            variantList.map((variant: any) => variant.social_account_id)
+        );
+        await assertMediaInWorkspace(
+            supabase,
+            workspace.id,
+            variantList.flatMap((variant: any) => variant.media_ids || [])
+        );
+
+        if (workflow_id) {
+            const { data: workflow, error: workflowError } = await supabase
+                .from('approval_workflows')
+                .select('id')
+                .eq('id', workflow_id)
+                .eq('workspace_id', workspace.id)
+                .maybeSingle();
+
+            if (workflowError || !workflow) {
+                throw new APIError(
+                    400,
+                    'Approval workflow does not belong to the selected workspace',
+                    'INVALID_WORKSPACE_RESOURCE'
+                );
+            }
         }
 
         // Determine initial status
         const hasSchedule = scheduled_at && new Date(scheduled_at) > new Date();
-        const initialStatus = hasSchedule ? 'scheduled' : 'draft';
+        const approvalMode = workspace.workflow_mode || workspace.settings?.approval_mode;
+        const requiresApproval = approvalMode && approvalMode !== 'none';
+        const canBypassApproval = ['owner', 'admin'].includes(role);
+        const initialStatus = requiresApproval && !canBypassApproval
+            ? 'in_review'
+            : hasSchedule
+                ? 'scheduled'
+                : 'draft';
+
+        if (initialStatus === 'scheduled') {
+            enforceLimit(
+                usage.scheduled_posts_count,
+                limits.max_scheduled_posts,
+                `Scheduled post limit reached for your ${limits.plan} plan`
+            );
+        }
 
         // Create content item with drafted_at and optional approval_workflow_id
         const { data: contentItem, error: itemError } = await supabase
             .from('content_items')
             .insert({
-                workspace_id,
+                workspace_id: workspace.id,
+                timezone_snapshot: workspace.timezone || 'UTC',
                 title: title || null,
                 brief: brief || null,
                 status: initialStatus,
@@ -172,8 +209,8 @@ export async function POST(request: NextRequest) {
 
         // Create variants if provided
         let createdVariants: any[] = [];
-        if (variants.length > 0) {
-            const variantsToInsert = variants.map((variant: any) => ({
+        if (variantList.length > 0) {
+            const variantsToInsert = variantList.map((variant: any) => ({
                 content_item_id: contentItem.id,
                 social_account_id: variant.social_account_id || null,
                 platform: variant.platform,
@@ -183,7 +220,7 @@ export async function POST(request: NextRequest) {
                 mentions: variant.mentions || [],
                 link_url: variant.link_url || null,
                 platform_specific: variant.platform_specific || {},
-                status: hasSchedule ? 'scheduled' : 'draft',
+                status: initialStatus === 'scheduled' ? 'scheduled' : 'draft',
                 scheduled_at: scheduled_at || null,
             }));
 
@@ -205,9 +242,9 @@ export async function POST(request: NextRequest) {
         }
 
         // Create approval instance if workflow is specified
-        if (workflow_id) {
+        if (workflow_id || (requiresApproval && !canBypassApproval)) {
             // Get first step of workflow
-            const { data: workflow } = await supabase
+            const workflowQuery = supabase
                 .from('approval_workflows')
                 .select(`
           id,
@@ -216,15 +253,20 @@ export async function POST(request: NextRequest) {
             step_order
           )
         `)
-                .eq('id', workflow_id)
-                .single();
+                .eq('workspace_id', workspace.id)
+                .order('is_default', { ascending: false })
+                .limit(1);
+
+            const { data: workflow } = workflow_id
+                ? await workflowQuery.eq('id', workflow_id).maybeSingle()
+                : await workflowQuery.maybeSingle();
 
             if (workflow) {
                 const firstStep = workflow.steps?.find((s: any) => s.step_order === 1);
 
                 await supabase.from('content_approval_instances').insert({
                     content_item_id: contentItem.id,
-                    workflow_id,
+                    workflow_id: workflow.id,
                     current_step_id: firstStep?.id || null,
                     status: 'pending',
                 });
@@ -255,9 +297,6 @@ export async function POST(request: NextRequest) {
 
     } catch (error) {
         console.error('Content items POST error:', error);
-        return NextResponse.json(
-            { error: 'Failed to create content item' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }

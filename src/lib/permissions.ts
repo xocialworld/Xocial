@@ -1,4 +1,4 @@
-export type UserRole = 'owner' | 'admin' | 'manager' | 'creator' | 'analyst' | 'client' | 'viewer' | 'editor';
+export type UserRole = 'owner' | 'admin' | 'manager' | 'creator' | 'analyst' | 'client' | 'viewer' | 'editor' | 'guest' | 'member';
 export type PermissionAction = 'create' | 'read' | 'update' | 'delete';
 export interface Permission {
   resource: string;
@@ -15,7 +15,18 @@ export interface WorkspaceMembership {
 /**
  * Role hierarchy (higher index = more permissions)
  */
-export const ROLE_HIERARCHY: UserRole[] = ['analyst', 'creator', 'manager', 'admin', 'owner'];
+export const ROLE_HIERARCHY: UserRole[] = ['client', 'analyst', 'creator', 'manager', 'admin', 'owner'];
+
+const ROLE_ALIASES: Partial<Record<UserRole, UserRole>> = {
+  guest: 'client',
+  viewer: 'analyst',
+  editor: 'creator',
+  member: 'creator',
+};
+
+function normalizeRole(role: UserRole): UserRole {
+  return ROLE_ALIASES[role] ?? role;
+}
 
 /**
  * Permission definitions for each role
@@ -59,6 +70,8 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   client: [{ resource: 'posts', actions: ['read'] }],
   viewer: [{ resource: 'posts', actions: ['read'] }],
   editor: [{ resource: 'posts', actions: ['create', 'read', 'update'] }],
+  guest: [{ resource: 'posts', actions: ['read'] }],
+  member: [{ resource: 'posts', actions: ['create', 'read', 'update'] }],
 };
 
 /**
@@ -90,8 +103,8 @@ export function hasPermission(
  * Check if a role is at least as high as the required role
  */
 export function hasRole(userRole: UserRole, requiredRole: UserRole): boolean {
-  const userRoleIndex = ROLE_HIERARCHY.indexOf(userRole);
-  const requiredRoleIndex = ROLE_HIERARCHY.indexOf(requiredRole);
+  const userRoleIndex = ROLE_HIERARCHY.indexOf(normalizeRole(userRole));
+  const requiredRoleIndex = ROLE_HIERARCHY.indexOf(normalizeRole(requiredRole));
   return userRoleIndex >= requiredRoleIndex;
 }
 
@@ -184,8 +197,8 @@ export function getHighestRole(workspaces: WorkspaceMembership[]): UserRole | nu
   if (workspaces.length === 0) return null;
 
   return workspaces.reduce((highest, current) => {
-    const currentIndex = ROLE_HIERARCHY.indexOf(current.role);
-    const highestIndex = ROLE_HIERARCHY.indexOf(highest);
+    const currentIndex = ROLE_HIERARCHY.indexOf(normalizeRole(current.role));
+    const highestIndex = ROLE_HIERARCHY.indexOf(normalizeRole(highest));
     return currentIndex > highestIndex ? current.role : highest;
   }, workspaces[0].role);
 }
@@ -231,4 +244,3 @@ export function RoleGuard({
   }
   return fallback;
 }
-

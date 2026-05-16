@@ -1,12 +1,10 @@
 import { NextRequest } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
   APIError,
-  getWorkspaceFromRequest,
-  checkWorkspaceAccess,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,13 +13,9 @@ export const dynamic = 'force-dynamic';
  * List members of the current user's workspace
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-
-  // Resolve the user's primary workspace
-  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
-
-  // Ensure user has at least viewer access (should always be true if getUserWorkspace succeeded)
-  await checkWorkspaceAccess(user.id, workspace.id).catch(() => null);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager', 'creator', 'analyst', 'client'],
+  });
 
   // Join workspace_members with profiles for display fields
   const { data, error } = await supabase
@@ -64,5 +58,4 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
 
   return successResponse({ members });
 });
-
 

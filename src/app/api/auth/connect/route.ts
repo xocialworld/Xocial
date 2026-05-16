@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     withErrorHandler,
-    requireAuth,
     APIError,
-    getWorkspaceFromRequest,
-    ensureUserProfile,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 import { generateState, storeOAuthState } from '@/lib/oauth/state-manager';
 import { getYouTubeAuthUrl } from '@/lib/oauth/youtube';
@@ -15,6 +13,7 @@ import { getTikTokAuthUrl } from '@/lib/oauth/tiktok';
 import { generatePKCE, getTwitterAuthUrl } from '@/lib/platforms/twitter';
 import { getInstagramAuthUrl } from '@/lib/oauth/instagram';
 import { OAUTH_CONFIG, OAuthPlatform } from '@/lib/oauth/oauth-config';
+import { getOAuthAppOrigin, sanitizeOAuthRedirect } from '@/lib/oauth/redirect';
 
 /**
  * GET /api/auth/connect?platform=youtube&redirect=/x
@@ -22,11 +21,10 @@ import { OAUTH_CONFIG, OAuthPlatform } from '@/lib/oauth/oauth-config';
  * Follows SRS pattern: /api/auth/connect
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-    const { user, supabase } = await requireAuth(request);
-
     const searchParams = request.nextUrl.searchParams;
     const platform = searchParams.get('platform') as OAuthPlatform;
-    const redirectUrl = searchParams.get('redirect') || '/x';
+    const appUrl = getOAuthAppOrigin(request);
+    const redirectUrl = sanitizeOAuthRedirect(searchParams.get('redirect'), appUrl);
 
     if (!platform) {
         throw new APIError(400, 'Platform parameter is required', 'MISSING_PLATFORM');
@@ -36,9 +34,21 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         throw new APIError(400, `Invalid platform: ${platform}`, 'INVALID_PLATFORM');
     }
 
-    // Ensure user has a workspace (and get the specific one if requested)
-    await ensureUserProfile(user, supabase);
-    const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+    const { user, workspace, usage, limits } = await requireWorkspaceContext(request, {
+        roles: ['owner', 'admin', 'manager'],
+    });
+
+    if (usage.social_profiles_count >= limits.max_social_profiles) {
+        throw new APIError(
+            402,
+            `Social account limit reached for your ${limits.plan} plan`,
+            'PLAN_LIMIT_EXCEEDED',
+            {
+                current: usage.social_profiles_count,
+                limit: limits.max_social_profiles,
+            }
+        );
+    }
 
     // Generate and store state for CSRF protection
     const state = generateState();
@@ -57,8 +67,6 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
 
     // Get authorization URL for the platform
     let authUrl: string;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin || 'http://localhost:3000';
-
     try {
         switch (platform) {
             case 'youtube':
@@ -84,6 +92,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
                         clientId: process.env.FACEBOOK_APP_ID!,
                         clientSecret: process.env.FACEBOOK_APP_SECRET!,
                         redirectUri: `${appUrl}/api/auth/facebook/callback`,
+                        configurationId: process.env.FACEBOOK_LOGIN_CONFIG_ID,
                     },
                     state,
                     false
@@ -91,17 +100,24 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
                 break;
 
             case 'instagram':
-                if (!process.env.INSTAGRAM_CLIENT_ID || !process.env.INSTAGRAM_CLIENT_SECRET) {
-                    throw new APIError(500, 'Instagram OAuth is not configured', 'INSTAGRAM_OAUTH_NOT_CONFIGURED');
+                {
+                    const instagramClientId = process.env.FACEBOOK_APP_ID;
+                    const instagramClientSecret = process.env.FACEBOOK_APP_SECRET;
+
+                    if (!instagramClientId || !instagramClientSecret) {
+                        throw new APIError(500, 'Instagram OAuth is not configured', 'INSTAGRAM_OAUTH_NOT_CONFIGURED');
+                    }
+
+                    authUrl = getInstagramAuthUrl(
+                        {
+                            clientId: instagramClientId,
+                            clientSecret: instagramClientSecret,
+                            redirectUri: `${appUrl}/api/auth/instagram/callback`,
+                            configurationId: process.env.INSTAGRAM_LOGIN_CONFIG_ID,
+                        },
+                        state
+                    );
                 }
-                authUrl = getInstagramAuthUrl(
-                    {
-                        clientId: process.env.INSTAGRAM_CLIENT_ID!,
-                        clientSecret: process.env.INSTAGRAM_CLIENT_SECRET!,
-                        redirectUri: `${appUrl}/api/auth/instagram/callback`,
-                    },
-                    state
-                );
                 break;
 
             case 'twitter':

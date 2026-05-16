@@ -1,13 +1,36 @@
 import { NextRequest } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
-  getWorkspaceFromRequest,
   getPagination,
   APIError,
-  checkWorkspaceAccess,
 } from '@/lib/api-middleware';
+import { decryptToken, encryptToken } from '@/lib/encryption';
+import {
+  enforceLimit,
+  requireWorkspaceContext,
+} from '@/lib/workspace-context';
+
+const SAFE_ACCOUNT_SELECT = [
+  'id',
+  'workspace_id',
+  'platform',
+  'account_id',
+  'account_name',
+  'account_handle',
+  'account_avatar',
+  'token_expires_at',
+  'connected_at',
+  'is_active',
+  'assigned_user_id',
+  'follower_count',
+  'last_synced_at',
+  'metadata',
+  'created_at',
+  'updated_at',
+].join(',');
+
+const SENSITIVE_KEY_PATTERN = /(access_token|refresh_token|token|secret|authorization|api_key)/i;
 
 type AccountMetricsRow = {
   social_account_id: string | null;
@@ -35,20 +58,71 @@ const DEFAULT_ACCOUNT_METRICS = {
   totalVideoViews: 0,
 };
 
+function sanitizeAccountMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeAccountMetadata);
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !SENSITIVE_KEY_PATTERN.test(key))
+      .map(([key, metadataValue]) => [key, sanitizeAccountMetadata(metadataValue)])
+  );
+}
+
+function sanitizeAccountResponse<T extends Record<string, any>>(account: T) {
+  const {
+    access_token: _accessToken,
+    refresh_token: _refreshToken,
+    ...safeAccount
+  } = account;
+
+  return {
+    ...safeAccount,
+    metadata: sanitizeAccountMetadata(safeAccount.metadata),
+  };
+}
+
+function encryptTokenIfNeeded(token: unknown): string | null | undefined {
+  if (token === null || token === undefined) {
+    return token;
+  }
+
+  if (typeof token !== 'string' || token.length === 0) {
+    throw new APIError(400, 'Invalid token value', 'VALIDATION_ERROR');
+  }
+
+  try {
+    decryptToken(token);
+    return token;
+  } catch {
+    return encryptToken(token);
+  }
+}
+
+function sanitizeWritableFields(fields: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(fields)
+      .filter(([key]) => key === 'token_expires_at' || !SENSITIVE_KEY_PATTERN.test(key))
+      .map(([key, value]) => [
+        key,
+        key === 'metadata' ? sanitizeAccountMetadata(value) : value,
+      ])
+  );
+}
+
 /**
  * GET /api/accounts - List user's social accounts
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
   const { page, limit, offset } = getPagination(request);
-
-  // Get user's workspace
-  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
-  const role = await checkWorkspaceAccess(user.id, workspace.id);
-
-  if (!['owner', 'admin', 'editor', 'viewer'].includes(role)) {
-    throw new APIError(403, 'You do not have permission to view accounts', 'FORBIDDEN');
-  }
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager', 'creator', 'analyst', 'client'],
+  });
 
   // Get social accounts
   const searchParams = request.nextUrl.searchParams;
@@ -58,13 +132,18 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
 
   let accountsQuery = supabase
     .from('social_accounts')
-    .select('*', { count: 'exact' })
+    .select(SAFE_ACCOUNT_SELECT, { count: 'exact' })
     .eq('workspace_id', workspace.id)
     .order('connected_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
   if (platformFilter) {
-    accountsQuery = accountsQuery.eq('platform', platformFilter);
+    const platforms = platformFilter.split(',').map((platform) => platform.trim()).filter(Boolean);
+    if (platforms.length > 1) {
+      accountsQuery = accountsQuery.in('platform', platforms);
+    } else if (platforms.length === 1) {
+      accountsQuery = accountsQuery.eq('platform', platforms[0]);
+    }
   }
 
   if (statusFilter === 'active') {
@@ -129,8 +208,9 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     console.warn('Failed to fetch metrics, continuing without them', e);
   }
 
-  const enrichedAccounts = (accounts || []).map((account) => ({
-    ...account,
+  const accountRows = (accounts || []) as unknown as Array<Record<string, any> & { id: string }>;
+  const enrichedAccounts = accountRows.map((account) => ({
+    ...sanitizeAccountResponse(account),
     metrics: metricsMap.get(account.id) ?? { ...DEFAULT_ACCOUNT_METRICS },
   }));
 
@@ -150,8 +230,6 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
  * POST /api/accounts - Create/connect a new social account
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-
   const body = await request.json();
   const { platform, account_id, account_name, access_token, refresh_token, ...otherFields } = body;
 
@@ -160,13 +238,13 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(400, 'Missing required fields', 'VALIDATION_ERROR');
   }
 
-  // Get user's workspace
-  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
-  const role = await checkWorkspaceAccess(user.id, workspace.id);
+  const { user, userClient: supabase, workspace, limits, usage } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager'],
+  });
 
-  if (!['owner', 'admin'].includes(role)) {
-    throw new APIError(403, 'You do not have permission to connect accounts', 'FORBIDDEN');
-  }
+  const encryptedAccessToken = encryptTokenIfNeeded(access_token);
+  const encryptedRefreshToken = encryptTokenIfNeeded(refresh_token);
+  const safeOtherFields = sanitizeWritableFields(otherFields);
 
   // Check if THIS specific account already exists in THIS workspace
   // We allow multiple accounts of the same platform, but not the EXACT SAME account twice.
@@ -184,22 +262,31 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       .from('social_accounts')
       .update({
         account_name,
-        access_token,
-        refresh_token,
+        access_token: encryptedAccessToken,
+        refresh_token: encryptedRefreshToken,
         is_active: true,
         updated_at: new Date().toISOString(),
-        ...otherFields
+        ...safeOtherFields
       })
       .eq('id', existing.id)
-      .select()
+      .select(SAFE_ACCOUNT_SELECT)
       .single();
 
     if (updateError) {
       throw new APIError(500, updateError.message, 'DATABASE_ERROR');
     }
 
-    return successResponse({ account: updatedAccount, message: 'Account re-connected successfully' });
+    return successResponse({
+      account: sanitizeAccountResponse(updatedAccount),
+      message: 'Account re-connected successfully',
+    });
   }
+
+  enforceLimit(
+    usage.social_profiles_count,
+    limits.max_social_profiles,
+    `Social account limit reached for your ${limits.plan} plan`
+  );
 
   // Create social account
   const { data: account, error } = await supabase
@@ -209,42 +296,35 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       platform,
       account_id,
       account_name,
-      access_token,
-      refresh_token,
+      access_token: encryptedAccessToken,
+      refresh_token: encryptedRefreshToken,
       is_active: true,
       assigned_user_id: user.id,
-      ...otherFields
+      ...safeOtherFields
     })
-    .select()
+    .select(SAFE_ACCOUNT_SELECT)
     .single();
 
   if (error) {
     throw new APIError(500, error.message, 'DATABASE_ERROR');
   }
 
-  return successResponse({ account }, { page: 1, limit: 1, total: 1 });
+  return successResponse({ account: sanitizeAccountResponse(account) }, { page: 1, limit: 1, total: 1 });
 });
 
 /**
  * DELETE /api/accounts/:id - Disconnect a social account
  */
 export const DELETE = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager'],
+  });
 
   const url = new URL(request.url);
-  const accountId = url.pathname.split('/').pop();
+  const accountId = url.searchParams.get('id') || url.pathname.split('/').pop();
 
-  if (!accountId) {
+  if (!accountId || accountId === 'accounts') {
     throw new APIError(400, 'Account ID is required', 'VALIDATION_ERROR');
-  }
-
-  // Get user's workspace
-  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
-
-  // Verify permission
-  const role = await checkWorkspaceAccess(user.id, workspace.id);
-  if (!['owner', 'admin'].includes(role)) {
-    throw new APIError(403, 'You do not have permission to disconnect accounts', 'FORBIDDEN');
   }
 
   // Deactivate the account (soft delete) or hard delete?

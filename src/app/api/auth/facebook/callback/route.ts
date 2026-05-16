@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     requireAuth,
-    getUserWorkspace,
     APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 import {
     exchangeFacebookCode,
@@ -12,6 +12,7 @@ import {
 } from '@/lib/oauth/facebook';
 import { verifyOAuthState } from '@/lib/oauth/state-manager';
 import { encryptToken } from '@/lib/encryption';
+import { buildOAuthRedirectUrl, getOAuthAppOrigin } from '@/lib/oauth/redirect';
 
 /**
  * GET /api/auth/facebook/callback
@@ -19,8 +20,11 @@ import { encryptToken } from '@/lib/encryption';
  * SRS Pattern: /api/auth/{platform}/callback
  */
 export async function GET(request: NextRequest) {
+    const origin = getOAuthAppOrigin(request);
+    let callbackRedirectUrl: string | undefined;
+
     try {
-        const { user, supabase } = await requireAuth(request);
+        const { user } = await requireAuth(request);
 
         const searchParams = request.nextUrl.searchParams;
         const code = searchParams.get('code');
@@ -48,8 +52,8 @@ export async function GET(request: NextRequest) {
                 'INVALID_STATE'
             );
         }
+        callbackRedirectUrl = stateVerification.redirectUrl;
 
-        const origin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin || 'http://localhost:3000';
         const config = {
             clientId: process.env.FACEBOOK_APP_ID!,
             clientSecret: process.env.FACEBOOK_APP_SECRET!,
@@ -80,13 +84,35 @@ export async function GET(request: NextRequest) {
             throw new APIError(404, 'No Facebook pages found for this account', 'NO_PAGES');
         }
 
-        // Get user's workspace context from state
-        let workspaceId = stateVerification.workspaceId;
-
+        const workspaceId = stateVerification.workspaceId;
         if (!workspaceId) {
-            logger.warn('[Facebook Callback] No workspaceId in state, falling back to default workspace');
-            const workspace = await getUserWorkspace(user.id, supabase);
-            workspaceId = workspace.id;
+            throw new APIError(
+                400,
+                'Workspace context is missing from OAuth state. Please restart the connection from the selected workspace.',
+                'WORKSPACE_REQUIRED'
+            );
+        }
+
+        const { userClient: workspaceSupabase, usage, limits } = await requireWorkspaceContext(request, {
+            workspaceId,
+            roles: ['owner', 'admin', 'manager'],
+        });
+
+        if (
+            limits.max_social_profiles !== null &&
+            limits.max_social_profiles !== undefined &&
+            usage.social_profiles_count + pages.length > limits.max_social_profiles
+        ) {
+            throw new APIError(
+                402,
+                `Connecting these pages would exceed your ${limits.plan} social account limit`,
+                'PLAN_LIMIT_EXCEEDED',
+                {
+                    current: usage.social_profiles_count,
+                    adding: pages.length,
+                    limit: limits.max_social_profiles,
+                }
+            );
         }
 
         logger.info(`[Facebook Callback] Target workspace ID: ${workspaceId}`);
@@ -97,8 +123,9 @@ export async function GET(request: NextRequest) {
                 logger.info(`[Facebook Callback] Processing page: ${page.name} (${page.id})`);
 
                 const encryptedAccessToken = encryptToken(page.access_token);
+                const encryptedUserToken = encryptToken(longLivedToken.access_token);
 
-                const { data, error } = await supabase
+                const { data, error } = await workspaceSupabase
                     .from('social_accounts')
                     .upsert(
                         {
@@ -111,7 +138,7 @@ export async function GET(request: NextRequest) {
                             account_avatar: page.picture?.data?.url,
                             follower_count: page.fan_count || 0,
                             access_token: encryptedAccessToken,
-                            refresh_token: null, // Facebook uses long-lived tokens
+                            refresh_token: encryptedUserToken,
                             token_expires_at: new Date(
                                 Date.now() + (longLivedToken.expires_in || 5184000) * 1000
                             ).toISOString(),
@@ -119,7 +146,9 @@ export async function GET(request: NextRequest) {
                             is_active: true,
                             metadata: {
                                 category: page.category,
-                                tasks: page.tasks,
+                                page_tasks: page.tasks || [],
+                                category_list: page.category_list || [],
+                                connected_via: 'facebook_login',
                             },
                         },
                         {
@@ -142,25 +171,25 @@ export async function GET(request: NextRequest) {
         logger.info(`[Facebook Callback] Successfully stored ${accounts.length} accounts`);
 
         // Redirect to the original redirect URL with success message
-        const redirectUrl = stateVerification.redirectUrl || '/x';
-        const successUrl = new URL(redirectUrl, origin);
-        successUrl.searchParams.set('success', 'facebook_connected');
-        successUrl.searchParams.set('accounts', accounts.length.toString());
+        const successUrl = buildOAuthRedirectUrl(callbackRedirectUrl, origin, {
+            success: 'facebook_connected',
+            accounts: accounts.length,
+        });
 
         return NextResponse.redirect(successUrl.toString());
     } catch (error) {
         console.error('[Facebook Callback] Error:', error);
 
-        const origin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin || 'http://localhost:3000';
-        const errorUrl = new URL('/x', origin);
+        const errorMessage =
+            error instanceof APIError
+                ? error.message
+                : error instanceof Error
+                    ? error.message
+                    : 'Failed to connect Facebook account';
 
-        if (error instanceof APIError) {
-            errorUrl.searchParams.set('error', error.message);
-        } else if (error instanceof Error) {
-            errorUrl.searchParams.set('error', error.message);
-        } else {
-            errorUrl.searchParams.set('error', 'Failed to connect Facebook account');
-        }
+        const errorUrl = buildOAuthRedirectUrl(callbackRedirectUrl, origin, {
+            error: errorMessage,
+        });
 
         return NextResponse.redirect(errorUrl.toString());
     }

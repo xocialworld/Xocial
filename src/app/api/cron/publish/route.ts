@@ -98,6 +98,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
     // 3. Posts marked for retry that are past their retry time
     const now = new Date();
     const stuckThreshold = new Date(now.getTime() - 5 * 60 * 1000); // 5 minutes ago
+    const readyForPublishingFilter = `and(status.eq.scheduled,scheduled_at.lte.${now.toISOString()}),and(status.eq.publishing,updated_at.lte.${stuckThreshold.toISOString()})`;
 
     const { data: scheduledPosts, error: fetchError } = await supabase
       .from('posts')
@@ -106,7 +107,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
         workspace:workspaces!inner(id, name),
         social_account:social_accounts(*)
       `)
-      .or(`and(status.eq.scheduled,scheduled_at.lte.${now.toISOString()}),and(status.eq.publishing,updated_at.lte.${stuckThreshold.toISOString()})`)
+      .or(readyForPublishingFilter)
       .order('scheduled_at', { ascending: true })
       .limit(50); // Process max 50 posts per run
 
@@ -155,7 +156,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
             updated_at: new Date().toISOString(),
           })
           .eq('id', post.id)
-          .in('status', ['scheduled', 'publishing']) // Allow re-processing stuck posts
+          .or(readyForPublishingFilter)
           .select()
           .single();
 
@@ -266,7 +267,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
           await supabase
             .from('posts')
             .update({
-              status: 'partial_failure',
+              status: 'partial',
               published_at: publishedAt,
               error_message: `Published to ${successfulPlatforms.join(', ')}. Failed: ${errors.join('; ')}`,
               external_post_id: JSON.stringify(externalIds),

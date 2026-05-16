@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { withErrorHandler, requireAuth, successResponse, APIError } from '@/lib/api-middleware';
+import { withErrorHandler, successResponse, APIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { createFacebookClient } from '@/lib/platforms/facebook';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +12,7 @@ export const GET = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
-  const { user, supabase } = await requireAuth(request);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
   const { id: postId } = await params;
   
   // Get post and verify access
@@ -19,19 +20,10 @@ export const GET = withErrorHandler(async (
     .from('posts')
     .select('*, workspace_id')
     .eq('id', postId)
+    .eq('workspace_id', workspace.id)
     .single();
   
   if (!post) throw new APIError(404, 'Post not found');
-  
-  // Verify workspace access
-  const { data: member } = await supabase
-    .from('workspace_members')
-    .select('id')
-    .eq('workspace_id', post.workspace_id)
-    .eq('user_id', user.id)
-    .single();
-  
-  if (!member) throw new APIError(403, 'Access denied');
   
   // Get Facebook account
   const { data: account } = await supabase
@@ -65,7 +57,7 @@ export const POST = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
-  const { user, supabase } = await requireAuth(request);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
   const body = await request.json();
   const { action, commentId, message } = body;
   
@@ -75,18 +67,10 @@ export const POST = withErrorHandler(async (
     .from('posts')
     .select('*, workspace_id')
     .eq('id', postId)
+    .eq('workspace_id', workspace.id)
     .single();
   
   if (!post) throw new APIError(404, 'Post not found');
-  
-  const { data: member } = await supabase
-    .from('workspace_members')
-    .select('id')
-    .eq('workspace_id', post.workspace_id)
-    .eq('user_id', user.id)
-    .single();
-  
-  if (!member) throw new APIError(403, 'Access denied');
   
   const { data: account } = await supabase
     .from('social_accounts')
@@ -121,4 +105,3 @@ export const POST = withErrorHandler(async (
   
   return successResponse({ result });
 });
-

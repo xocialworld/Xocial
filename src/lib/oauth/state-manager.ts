@@ -47,17 +47,21 @@ function fallbackKey(userId: string, platform: string) {
 }
 
 function cacheFallbackState(stateData: OAuthState) {
-  fallbackStore.set(fallbackKey(stateData.userId, stateData.platform), stateData);
+  fallbackStore.set(stateData.state, stateData);
 }
 
 function clearFallbackState(userId: string, platform: string) {
-  fallbackStore.delete(fallbackKey(userId, platform));
+  for (const [key, state] of fallbackStore.entries()) {
+    if (state.userId === userId && state.platform === platform) {
+      fallbackStore.delete(key);
+    }
+  }
 }
 
-function getFallbackState(userId: string, platform: string): OAuthState | null {
-  const state = fallbackStore.get(fallbackKey(userId, platform));
+function getFallbackState(userId: string, platform: string, stateToken: string): OAuthState | null {
+  const state = fallbackStore.get(stateToken);
 
-  if (!state) {
+  if (!state || state.userId !== userId || state.platform !== platform) {
     return null;
   }
 
@@ -76,6 +80,15 @@ function isMissingOAuthColumn(error: PostgrestError | null): boolean {
 
   const message = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
   return message.includes('oauth_state') && message.includes('column');
+}
+
+function isMissingOAuthStatesTable(error: PostgrestError | null): boolean {
+  if (!error) {
+    return false;
+  }
+
+  const message = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
+  return message.includes('oauth_states') || error.code === '42P01';
 }
 
 function validateStateRecord(
@@ -158,6 +171,39 @@ export async function storeOAuthState(
 
   clearFallbackState(userId, platform);
 
+  const { error: deleteError } = await supabase
+    .from('oauth_states')
+    .delete()
+    .eq('user_id', userId)
+    .eq('platform', platform);
+
+  if (!deleteError || !isMissingOAuthStatesTable(deleteError)) {
+    if (deleteError) {
+      throw new Error(`Failed to clear previous OAuth states: ${deleteError.message}`);
+    }
+
+    const { error: insertError } = await supabase
+      .from('oauth_states')
+      .insert({
+        user_id: userId,
+        workspace_id: options?.workspaceId || null,
+        platform,
+        state,
+        redirect_url: redirectUrl || null,
+        pkce_verifier: options?.pkceVerifier || null,
+        expires_at: new Date(Date.now() + STATE_EXPIRY_MS).toISOString(),
+      });
+
+    if (!insertError) {
+      console.log(`${FALLBACK_LOG_PREFIX} Successfully stored OAuth state row`);
+      return;
+    }
+
+    if (!isMissingOAuthStatesTable(insertError)) {
+      throw new Error(`Failed to store OAuth state: ${insertError.message}`);
+    }
+  }
+
   const { error } = await supabase
     .from('profiles')
     .update({
@@ -168,7 +214,7 @@ export async function storeOAuthState(
   if (error) {
     if (isMissingOAuthColumn(error)) {
       console.warn(
-        `${FALLBACK_LOG_PREFIX} profiles.oauth_state missing; using in-memory fallback store. Did you run the latest Supabase migrations?`
+        `${FALLBACK_LOG_PREFIX} oauth state storage missing; using in-memory fallback store. Did you run the latest Supabase migrations?`
       );
       cacheFallbackState(stateData);
       return;
@@ -201,6 +247,43 @@ export async function verifyOAuthState(
   }
 
   const supabase = await getSupabaseClient();
+
+  const { data: stateRow, error: stateError } = await supabase
+    .from('oauth_states')
+    .select('state, user_id, platform, created_at, redirect_url, pkce_verifier, workspace_id, expires_at')
+    .eq('state', state)
+    .eq('user_id', userId)
+    .eq('platform', platform)
+    .maybeSingle();
+
+  if (!stateError && stateRow) {
+    const expiresAt = new Date(stateRow.expires_at as string).getTime();
+    const storedState: OAuthState = {
+      state: stateRow.state as string,
+      userId: stateRow.user_id as string,
+      platform: stateRow.platform as string,
+      createdAt: new Date(stateRow.created_at as string).getTime(),
+      redirectUrl: (stateRow.redirect_url as string | null) || undefined,
+      pkceVerifier: (stateRow.pkce_verifier as string | null) || undefined,
+      workspaceId: (stateRow.workspace_id as string | null) || undefined,
+    };
+
+    const validation = expiresAt <= Date.now()
+      ? { valid: false, error: 'State has expired' }
+      : validateStateRecord(storedState, platform, state);
+
+    if (validation.valid) {
+      await supabase.from('oauth_states').delete().eq('state', state);
+      clearFallbackState(userId, platform);
+    }
+
+    return validation;
+  }
+
+  if (stateError && !isMissingOAuthStatesTable(stateError)) {
+    console.log(`${FALLBACK_LOG_PREFIX} oauth_states query error:`, stateError.message);
+    return { valid: false, error: 'Failed to retrieve OAuth state' };
+  }
 
   const { data: profile, error } = await supabase
     .from('profiles')
@@ -270,7 +353,7 @@ function verifyWithFallback(
   platform: string,
   state: string
 ): { valid: boolean; redirectUrl?: string; pkceVerifier?: string; workspaceId?: string; error?: string } {
-  const cachedState = getFallbackState(userId, platform);
+  const cachedState = getFallbackState(userId, platform, state);
 
   if (!cachedState) {
     return { valid: false, error: 'No OAuth state found' };
@@ -297,4 +380,3 @@ async function clearDatabaseState(supabase: Awaited<ReturnType<typeof createClie
     console.warn(`${FALLBACK_LOG_PREFIX} failed to clear oauth_state column`, error.message);
   }
 }
-

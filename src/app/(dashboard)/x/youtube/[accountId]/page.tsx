@@ -8,22 +8,28 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Youtube, ArrowLeft, RefreshCw, TrendingUp, Eye, Upload, ThumbsUp, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
+import { fetchWithWorkspace } from '@/lib/fetch-with-workspace';
+import { useSelectedWorkspace } from '@/store/workspaceStore';
 
 export default function YouTubePageDetailPage() {
     const params = useParams();
     const router = useRouter();
     const accountId = params.accountId as string;
+    const selectedWorkspace = useSelectedWorkspace();
 
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
 
     const fetchPageData = useCallback(async () => {
+        if (!selectedWorkspace?.id) return;
+
         try {
             setLoading(true);
+            const workspaceFetchOptions = { workspaceId: selectedWorkspace.id };
             const [accountRes, postsRes] = await Promise.all([
-                fetch(`/api/accounts/${accountId}`),
-                fetch(`/api/posts?accountId=${accountId}&limit=20`),
+                fetchWithWorkspace(`/api/accounts/${accountId}`, workspaceFetchOptions),
+                fetchWithWorkspace(`/api/posts?account_id=${encodeURIComponent(accountId)}&limit=20`, workspaceFetchOptions),
             ]);
 
             if (!accountRes.ok) throw new Error('Failed to fetch account');
@@ -33,14 +39,14 @@ export default function YouTubePageDetailPage() {
 
             setData({
                 account: accountData.data,
-                posts: postsData.data || [],
+                posts: postsData.data?.posts || postsData.posts || [],
             });
         } catch (error: any) {
             toast.error('Failed to load page data');
         } finally {
             setLoading(false);
         }
-    }, [accountId]);
+    }, [accountId, selectedWorkspace?.id]);
 
     useEffect(() => {
         if (accountId) {

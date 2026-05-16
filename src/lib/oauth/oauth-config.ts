@@ -39,7 +39,6 @@ export const OAUTH_CONFIG: Record<OAuthPlatform, {
     },
     facebook: {
         scopes: [
-            'email',
             'pages_show_list',
             'pages_read_engagement',
             'pages_manage_posts',
@@ -58,11 +57,14 @@ export const OAUTH_CONFIG: Record<OAuthPlatform, {
             'instagram_content_publish',
             'pages_show_list',
             'pages_read_engagement',
+            'pages_manage_posts',
+            'pages_read_user_content',
+            'pages_manage_engagement',
         ],
         endpoints: {
-            auth: 'https://www.facebook.com/v18.0/dialog/oauth',
-            token: 'https://graph.facebook.com/v18.0/oauth/access_token',
-            user: 'https://graph.facebook.com/v18.0/me',
+            auth: 'https://www.facebook.com/v24.0/dialog/oauth',
+            token: 'https://graph.facebook.com/v24.0/oauth/access_token',
+            user: 'https://graph.facebook.com/v24.0/me',
         },
     },
     twitter: {

@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
-  getUserWorkspace,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { getYouTubeVideoComments, replyToYouTubeComment } from '@/lib/oauth/youtube';
 import { decryptToken } from '@/lib/encryption';
 import { z } from 'zod';
@@ -14,7 +13,7 @@ import { z } from 'zod';
  * Fetch comments for a YouTube video
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
   
   const searchParams = request.nextUrl.searchParams;
   const videoId = searchParams.get('videoId');
@@ -28,9 +27,6 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   if (!accountId) {
     throw new APIError(400, 'accountId parameter is required', 'MISSING_ACCOUNT_ID');
   }
-  
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
   
   // Get YouTube account
   const { data: account, error: accountError } = await supabase
@@ -96,7 +92,7 @@ const replySchema = z.object({
 });
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
   
   // Parse and validate request body
   const body = await request.json();
@@ -109,9 +105,6 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   }
   
   const { accountId, commentId, replyText } = validation.data;
-  
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
   
   // Get YouTube account
   const { data: account, error: accountError } = await supabase
@@ -144,4 +137,3 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 });
 
 export const runtime = 'nodejs';
-

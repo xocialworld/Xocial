@@ -1,8 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { useSelectedWorkspace } from '@/store/workspaceStore';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useHasHydrated, useSelectedWorkspace } from '@/store/workspaceStore';
+import { fetchWithWorkspace, requireHydratedWorkspaceId } from '@/lib/fetch-with-workspace';
 import type { SocialAccount, Platform } from '@/types';
 export type { SocialAccount, Platform };
+
+type AccountsApiResponse = {
+  success: boolean;
+  data?: {
+    accounts?: SocialAccount[];
+  };
+  error?: {
+    message?: string;
+  };
+};
 
 export interface UseAccountsOptions {
   platform?: string;
@@ -27,17 +37,37 @@ export function useAccounts(platformOrOptions?: Platform | UseAccountsOptions): 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const workspace = useSelectedWorkspace();
+  const hasHydrated = useHasHydrated();
+  const workspaceId = workspace?.id;
+  const requestIdRef = useRef(0);
 
   // Memoize options to prevent infinite loops if object is passed inline
   const optionsKey = JSON.stringify(platformOrOptions);
+  const options = useMemo<UseAccountsOptions>(() => {
+    if (!optionsKey) {
+      return {};
+    }
+
+    const parsedOptions = JSON.parse(optionsKey) as Platform | UseAccountsOptions | null;
+    if (!parsedOptions) {
+      return {};
+    }
+
+    return typeof parsedOptions === 'string'
+      ? { platform: parsedOptions }
+      : parsedOptions;
+  }, [optionsKey]);
 
   const fetchAccounts = useCallback(async () => {
-    // Parse options inside callback
-    const options: UseAccountsOptions = typeof platformOrOptions === 'object'
-      ? platformOrOptions as UseAccountsOptions
-      : { platform: platformOrOptions };
+    const requestId = ++requestIdRef.current;
 
-    if (!workspace) {
+    if (!hasHydrated) {
+      return;
+    }
+
+    if (!workspaceId) {
+      setAccounts([]);
+      setError(null);
       setLoading(false);
       return;
     }
@@ -46,127 +76,111 @@ export function useAccounts(platformOrOptions?: Platform | UseAccountsOptions): 
       setLoading(true);
       setError(null);
 
-      const supabase = createClient();
+      const params = new URLSearchParams({
+        workspaceId,
+        limit: '100',
+      });
 
-      // Build query
-      let query = supabase
-        .from('social_accounts')
-        .select('*')
-        .eq('workspace_id', workspace.id)
-        .order('created_at', { ascending: false });
-
-      // Apply status filter
-      if (options.status) {
-        if (options.status === 'active') query = query.eq('is_active', true);
-        else if (options.status === 'inactive') query = query.eq('is_active', false);
-        // if 'all' or undefined, don't filter
-      } else {
-        // Default behavior: show only active accounts
-        query = query.eq('is_active', true);
-      }
-
-      // Apply platform filter
       if (options.platform) {
-        const platforms = options.platform.split(',').map(p => p.trim());
-        if (platforms.length > 0) {
-          query = query.in('platform', platforms);
-        }
+        params.set('platform', options.platform);
       }
 
-      const { data, error: fetchError } = await query;
+      if (options.status === 'active' || options.status === 'inactive') {
+        params.set('status', options.status);
+      } else if (!options.status) {
+        // Preserve previous hook behavior: active accounts are the default view.
+        params.set('status', 'active');
+      }
 
-      if (fetchError) throw fetchError;
+      const response = await fetchWithWorkspace(`/api/accounts?${params.toString()}`, {
+        method: 'GET',
+        workspaceId,
+        headers: { 'Accept': 'application/json' },
+      });
+      const payload = (await response.json()) as AccountsApiResponse;
 
-      // Map Supabase response (nulls) to TypeScript interface (undefined)
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error?.message || 'Failed to fetch accounts');
+      }
+
+      // Map API response (nulls) to TypeScript interface (undefined)
       // This ensures compatibility with shared types
-      const mappedAccounts: SocialAccount[] = (data || []).map((acc: any) => ({
+      const mappedAccounts: SocialAccount[] = (payload.data?.accounts || []).map((acc: any) => ({
         ...acc,
         account_handle: acc.account_handle || undefined,
         account_avatar: acc.account_avatar || undefined,
-        refresh_token: acc.refresh_token || undefined,
         token_expires_at: acc.token_expires_at || undefined,
         last_synced_at: acc.last_synced_at || undefined,
         metrics: acc.metrics || undefined,
         metadata: acc.metadata || undefined,
       }));
 
-      setAccounts(mappedAccounts);
+      if (requestId === requestIdRef.current) {
+        setAccounts(mappedAccounts);
+      }
     } catch (err) {
       console.error('[useAccounts] Error:', err);
-      setError(err instanceof Error ? err : new Error('Failed to fetch accounts'));
+      if (requestId === requestIdRef.current) {
+        setError(err instanceof Error ? err : new Error('Failed to fetch accounts'));
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
-  }, [optionsKey, workspace]);
+  }, [hasHydrated, options, workspaceId]);
 
   useEffect(() => {
     fetchAccounts();
   }, [fetchAccounts]);
 
-  // Realtime subscription
-  useEffect(() => {
-    if (!workspace?.id) {
-      return;
-    }
-
-    const supabase = createClient();
-    const channelName = `social-accounts-realtime:${workspace.id}`;
-
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'social_accounts',
-          filter: `workspace_id=eq.${workspace.id}`,
-        },
-        () => {
-          fetchAccounts();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [workspace?.id, fetchAccounts]);
-
   const syncAccount = useCallback(async (accountId: string) => {
     try {
-      const response = await fetch('/api/sync/engagement', {
+      const activeWorkspaceId = requireHydratedWorkspaceId(workspaceId);
+      const response = await fetchWithWorkspace('/api/sync/engagement', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountId }),
+        workspaceId: activeWorkspaceId,
+        body: JSON.stringify({ accountId, workspaceId: activeWorkspaceId }),
       });
 
-      if (!response.ok) throw new Error('Failed to sync account');
+      const payload = await response.json().catch(() => null) as AccountsApiResponse | null;
+
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error?.message || 'Failed to sync account');
+      }
 
       await fetchAccounts();
     } catch (err) {
       console.error('Sync failed', err);
       throw err;
     }
-  }, [fetchAccounts]);
+  }, [fetchAccounts, workspaceId]);
 
   const disconnectAccount = useCallback(async (accountId: string) => {
     try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from('social_accounts')
-        .update({ is_active: false })
-        .eq('id', accountId)
-        .eq('workspace_id', workspace?.id); // Extra safety
+      const activeWorkspaceId = requireHydratedWorkspaceId(workspaceId);
+      const params = new URLSearchParams({
+        id: accountId,
+        workspaceId: activeWorkspaceId,
+      });
 
-      if (error) throw error;
+      const response = await fetchWithWorkspace(`/api/accounts?${params.toString()}`, {
+        method: 'DELETE',
+        workspaceId: activeWorkspaceId,
+        headers: { 'Accept': 'application/json' },
+      });
+      const payload = await response.json().catch(() => null) as AccountsApiResponse | null;
+
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error?.message || 'Failed to disconnect account');
+      }
 
       await fetchAccounts();
     } catch (err) {
       console.error('Disconnect failed', err);
       throw err;
     }
-  }, [fetchAccounts, workspace?.id]);
+  }, [fetchAccounts, workspaceId]);
 
   return {
     accounts,

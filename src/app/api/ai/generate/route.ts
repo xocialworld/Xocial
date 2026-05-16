@@ -1,13 +1,12 @@
 import { NextRequest } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
-  getUserWorkspace,
   validateRequest,
   APIError,
   enforceUserRateLimit,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { generateContent } from '@/lib/openai';
 import { logger } from '@/lib/logger';
 import type { Platform } from '@/types';
@@ -57,19 +56,17 @@ const generateSchema = z.object({
  * Generate AI content for social media
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-
   // Validate request
   const validatedData = await validateRequest(request, generateSchema);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager', 'creator'],
+  });
 
   const defaultPlatform: Platform = 'instagram';
   const platforms: Platform[] =
     validatedData.platforms ??
     (validatedData.platform ? [validatedData.platform] : [defaultPlatform]);
   const resolvedModel = validatedData.model ?? DEFAULT_AI_MODEL;
-
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
 
   const startTime = Date.now();
 
@@ -175,4 +172,3 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 
   return response;
 });
-

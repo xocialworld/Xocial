@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { withErrorHandler, requireAuth, successResponse, getUserWorkspace } from '@/lib/api-middleware';
+import { withErrorHandler, successResponse } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { createFacebookClient } from '@/lib/platforms/facebook';
 
 export const dynamic = 'force-dynamic';
@@ -9,8 +10,7 @@ export const dynamic = 'force-dynamic';
  * Fetch Facebook page demographics (age, gender, location)
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-  const workspace = await getUserWorkspace(user.id, supabase);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
   
   // Get Facebook account
   const { data: account } = await supabase
@@ -30,4 +30,3 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   
   return successResponse({ demographics });
 });
-

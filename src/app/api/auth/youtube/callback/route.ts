@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     requireAuth,
-    getUserWorkspace,
     APIError,
     ensureUserProfile,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 import {
     exchangeYouTubeCode,
@@ -136,13 +136,35 @@ export async function GET(request: NextRequest) {
         // Ensure profile exists to satisfy RLS before workspace resolution
         await ensureUserProfile(user, supabase);
 
-        // Get user's workspace context from state
-        let workspaceId = stateVerification.workspaceId;
-
+        const workspaceId = stateVerification.workspaceId;
         if (!workspaceId) {
-            logger.warn('[YouTube Callback] No workspaceId in state, falling back to default workspace');
-            const workspace = await getUserWorkspace(user.id, supabase);
-            workspaceId = workspace.id;
+            throw new APIError(
+                400,
+                'Workspace context is missing from OAuth state. Please restart the connection from the selected workspace.',
+                'WORKSPACE_REQUIRED'
+            );
+        }
+
+        const { userClient: workspaceSupabase, usage, limits } = await requireWorkspaceContext(request, {
+            workspaceId,
+            roles: ['owner', 'admin', 'manager'],
+        });
+
+        if (
+            limits.max_social_profiles !== null &&
+            limits.max_social_profiles !== undefined &&
+            usage.social_profiles_count + channels.length > limits.max_social_profiles
+        ) {
+            throw new APIError(
+                402,
+                `Connecting these channels would exceed your ${limits.plan} social account limit`,
+                'PLAN_LIMIT_EXCEEDED',
+                {
+                    current: usage.social_profiles_count,
+                    adding: channels.length,
+                    limit: limits.max_social_profiles,
+                }
+            );
         }
 
         logger.info(`[YouTube Callback] Target workspace ID: ${workspaceId}`);
@@ -161,7 +183,7 @@ export async function GET(request: NextRequest) {
                     ? encryptToken(tokenResponse.refresh_token)
                     : null;
 
-                const { data, error } = await supabase
+                const { data, error } = await workspaceSupabase
                     .from('social_accounts')
                     .upsert(
                         {
@@ -220,7 +242,7 @@ export async function GET(request: NextRequest) {
 
         accounts.forEach(account => {
             // Trigger full sync asynchronously (don't await to avoid blocking redirect)
-            const syncUrl = `${appUrl}/api/youtube/sync?accountId=${account.id}&type=full`;
+            const syncUrl = `${appUrl}/api/youtube/sync?accountId=${account.id}&workspaceId=${workspaceId}&type=full`;
             fetch(syncUrl, {
                 method: 'POST',
                 headers: {

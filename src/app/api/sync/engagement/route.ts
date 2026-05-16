@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { handleAPIError, APIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { createFacebookClient } from '@/lib/platforms/facebook';
 import { createInstagramClient } from '@/lib/platforms/instagram';
 import { createTwitterClient } from '@/lib/platforms/twitter';
@@ -14,33 +15,15 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      throw new APIError(401, 'Unauthorized');
-    }
-
-    // Get user's workspace
-    const { data: workspaceMember } = await supabase
-      .from('workspace_members')
-      .select('workspace_id')
-      .eq('user_id', user.id)
-      .single();
-
-    if (!workspaceMember) {
-      throw new APIError(404, 'No workspace found');
-    }
+    const { userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+      roles: ['owner', 'admin', 'manager'],
+    });
 
     // Get all platform posts that need syncing (published in last 30 days)
     const { data: platformPosts, error: postsError } = await supabase
       .from('platform_posts')
       .select('*, posts!inner(workspace_id)')
-      .eq('posts.workspace_id', workspaceMember.workspace_id)
+      .eq('posts.workspace_id', workspace.id)
       .eq('status', 'published')
       .gte('published_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
       .order('published_at', { ascending: false })

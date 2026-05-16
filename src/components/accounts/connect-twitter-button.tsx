@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Twitter } from 'lucide-react';
 import { toast } from 'sonner';
+import { useWorkspaceContext } from '@/hooks/use-workspace-fetch';
+import { getWorkspaceNotReadyMessage } from '@/lib/fetch-with-workspace';
 
 interface ConnectTwitterButtonProps {
     redirectPath?: string;
@@ -19,12 +21,22 @@ export function ConnectTwitterButton({
     className,
 }: ConnectTwitterButtonProps) {
     const [isConnecting, setIsConnecting] = useState(false);
+    const { workspaceId, isReady, hasHydrated } = useWorkspaceContext();
 
     const handleConnect = async () => {
+        if (!isReady || !workspaceId) {
+            toast.error(getWorkspaceNotReadyMessage(hasHydrated));
+            return;
+        }
+
         setIsConnecting(true);
         try {
-            const url = `/api/auth/connect?platform=twitter&redirect=${encodeURIComponent(redirectPath)}`;
-            window.location.href = url;
+            const params = new URLSearchParams({
+                platform: 'twitter',
+                redirect: redirectPath,
+                workspaceId,
+            });
+            window.location.href = `/api/auth/connect?${params.toString()}`;
         } catch (error) {
             toast.error('Failed to initiate Twitter connection');
             setIsConnecting(false);
@@ -34,7 +46,8 @@ export function ConnectTwitterButton({
     return (
         <Button
             onClick={handleConnect}
-            disabled={isConnecting}
+            disabled={isConnecting || !isReady}
+            title={!isReady ? getWorkspaceNotReadyMessage(hasHydrated) : undefined}
             variant={variant}
             size={size}
             className={className}

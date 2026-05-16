@@ -6,29 +6,57 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { APIError, handleAPIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
+
+async function assertCommentTargetInWorkspace(
+    supabase: any,
+    workspaceId: string,
+    contentItemId: string
+) {
+    const { data: contentItem, error: contentItemError } = await supabase
+        .from('content_items')
+        .select('id')
+        .eq('id', contentItemId)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+
+    if (contentItemError && contentItemError.code !== '42P01') {
+        throw new APIError(500, contentItemError.message, 'DATABASE_ERROR');
+    }
+
+    if (contentItem) {
+        return;
+    }
+
+    const { data: post, error: postError } = await supabase
+        .from('posts')
+        .select('id')
+        .eq('id', contentItemId)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+
+    if (postError && postError.code !== '42P01') {
+        throw new APIError(500, postError.message, 'DATABASE_ERROR');
+    }
+
+    if (!post) {
+        throw new APIError(
+            400,
+            'Comment target does not belong to the selected workspace',
+            'INVALID_WORKSPACE_RESOURCE'
+        );
+    }
+}
 
 // GET - Fetch comments for a content item
 export async function GET(request: NextRequest) {
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
         const searchParams = request.nextUrl.searchParams;
         const contentItemId = searchParams.get('content_item_id');
-        const workspaceId = searchParams.get('workspace_id');
         const commentId = searchParams.get('id');
-
-        if (!contentItemId && !workspaceId && !commentId) {
-            return NextResponse.json(
-                { error: 'content_item_id, workspace_id, or id is required' },
-                { status: 400 }
-            );
-        }
 
         // Build query
         let query = supabase
@@ -45,6 +73,7 @@ export async function GET(request: NextRequest) {
           full_name
         )
       `)
+            .eq('workspace_id', workspace.id)
             .order('created_at', { ascending: true });
 
         if (commentId) {
@@ -53,10 +82,6 @@ export async function GET(request: NextRequest) {
         if (contentItemId) {
             query = query.eq('content_item_id', contentItemId);
         }
-        if (workspaceId) {
-            query = query.eq('workspace_id', workspaceId);
-        }
-
         const { data: comments, error } = await query;
 
         if (error) {
@@ -78,22 +103,14 @@ export async function GET(request: NextRequest) {
 
     } catch (error) {
         console.error('Comments GET error:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch comments' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }
 
 // POST - Create a new comment
 export async function POST(request: NextRequest) {
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
         const body = await request.json();
         const {
@@ -105,26 +122,31 @@ export async function POST(request: NextRequest) {
             mentions = [],
         } = body;
 
-        if (!content_item_id || !workspace_id || !commentBody?.trim()) {
+        if (!content_item_id || !commentBody?.trim()) {
             return NextResponse.json(
-                { error: 'content_item_id, workspace_id, and body are required' },
+                { error: 'content_item_id and body are required' },
                 { status: 400 }
             );
         }
 
-        // Verify user has access to the workspace
-        const { data: membership } = await supabase
-            .from('workspace_members')
-            .select('role')
-            .eq('workspace_id', workspace_id)
-            .eq('user_id', user.id)
-            .single();
+        if (workspace_id && workspace_id !== workspace.id) {
+            throw new APIError(400, 'workspace_id must match the selected workspace');
+        }
 
-        if (!membership) {
-            return NextResponse.json(
-                { error: 'Not a member of this workspace' },
-                { status: 403 }
-            );
+        await assertCommentTargetInWorkspace(supabase, workspace.id, content_item_id);
+
+        if (parent_id) {
+            const { data: parentComment, error: parentError } = await supabase
+                .from('content_comments')
+                .select('id')
+                .eq('id', parent_id)
+                .eq('workspace_id', workspace.id)
+                .eq('content_item_id', content_item_id)
+                .maybeSingle();
+
+            if (parentError || !parentComment) {
+                throw new APIError(400, 'Parent comment does not belong to the selected workspace');
+            }
         }
 
         // Create comment
@@ -132,7 +154,7 @@ export async function POST(request: NextRequest) {
             .from('content_comments')
             .insert({
                 content_item_id,
-                workspace_id,
+                workspace_id: workspace.id,
                 author_id: user.id,
                 body: commentBody.trim(),
                 parent_id: parent_id || null,
@@ -159,7 +181,6 @@ export async function POST(request: NextRequest) {
 
         // Send notifications
         // 1. Notify mentioned users
-        const mentionRegex = /@\[([^\]]+)\]\(([^)]+)\)/g; // Matches @[Name](userId) used by many editors, or adapt to frontend format
         // Assuming simple mentions array is passed or we parse body. 
         // The frontend passes 'mentions' array in body, let's use that for reliability if available.
         const mentionedUserIds = Array.isArray(mentions) ? mentions : [];
@@ -175,7 +196,7 @@ export async function POST(request: NextRequest) {
                 if (mentionedUserId === user.id) return; // Don't notify self
 
                 await createNotification({
-                    workspaceId: workspace_id,
+                    workspaceId: workspace.id,
                     userId: mentionedUserId,
                     type: 'mention',
                     title: 'You were mentioned',
@@ -195,12 +216,13 @@ export async function POST(request: NextRequest) {
             .from('posts')
             .select('created_by')
             .eq('id', content_item_id)
+            .eq('workspace_id', workspace.id)
             .single();
 
         if (post && post.created_by && post.created_by !== user.id && !mentionedUserIds.includes(post.created_by)) {
             const { createNotification } = await import('@/lib/notifications');
             await createNotification({
-                workspaceId: workspace_id,
+                workspaceId: workspace.id,
                 userId: post.created_by,
                 type: 'comment_received',
                 title: 'New Comment',
@@ -219,6 +241,7 @@ export async function POST(request: NextRequest) {
                 .from('content_comments')
                 .select('author_id')
                 .eq('id', parent_id)
+                .eq('workspace_id', workspace.id)
                 .single();
 
             if (parentComment &&
@@ -228,7 +251,7 @@ export async function POST(request: NextRequest) {
 
                 const { createNotification } = await import('@/lib/notifications');
                 await createNotification({
-                    workspaceId: workspace_id,
+                    workspaceId: workspace.id,
                     userId: parentComment.author_id,
                     type: 'comment_reply',
                     title: 'New Reply',
@@ -249,10 +272,7 @@ export async function POST(request: NextRequest) {
 
     } catch (error) {
         console.error('Comments POST error:', error);
-        return NextResponse.json(
-            { error: 'Failed to create comment' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }
 

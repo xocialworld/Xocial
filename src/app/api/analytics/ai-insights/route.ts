@@ -6,50 +6,23 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { APIError, handleAPIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 // GET - Fetch AI insights for a workspace
 export async function GET(request: NextRequest) {
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
         const searchParams = request.nextUrl.searchParams;
-        const workspaceId = searchParams.get('workspace_id');
         const insightType = searchParams.get('type');
         const limit = parseInt(searchParams.get('limit') || '10', 10);
-
-        if (!workspaceId) {
-            return NextResponse.json(
-                { error: 'workspace_id is required' },
-                { status: 400 }
-            );
-        }
-
-        // Verify membership
-        const { data: membership } = await supabase
-            .from('workspace_members')
-            .select('role')
-            .eq('workspace_id', workspaceId)
-            .eq('user_id', user.id)
-            .single();
-
-        if (!membership) {
-            return NextResponse.json(
-                { error: 'Not a member of this workspace' },
-                { status: 403 }
-            );
-        }
 
         // Build query
         let query = supabase
             .from('ai_insights')
             .select('*')
-            .eq('workspace_id', workspaceId)
+            .eq('workspace_id', workspace.id)
             .order('generated_at', { ascending: false })
             .limit(limit);
 
@@ -74,46 +47,27 @@ export async function GET(request: NextRequest) {
 
     } catch (error) {
         console.error('AI insights GET error:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch insights' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }
 
 // POST - Generate new AI insight
 export async function POST(request: NextRequest) {
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
         const body = await request.json();
         const { workspace_id, insight_type, period_start, period_end } = body;
 
-        if (!workspace_id || !insight_type) {
+        if (!insight_type) {
             return NextResponse.json(
-                { error: 'workspace_id and insight_type are required' },
+                { error: 'insight_type is required' },
                 { status: 400 }
             );
         }
 
-        // Verify membership
-        const { data: membership } = await supabase
-            .from('workspace_members')
-            .select('role')
-            .eq('workspace_id', workspace_id)
-            .eq('user_id', user.id)
-            .single();
-
-        if (!membership) {
-            return NextResponse.json(
-                { error: 'Not a member of this workspace' },
-                { status: 403 }
-            );
+        if (workspace_id && workspace_id !== workspace.id) {
+            throw new APIError(400, 'workspace_id must match the selected workspace');
         }
 
         // Fetch analytics data based on insight type
@@ -125,7 +79,7 @@ export async function POST(request: NextRequest) {
         const { data: dailyMetrics } = await supabase
             .from('daily_metrics_summary')
             .select('*')
-            .eq('workspace_id', workspace_id)
+            .eq('workspace_id', workspace.id)
             .gte('date', weekAgo.toISOString())
             .order('date', { ascending: false });
 
@@ -135,7 +89,7 @@ export async function POST(request: NextRequest) {
         const { data: topPosts } = await supabase
             .from('posts')
             .select('id, content, platforms, created_at')
-            .eq('workspace_id', workspace_id)
+            .eq('workspace_id', workspace.id)
             .eq('status', 'published')
             .order('created_at', { ascending: false })
             .limit(10);
@@ -181,7 +135,7 @@ export async function POST(request: NextRequest) {
         const { data: insight, error: insertError } = await supabase
             .from('ai_insights')
             .insert({
-                workspace_id,
+                workspace_id: workspace.id,
                 insight_type,
                 title: insightContent.title,
                 content: insightContent.content,
@@ -208,10 +162,7 @@ export async function POST(request: NextRequest) {
 
     } catch (error) {
         console.error('AI insights POST error:', error);
-        return NextResponse.json(
-            { error: 'Failed to generate insight' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }
 

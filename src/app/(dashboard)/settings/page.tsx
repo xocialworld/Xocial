@@ -14,7 +14,7 @@ import {
   Shield,
 } from "lucide-react";
 import { AccountForm } from "@/components/settings/account-form";
-import { useSelectedWorkspace } from "@/store/workspaceStore";
+import { useHasHydrated, useSelectedWorkspace } from "@/store/workspaceStore";
 import { WorkspaceForm } from "@/components/settings/workspace-form";
 import { TeamManagement } from "@/components/settings/team-management";
 import { IntegrationsList } from "@/components/settings/integrations-list";
@@ -26,6 +26,8 @@ import {
 } from "@/components/shared/page-components";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { formatOAuthErrorMessage, formatOAuthSuccessMessage } from "@/lib/oauth/messages";
 
 type SettingsTab = "profile" | "workspace" | "team" | "integrations" | "notifications" | "billing" | "security";
 
@@ -106,6 +108,18 @@ function SettingsSkeleton() {
   );
 }
 
+function WorkspaceRequired() {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-secondary-200 bg-secondary-50 px-6 py-12 text-center">
+      <Building2 className="h-10 w-10 text-secondary-300" />
+      <h3 className="mt-4 font-semibold text-secondary-900">No workspace selected</h3>
+      <p className="mt-2 max-w-md text-sm text-secondary-500">
+        Select a workspace from the workspace switcher to manage this section.
+      </p>
+    </div>
+  );
+}
+
 function SettingsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -120,6 +134,31 @@ function SettingsContent() {
   const [loading, setLoading] = useState(true);
   const supabase = useMemo(() => createClient(), []);
   const selectedWorkspace = useSelectedWorkspace();
+  const hasHydrated = useHasHydrated();
+  const selectedWorkspaceId = selectedWorkspace?.id;
+
+  useEffect(() => {
+    const success = searchParams.get("success");
+    const error = searchParams.get("error");
+    const accounts = searchParams.get("accounts");
+
+    if (success) {
+      toast.success(formatOAuthSuccessMessage(success, accounts));
+    }
+
+    if (error) {
+      toast.error(formatOAuthErrorMessage(error));
+    }
+
+    if (success || error) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("success");
+      params.delete("error");
+      params.delete("accounts");
+      const query = params.toString();
+      router.replace(`/settings${query ? `?${query}` : ""}`, { scroll: false });
+    }
+  }, [router, searchParams]);
 
   // Sync activeTab from URL when tabParam changes
   useEffect(() => {
@@ -133,65 +172,50 @@ function SettingsContent() {
     router.push(`/settings?tab=${tabId}`, { scroll: false });
   };
   const fetchData = useCallback(async () => {
+    if (!hasHydrated) {
+      return;
+    }
+
     try {
+      setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
 
-      if (user) {
-        // Fetch profile
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-
-        if (profileData) {
-          setProfile(profileData);
-        }
-
-        // Fetch workspace
-        let workspaceData = null;
-
-        // 1. Try fetching the selected workspace if we have an ID
-        if (selectedWorkspace?.id) {
-          const { data } = await supabase
-            .from("workspaces")
-            .select("*")
-            .eq("id", selectedWorkspace.id)
-            .maybeSingle(); // Use maybeSingle to avoid throwing error on 0 rows
-
-          if (data) {
-            workspaceData = data;
-          }
-        }
-
-        // 2. Fallback: If no selection or selection invalid (deleted), fetch list from API
-        if (!workspaceData) {
-          try {
-            const res = await fetch('/api/workspaces?include_members=false&t=' + Date.now(), { cache: 'no-store' });
-            if (res.ok) {
-              const { data } = await res.json();
-              const firstSpace = data?.workspaces?.[0]?.workspace;
-              if (firstSpace) {
-                workspaceData = firstSpace;
-                // Ideally we should sync this back to the global store, 
-                // but for now this fixes the local view.
-                // The WorkspaceSwitcher (via its own mount) will likely sync the store properly too.
-              }
-            }
-          } catch (e) {
-            console.error('Failed to fetch fallback workspace', e);
-          }
-        }
-
-        setWorkspace(workspaceData);
+      if (!user) {
+        setProfile(null);
+        setWorkspace(null);
+        return;
       }
+
+      // Fetch profile
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      if (profileData) {
+        setProfile(profileData);
+      }
+
+      if (!selectedWorkspaceId) {
+        setWorkspace(null);
+        return;
+      }
+
+      const { data: workspaceData } = await supabase
+        .from("workspaces")
+        .select("*")
+        .eq("id", selectedWorkspaceId)
+        .maybeSingle();
+
+      setWorkspace(workspaceData ?? null);
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
       setLoading(false);
     }
 
-  }, [supabase, selectedWorkspace?.id]);
+  }, [hasHydrated, supabase, selectedWorkspaceId]);
 
   useEffect(() => {
     fetchData();
@@ -204,6 +228,15 @@ function SettingsContent() {
       return <SettingsSkeleton />;
     }
 
+    const requiresSelectedWorkspace =
+      activeTab === "team" ||
+      activeTab === "integrations" ||
+      activeTab === "billing";
+
+    if (requiresSelectedWorkspace && !selectedWorkspaceId) {
+      return <WorkspaceRequired />;
+    }
+
     switch (activeTab) {
       case "profile":
         return <AccountForm profile={profile} onUpdate={fetchData} />;
@@ -212,11 +245,11 @@ function SettingsContent() {
       case "team":
         return <TeamManagement />;
       case "integrations":
-        return <IntegrationsList workspaceId={workspace?.id} />;
+        return <IntegrationsList workspaceId={selectedWorkspaceId!} />;
       case "notifications":
         return <NotificationsForm />;
       case "billing":
-        return <BillingSettings workspaceId={workspace?.id} />;
+        return <BillingSettings workspaceId={selectedWorkspaceId!} />;
       case "security":
         return (
           <div className="space-y-6">

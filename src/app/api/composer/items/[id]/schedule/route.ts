@@ -6,7 +6,19 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import {
+    APIError,
+    createServiceRoleClient,
+    handleAPIError,
+    requireAuth,
+} from '@/lib/api-middleware';
+import {
+    assertContentMutable,
+    assertMediaInWorkspace,
+    assertSocialAccountsInWorkspace,
+    enforceLimit,
+    requireWorkspaceContext,
+} from '@/lib/workspace-context';
 
 export async function POST(
     request: NextRequest,
@@ -14,13 +26,6 @@ export async function POST(
 ) {
     const params = await props.params;
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
         const body = await request.json();
         const { scheduled_at } = body;
 
@@ -40,7 +45,9 @@ export async function POST(
         }
 
         // Fetch content item
-        const { data: item, error: fetchError } = await supabase
+        await requireAuth(request);
+        const serviceClient = createServiceRoleClient();
+        const { data: item, error: fetchError } = await serviceClient
             .from('content_items')
             .select(`
         *,
@@ -57,20 +64,11 @@ export async function POST(
             );
         }
 
-        // Verify membership
-        const { data: membership } = await supabase
-            .from('workspace_members')
-            .select('role')
-            .eq('workspace_id', item.workspace_id)
-            .eq('user_id', user.id)
-            .single();
-
-        if (!membership) {
-            return NextResponse.json(
-                { error: 'Not a member of this workspace' },
-                { status: 403 }
-            );
-        }
+        const { user, userClient: supabase, workspace, role, limits, usage } =
+            await requireWorkspaceContext(request, {
+                workspaceId: item.workspace_id,
+                roles: ['owner', 'admin', 'manager', 'creator'],
+            });
 
         // Check if approval is required and approved
         const approvalInstance = item.approval_instance?.[0];
@@ -81,6 +79,13 @@ export async function POST(
             );
         }
 
+        assertContentMutable(item.status, role);
+        enforceLimit(
+            usage.scheduled_posts_count,
+            limits.max_scheduled_posts,
+            `Scheduled post limit reached for your ${limits.plan} plan`
+        );
+
         // Check if there are variants
         if (!item.variants || item.variants.length === 0) {
             return NextResponse.json(
@@ -89,12 +94,26 @@ export async function POST(
             );
         }
 
+        await assertSocialAccountsInWorkspace(
+            supabase,
+            workspace.id,
+            item.variants.map((variant: any) => variant.social_account_id)
+        );
+        await assertMediaInWorkspace(
+            supabase,
+            workspace.id,
+            item.variants.flatMap((variant: any) => variant.media_ids || [])
+        );
+
         // Update content item
         const { error: updateItemError } = await supabase
             .from('content_items')
             .update({
                 status: 'scheduled',
                 scheduled_at: scheduledDate.toISOString(),
+                timezone_snapshot: workspace.timezone || 'UTC',
+                locked_at: new Date().toISOString(),
+                locked_by: user.id,
             })
             .eq('id', params.id);
 
@@ -138,9 +157,6 @@ export async function POST(
 
     } catch (error) {
         console.error('Schedule content error:', error);
-        return NextResponse.json(
-            { error: 'Failed to schedule content' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }

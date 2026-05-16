@@ -7,28 +7,36 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Heart, Repeat, MessageCircle, RefreshCw, Search } from 'lucide-react';
 import { toast } from 'sonner';
+import { fetchWithWorkspace } from '@/lib/fetch-with-workspace';
+import { useSelectedWorkspace } from '@/store/workspaceStore';
 
 export function TwitterEngagement() {
     const params = useParams();
     const accountId = params.accountId as string;
+    const selectedWorkspace = useSelectedWorkspace();
 
     const [tweets, setTweets] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
 
     const fetchEngagement = useCallback(async () => {
+        if (!selectedWorkspace?.id) return;
+
         try {
             setLoading(true);
-            const response = await fetch(`/api/posts?accountId=${accountId}&limit=50`);
+            const response = await fetchWithWorkspace(
+                `/api/posts?account_id=${encodeURIComponent(accountId)}&limit=50`,
+                { workspaceId: selectedWorkspace.id }
+            );
             if (!response.ok) throw new Error('Failed to fetch tweets');
             const result = await response.json();
-            setTweets(result.data || []);
+            setTweets(result.data?.posts || result.posts || []);
         } catch (error: any) {
             toast.error('Failed to load engagement data');
         } finally {
             setLoading(false);
         }
-    }, [accountId]);
+    }, [accountId, selectedWorkspace?.id]);
 
     useEffect(() => {
         if (accountId) {

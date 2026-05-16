@@ -8,6 +8,7 @@ import {
 } from '@/lib/oauth/instagram';
 import { logger } from '@/lib/logger';
 import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
+import { upsertSocialComment } from '@/lib/sync/social-comments';
 
 /**
  * Instagram Data Synchronization Library
@@ -230,21 +231,24 @@ export async function syncInstagramComments(postId: string): Promise<SyncResult>
         for (const comment of comments) {
             try {
                 const commentData = {
+                    workspace_id: post.workspace_id,
                     post_id: postId,
+                    social_account_id: account.id,
+                    platform: 'instagram' as const,
+                    external_post_id: post.external_post_id,
                     external_comment_id: comment.id,
                     author_name: comment.username || comment.from?.username || 'Unknown',
+                    author_handle: comment.username || null,
                     author_avatar: null,
                     content: comment.text,
-                    likes: comment.like_count || 0,
+                    like_count: comment.like_count || 0,
                     reply_count: comment.replies?.data?.length || 0,
-                    created_at: comment.timestamp ? new Date(comment.timestamp).toISOString() : new Date().toISOString(),
+                    raw: comment,
+                    created_time: comment.timestamp ? new Date(comment.timestamp).toISOString() : null,
+                    fetched_at: new Date().toISOString(),
                 };
 
-                await supabase
-                    .from('comments')
-                    .upsert(commentData, {
-                        onConflict: 'post_id,external_comment_id',
-                    });
+                await upsertSocialComment(supabase as any, commentData);
 
                 result.synced++;
             } catch (error: any) {

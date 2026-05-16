@@ -2,15 +2,13 @@
 import { NextRequest } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
-  getUserWorkspace,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-  const workspace = await getUserWorkspace(user.id, supabase);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
   const searchParams = request.nextUrl.searchParams;
   const days = parseInt(searchParams.get('days') || '30', 10);
 
@@ -127,4 +125,3 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     analytics: recentPosts?.flatMap(p => p.post_analytics || []) || [],
   });
 });
-

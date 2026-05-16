@@ -148,7 +148,17 @@ export function createServiceRoleClient(): SupabaseClient {
   });
 }
 
-type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'viewer' | 'client';
+type WorkspaceRole =
+  | 'owner'
+  | 'admin'
+  | 'manager'
+  | 'creator'
+  | 'analyst'
+  | 'client'
+  | 'editor'
+  | 'viewer'
+  | 'guest'
+  | 'member';
 
 async function ensureWorkspaceMembership(
   supabase: SupabaseClient,
@@ -167,6 +177,18 @@ async function ensureWorkspaceMembership(
       { onConflict: 'workspace_id,user_id' }
     );
   return !error;
+}
+
+function isMissingAccountSchemaError(error: any) {
+  const code = error?.code;
+  const message = String(error?.message || '');
+  return (
+    code === '42P01' ||
+    code === '42703' ||
+    code === 'PGRST205' ||
+    message.includes("Could not find the table 'public.accounts'") ||
+    message.includes("Could not find the 'account_id' column")
+  );
 }
 
 export async function ensureUserProfile(
@@ -197,6 +219,67 @@ export async function ensureUserProfile(
   }
 }
 
+async function ensureAccountForProfile(
+  serviceClient: SupabaseClient,
+  profile: { id: string; name: string; email?: string | null }
+) {
+  const { data: existing, error: existingError } = await serviceClient
+    .from('accounts')
+    .select('*')
+    .eq('owner_id', profile.id)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    await serviceClient
+      .from('account_members')
+      .upsert(
+        { account_id: existing.id, user_id: profile.id, role: 'owner' },
+        { onConflict: 'account_id,user_id' }
+      );
+    return existing;
+  }
+
+  // Older databases do not have the account billing layer yet. Keep onboarding
+  // functional until the migration is applied.
+  if (isMissingAccountSchemaError(existingError)) {
+    return null;
+  }
+
+  const accountName =
+    profile.name?.trim() ||
+    profile.email?.split('@')[0] ||
+    'Xocial Account';
+  const slug = `${slugify(accountName) || 'account'}-${profile.id.replace(/-/g, '').slice(0, 8)}`;
+
+  const { data: account, error } = await serviceClient
+    .from('accounts')
+    .insert({
+      owner_id: profile.id,
+      name: accountName,
+      slug,
+    })
+    .select()
+    .single();
+
+  if (error || !account) {
+    if (isMissingAccountSchemaError(error)) {
+      return null;
+    }
+    throw new APIError(500, error?.message || 'Unable to create account', 'ACCOUNT_CREATE_FAILED');
+  }
+
+  await serviceClient
+    .from('account_members')
+    .upsert(
+      { account_id: account.id, user_id: profile.id, role: 'owner' },
+      { onConflict: 'account_id,user_id' }
+    );
+
+  return account;
+}
+
 /**
  * Create workspace for user using service role to bypass RLS
  * This prevents infinite recursion in workspace policies
@@ -206,6 +289,7 @@ async function createWorkspaceForUser(
   userClient?: SupabaseClient
 ) {
   const serviceClient = createServiceRoleClient();
+  const account = await ensureAccountForProfile(serviceClient, profile);
 
   const baseName =
     profile.name?.trim() ||
@@ -233,6 +317,16 @@ async function createWorkspaceForUser(
 
   if (existingOwned) {
     await ensureWorkspaceMembership(serviceClient, existingOwned.id, profile.id, 'owner');
+    if (account?.id && !(existingOwned as any).account_id) {
+      const { error: accountLinkError } = await serviceClient
+        .from('workspaces')
+        .update({ account_id: account.id })
+        .eq('id', existingOwned.id);
+
+      if (!accountLinkError) {
+        return { ...existingOwned, account_id: account.id };
+      }
+    }
     return existingOwned;
   }
 
@@ -243,11 +337,36 @@ async function createWorkspaceForUser(
       name: workspaceName,
       slug,
       owner_id: profile.id,
+      ...(account?.id ? { account_id: account.id } : {}),
     })
     .select()
     .single();
 
   if (error || !newWorkspace) {
+    if (account?.id && isMissingAccountSchemaError(error)) {
+      const { data: legacyWorkspace, error: legacyError } = await insertClient
+        .from('workspaces')
+        .insert({
+          name: workspaceName,
+          slug,
+          owner_id: profile.id,
+        })
+        .select()
+        .single();
+
+      if (legacyWorkspace) {
+        await ensureWorkspaceMembership(serviceClient, legacyWorkspace.id, profile.id, 'owner');
+        return legacyWorkspace;
+      }
+
+      if (legacyError) {
+        logger.error('Legacy workspace creation failed', legacyError as any, {
+          userId: profile.id,
+          workspaceName,
+        });
+      }
+    }
+
     // Handle unique slug conflicts by fetching existing owned workspace
     const isUniqueViolation = (error as any)?.code === '23505' || String((error as any)?.message || '').includes('workspaces_slug_key');
     if (isUniqueViolation) {

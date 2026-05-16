@@ -274,6 +274,7 @@ export default function PricingPage() {
                     <span className="text-base font-bold text-blue-600">{seats} Users</span>
                   </div>
                   <Slider
+                    aria-label="Seats"
                     value={[seats]}
                     max={50}
                     min={1}
@@ -289,6 +290,7 @@ export default function PricingPage() {
                     <span className="text-base font-bold text-blue-600">{workspaces} Workspaces</span>
                   </div>
                   <Slider
+                    aria-label="Workspaces"
                     value={[workspaces]}
                     max={20}
                     min={1}

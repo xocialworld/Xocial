@@ -1,24 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { APIError, handleAPIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import {
   getInstagramAccountInsights,
   getInstagramMediaInsights,
 } from '@/lib/oauth/instagram';
+import { decryptToken } from '@/lib/encryption';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      throw new APIError(401, 'Unauthorized');
-    }
+    const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     const searchParams = request.nextUrl.searchParams;
     const accountId = searchParams.get('accountId');
@@ -36,6 +29,7 @@ export async function GET(request: NextRequest) {
       .from('social_accounts')
       .select('workspace_id, account_id, account_name, access_token, metadata, is_active')
       .eq('id', accountId)
+      .eq('workspace_id', workspace.id)
       .eq('platform', 'instagram')
       .single();
 
@@ -43,41 +37,20 @@ export async function GET(request: NextRequest) {
       throw new APIError(404, 'Instagram account not found');
     }
 
-    const { data: workspace } = await supabase
-      .from('workspaces')
-      .select('owner_id')
-      .eq('id', account.workspace_id)
-      .single();
-
-    if (!workspace) {
-      throw new APIError(404, 'Workspace not found');
-    }
-
-    if (workspace.owner_id !== user.id) {
-      const { data: membership } = await supabase
-        .from('workspace_members')
-        .select('role')
-        .eq('workspace_id', account.workspace_id)
-        .eq('user_id', user.id)
-        .single();
-
-      if (!membership) {
-        throw new APIError(403, 'You do not have access to this workspace');
-      }
-    }
-
     if (!account.access_token) {
       throw new APIError(400, 'Instagram account is missing an access token');
     }
 
+    const accessToken = decryptToken(account.access_token);
+
     if (mediaId) {
-      const insights = await getInstagramMediaInsights(mediaId, account.access_token);
+      const insights = await getInstagramMediaInsights(mediaId, accessToken);
       return NextResponse.json({ success: true, scope: 'media', mediaId, insights });
     }
 
     const insights = await getInstagramAccountInsights(
       account.account_id,
-      account.access_token,
+      accessToken,
       period
     );
     return NextResponse.json({
@@ -90,5 +63,4 @@ export async function GET(request: NextRequest) {
     return handleAPIError(error);
   }
 }
-
 

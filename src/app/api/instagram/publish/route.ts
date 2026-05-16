@@ -1,24 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { APIError, handleAPIError } from '@/lib/api-middleware';
-import {
-  createInstagramMediaContainer,
-  publishInstagramMedia,
-} from '@/lib/oauth/instagram';
+import { platformPublisher, type PlatformContent } from '@/lib/platforms/publisher';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      throw new APIError(401, 'Unauthorized');
-    }
+    const { serviceClient, workspace } = await requireWorkspaceContext(request, {
+      roles: ['owner', 'admin', 'manager', 'creator'],
+    });
 
     const body = await request.json();
     const {
@@ -27,7 +18,6 @@ export async function POST(request: NextRequest) {
       mediaUrl,
       mediaUrls,
       mediaType,
-      publishAt,
     } = body;
 
     if (!accountId) {
@@ -44,76 +34,52 @@ export async function POST(request: NextRequest) {
       throw new APIError(400, 'At least one mediaUrl is required for Instagram publishing');
     }
 
+    if (mediaSources.length > 10) {
+      throw new APIError(400, 'Instagram carousels support up to 10 media URLs');
+    }
+
+    if (mediaType === 'CAROUSEL_ALBUM' && mediaSources.length < 2) {
+      throw new APIError(400, 'Instagram carousel publishing requires at least two media URLs');
+    }
+
     const {
       data: account,
       error: accountError,
-    } = await supabase
+    } = await serviceClient
       .from('social_accounts')
-      .select('workspace_id, account_id, account_name, access_token, metadata, is_active')
+      .select('id, workspace_id, platform, is_active')
       .eq('id', accountId)
+      .eq('workspace_id', workspace.id)
       .eq('platform', 'instagram')
-      .single();
+      .maybeSingle();
 
     if (accountError || !account || !account.is_active) {
-      throw new APIError(404, 'Instagram account not found');
+      throw new APIError(404, 'Instagram account not found in this workspace');
     }
 
-    // Verify workspace access (owners are not stored in workspace_members, so check both)
-    const { data: workspace } = await supabase
-      .from('workspaces')
-      .select('owner_id')
-      .eq('id', account.workspace_id)
-      .single();
+    const content: PlatformContent = {
+      text: caption || '',
+      mediaUrls: mediaSources,
+      mediaType: mediaSources.length > 1 ? 'CAROUSEL_ALBUM' : mediaType,
+    };
 
-    if (!workspace) {
-      throw new APIError(404, 'Workspace not found');
-    }
-
-    if (workspace.owner_id !== user.id) {
-      const { data: membership } = await supabase
-        .from('workspace_members')
-        .select('role')
-        .eq('workspace_id', account.workspace_id)
-        .eq('user_id', user.id)
-        .single();
-
-      if (!membership) {
-        throw new APIError(403, 'You do not have access to this workspace');
-      }
-    }
-
-    if (!account.access_token) {
-      throw new APIError(400, 'Instagram account is missing an access token');
-    }
-
-    const primaryMedia = mediaSources[0];
-    const isVideo =
-      mediaType === 'VIDEO' ||
-      primaryMedia.toLowerCase().includes('.mp4') ||
-      primaryMedia.toLowerCase().includes('video');
-
-    const containerResponse = await createInstagramMediaContainer(account.account_id, account.access_token, {
-      caption: caption || '',
-      ...(isVideo ? { video_url: primaryMedia } : { image_url: primaryMedia }),
+    const results = await platformPublisher.publishToAll({
+      platforms: ['instagram'],
+      accountIds: { instagram: accountId },
+      content,
     });
 
-    const publishResult = await publishInstagramMedia(
-      account.account_id,
-      account.access_token,
-      containerResponse.id,
-      publishAt ? new Date(publishAt) : undefined
-    );
+    const result = results[0];
+    if (!result?.success) {
+      throw new APIError(502, result?.error || 'Failed to publish Instagram post', 'PUBLISH_FAILED');
+    }
 
     return NextResponse.json({
       success: true,
-      postId: publishResult.id,
-      message: publishAt
-        ? 'Instagram post scheduled successfully'
-        : 'Instagram post published successfully',
+      postId: result.platformPostId,
+      message: 'Instagram post published successfully',
     });
   } catch (error) {
     return handleAPIError(error);
   }
 }
-
-

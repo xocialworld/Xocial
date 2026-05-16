@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     withErrorHandler,
-    requireAuth,
     APIError,
 } from '@/lib/api-middleware';
-import { createClient } from '@/lib/supabase/server';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { decryptToken } from '@/lib/encryption';
 import { replyToInstagramComment } from '@/lib/oauth/instagram';
 import { logger } from '@/lib/logger';
@@ -14,7 +13,7 @@ import { logger } from '@/lib/logger';
  * Reply to an Instagram comment
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-    const { user } = await requireAuth(request);
+    const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
     const body = await request.json();
     const { accountId, commentId, replyText } = body;
@@ -24,12 +23,11 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     }
 
     try {
-        const supabase = await createClient();
-
         const { data: account, error: accountError } = await supabase
             .from('social_accounts')
             .select('*')
             .eq('id', accountId)
+            .eq('workspace_id', workspace.id)
             .eq('platform', 'instagram')
             .single();
 
@@ -52,6 +50,10 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
             data: result,
         });
     } catch (error: any) {
+        if (error instanceof APIError) {
+            throw error;
+        }
+
         logger.error('[Instagram Comment Reply] Error:', error, {
             userId: user.id,
             accountId,

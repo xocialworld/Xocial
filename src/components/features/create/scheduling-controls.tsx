@@ -41,6 +41,10 @@ function isAccountExpired(account: Account): boolean {
 interface SchedulingControlsProps {
     selectedPlatforms: Platform[];
     hasContent: boolean;
+    initialSchedule?: {
+        date?: string;
+        time?: string;
+    };
     onSaveDraft: (accountSelections: Record<Platform, string>) => Promise<void>;
     onSchedule: (accountSelections: Record<Platform, string>, scheduledTime: Date) => Promise<void>;
     onPublish: (accountSelections: Record<Platform, string>) => Promise<void>;
@@ -57,6 +61,7 @@ interface SchedulingControlsProps {
 export function SchedulingControls({
     selectedPlatforms,
     hasContent,
+    initialSchedule,
     onSaveDraft,
     onSchedule,
     onPublish,
@@ -73,12 +78,19 @@ export function SchedulingControls({
     const [scheduledDate, setScheduledDate] = useState('');
     const [scheduledTime, setScheduledTime] = useState('10:00');
 
-    // Initialize scheduled date to tomorrow
+    // Initialize scheduled date from calendar deep links, falling back to tomorrow.
     useEffect(() => {
+        if (initialSchedule?.date) {
+            setScheduledDate(initialSchedule.date);
+            setScheduledTime(initialSchedule.time || '10:00');
+            return;
+        }
+
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         setScheduledDate(tomorrow.toISOString().split('T')[0]);
-    }, []);
+        setScheduledTime('10:00');
+    }, [initialSchedule?.date, initialSchedule?.time]);
 
     // Auto-select first account for each platform (preferring online ones)
     useEffect(() => {

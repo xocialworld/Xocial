@@ -7,12 +7,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { APIError, APIErrorCode } from '@/lib/api-error';
 
-export type WorkspaceRole = 'owner' | 'admin' | 'member';
+export type WorkspaceRole = 'owner' | 'admin' | 'manager' | 'creator' | 'analyst' | 'client' | 'member' | 'editor' | 'viewer' | 'guest';
 
 const ROLE_HIERARCHY: Record<WorkspaceRole, number> = {
-    owner: 3,
-    admin: 2,
-    member: 1,
+    owner: 6,
+    admin: 5,
+    manager: 4,
+    creator: 3,
+    member: 3,
+    editor: 3,
+    analyst: 2,
+    viewer: 2,
+    client: 1,
+    guest: 1,
 };
 
 /**

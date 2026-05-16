@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { checkRateLimit, getWorkspaceFromRequest } from '@/lib/api-middleware';
+import { checkRateLimit, handleAPIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 
 /**
@@ -15,15 +15,7 @@ import { logger } from '@/lib/logger';
  */
 export async function GET(request: NextRequest) {
     try {
-        const supabase = await createClient();
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-        if (authError || !user) {
-            return NextResponse.json(
-                { success: false, error: 'Unauthorized' },
-                { status: 401 }
-            );
-        }
+        const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
         // Rate limit
         const limited = checkRateLimit(`${user.id}:engagement`, 100, 60_000);
@@ -40,8 +32,6 @@ export async function GET(request: NextRequest) {
         const type = searchParams.get('type');
         const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100);
         const offset = parseInt(searchParams.get('offset') || '0', 10);
-
-        const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
 
         // Get connected social accounts for this workspace
         const { data: accounts } = await supabase
@@ -135,9 +125,6 @@ export async function GET(request: NextRequest) {
         });
     } catch (error) {
         logger.error('Engagement fetch error', error as Error);
-        return NextResponse.json(
-            { success: false, error: 'Failed to fetch engagement data' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }

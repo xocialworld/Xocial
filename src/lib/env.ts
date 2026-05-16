@@ -53,7 +53,7 @@ const envSchema = z.object({
   FACEBOOK_APP_ID: z.string().optional(),
   FACEBOOK_APP_SECRET: z.string().optional(),
 
-  // OAuth - Instagram (uses Facebook)
+  // OAuth - Instagram Direct Login (not used by Phase 1 Facebook Login flow)
   INSTAGRAM_CLIENT_ID: z.string().optional(),
   INSTAGRAM_CLIENT_SECRET: z.string().optional(),
 
@@ -169,7 +169,7 @@ export const env = validatedEnv;
  */
 export const isFeatureEnabled = {
   facebook: () => !!(env.FACEBOOK_APP_ID && env.FACEBOOK_APP_SECRET),
-  instagram: () => !!(env.INSTAGRAM_CLIENT_ID && env.INSTAGRAM_CLIENT_SECRET),
+  instagram: () => !!(env.FACEBOOK_APP_ID && env.FACEBOOK_APP_SECRET),
   twitter: () => !!(env.TWITTER_CLIENT_ID && env.TWITTER_CLIENT_SECRET),
   linkedin: () => !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET),
   youtube: () => !!(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET),

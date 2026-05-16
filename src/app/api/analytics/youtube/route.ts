@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
-  getUserWorkspace,
   checkRateLimit,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 
@@ -20,7 +19,7 @@ import { logger } from '@/lib/logger';
  * - videoId: YouTube video ID (optional, for specific video analytics)
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
   // Basic rate limiting to protect the Analytics API/quota
   const limited = checkRateLimit(`${user.id}:analytics:youtube`, 60, 60_000);
@@ -41,9 +40,6 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   if (!accountId) {
     throw new APIError(400, 'accountId parameter is required', 'MISSING_ACCOUNT_ID');
   }
-
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id, supabase);
 
   // Get YouTube account
   const { data: account, error: accountError } = await supabase
@@ -395,4 +391,3 @@ async function fetchBasicChannelStats(
 }
 
 export const runtime = 'nodejs';
-

@@ -128,8 +128,12 @@ export function WorkspaceForm({ workspace, onUpdate }: WorkspaceFormProps) {
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || "Failed to create workspace");
+                    const errorData = await response.json().catch(() => null);
+                    throw new Error(
+                        errorData?.error?.message ||
+                        errorData?.message ||
+                        "Failed to create workspace"
+                    );
                 }
 
                 toast.success("Workspace created successfully!");

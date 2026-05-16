@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
-  getUserWorkspace,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 
@@ -21,7 +20,9 @@ import { logger } from '@/lib/logger';
  * - dimensions?: string (comma-separated dimensions)
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager', 'creator', 'analyst'],
+  });
   
   const searchParams = request.nextUrl.searchParams;
   const accountId = searchParams.get('accountId');
@@ -53,9 +54,6 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   if (!accountId) {
     throw new APIError(400, 'accountId parameter is required', 'MISSING_ACCOUNT_ID');
   }
-  
-  // Get user's workspace
-  const workspace = await getUserWorkspace(user.id);
   
   // Get YouTube account
   const { data: account, error: accountError } = await supabase
@@ -398,4 +396,3 @@ function transformGeographyData(data: any) {
 }
 
 export const runtime = 'nodejs';
-

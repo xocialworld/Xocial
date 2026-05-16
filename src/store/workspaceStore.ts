@@ -9,11 +9,18 @@ export type WorkspaceSummary = {
   logo_url?: string | null;
 };
 
+export type WorkspaceSwitchTransition = {
+  target: WorkspaceSummary;
+  startedAt: number;
+};
+
 interface WorkspaceState {
   workspaces: WorkspaceSummary[];
   selectedWorkspace?: WorkspaceSummary;
+  workspaceSwitchTransition: WorkspaceSwitchTransition | null;
   setWorkspaces: (entries: WorkspaceSummary[]) => void;
   selectWorkspace: (workspaceId: string) => void;
+  completeWorkspaceSwitch: (startedAt: number) => void;
   reset: () => void;
   _hasHydrated: boolean;
   setHasHydrated: (state: boolean) => void;
@@ -28,6 +35,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       (set, get) => ({
         workspaces: [],
         selectedWorkspace: undefined,
+        workspaceSwitchTransition: null,
         _hasHydrated: false,
         lastFetchedAt: null,
         setHasHydrated: (state) => set({ _hasHydrated: state }),
@@ -38,7 +46,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             if (entries.length === 0) {
               // Only clear if explicitly empty, but maybe we should keep selected if it's still valid logic?
               // No, if list is empty, selected must be undefined.
-              return { workspaces: [], selectedWorkspace: undefined, lastFetchedAt: Date.now() };
+              return {
+                workspaces: [],
+                selectedWorkspace: undefined,
+                workspaceSwitchTransition: null,
+                lastFetchedAt: Date.now(),
+              };
             }
 
             const currentId = state.selectedWorkspace?.id;
@@ -57,9 +70,33 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             if (!match) {
               return {};
             }
-            return { selectedWorkspace: match };
+            if (state.selectedWorkspace?.id === match.id) {
+              return {};
+            }
+
+            return {
+              selectedWorkspace: match,
+              workspaceSwitchTransition: {
+                target: match,
+                startedAt: Date.now(),
+              },
+            };
           }),
-        reset: () => set({ workspaces: [], selectedWorkspace: undefined, lastFetchedAt: null }),
+        completeWorkspaceSwitch: (startedAt) =>
+          set((state) => {
+            if (state.workspaceSwitchTransition?.startedAt !== startedAt) {
+              return {};
+            }
+
+            return { workspaceSwitchTransition: null };
+          }),
+        reset: () =>
+          set({
+            workspaces: [],
+            selectedWorkspace: undefined,
+            workspaceSwitchTransition: null,
+            lastFetchedAt: null,
+          }),
       }),
       {
         name: 'workspace-store',
@@ -84,3 +121,5 @@ export const useWorkspaceList = () => useWorkspaceStore((state) => state.workspa
 
 export const useHasHydrated = () => useWorkspaceStore((state) => state._hasHydrated);
 
+export const useWorkspaceSwitchTransition = () =>
+  useWorkspaceStore((state) => state.workspaceSwitchTransition);

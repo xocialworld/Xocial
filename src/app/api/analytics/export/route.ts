@@ -7,10 +7,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
-  getUserWorkspace,
   APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 
 /**
@@ -47,9 +46,7 @@ function convertToCSV(data: any[]): string {
  * Export analytics data
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-  
-  const workspace = await getUserWorkspace(user.id, supabase);
+  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
   
   // Get query parameters
   const searchParams = request.nextUrl.searchParams;

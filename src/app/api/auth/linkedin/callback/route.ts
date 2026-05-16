@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     requireAuth,
-    getUserWorkspace,
     APIError,
 } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 import {
     exchangeLinkedInCode,
@@ -20,7 +20,7 @@ import { encryptToken } from '@/lib/encryption';
  */
 export async function GET(request: NextRequest) {
     try {
-        const { user, supabase } = await requireAuth(request);
+        const { user } = await requireAuth(request);
 
         const searchParams = request.nextUrl.searchParams;
         const code = searchParams.get('code');
@@ -77,13 +77,36 @@ export async function GET(request: NextRequest) {
             console.warn('[LinkedIn Callback] No organization access:', error);
         }
 
-        // Get user's workspace context from state
-        let workspaceId = stateVerification.workspaceId;
-
+        const workspaceId = stateVerification.workspaceId;
         if (!workspaceId) {
-            console.warn('[LinkedIn Callback] No workspaceId in state, falling back to default workspace');
-            const workspace = await getUserWorkspace(user.id, supabase);
-            workspaceId = workspace.id;
+            throw new APIError(
+                400,
+                'Workspace context is missing from OAuth state. Please restart the connection from the selected workspace.',
+                'WORKSPACE_REQUIRED'
+            );
+        }
+
+        const requestedAccountCount = 1 + organizations.length;
+        const { userClient: workspaceSupabase, usage, limits } = await requireWorkspaceContext(request, {
+            workspaceId,
+            roles: ['owner', 'admin', 'manager'],
+        });
+
+        if (
+            limits.max_social_profiles !== null &&
+            limits.max_social_profiles !== undefined &&
+            usage.social_profiles_count + requestedAccountCount > limits.max_social_profiles
+        ) {
+            throw new APIError(
+                402,
+                `Connecting these LinkedIn accounts would exceed your ${limits.plan} social account limit`,
+                'PLAN_LIMIT_EXCEEDED',
+                {
+                    current: usage.social_profiles_count,
+                    adding: requestedAccountCount,
+                    limit: limits.max_social_profiles,
+                }
+            );
         }
 
         console.log(`[LinkedIn Callback] Target workspace ID: ${workspaceId}`);
@@ -95,7 +118,7 @@ export async function GET(request: NextRequest) {
             : null;
 
         // Store LinkedIn personal profile
-        const { data: personalAccount, error: dbError } = await supabase
+        const { data: personalAccount, error: dbError } = await workspaceSupabase
             .from('social_accounts')
             .upsert(
                 {
@@ -140,7 +163,7 @@ export async function GET(request: NextRequest) {
                     ? encryptToken(tokenResponse.refresh_token)
                     : null;
 
-                const { data, error } = await supabase
+                const { data, error } = await workspaceSupabase
                     .from('social_accounts')
                     .upsert(
                         {

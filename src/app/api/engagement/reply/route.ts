@@ -6,16 +6,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { handleAPIError } from '@/lib/api-middleware';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
 
 export async function POST(request: NextRequest) {
     try {
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
 
         const body = await request.json();
         const {
@@ -38,27 +34,13 @@ export async function POST(request: NextRequest) {
             .from('social_accounts')
             .select('*, workspace:workspaces!inner(id)')
             .eq('id', social_account_id)
+            .eq('workspace_id', workspace.id)
             .single();
 
         if (accountError || !account) {
             return NextResponse.json(
                 { error: 'Social account not found' },
                 { status: 404 }
-            );
-        }
-
-        // Verify membership
-        const { data: membership } = await supabase
-            .from('workspace_members')
-            .select('role')
-            .eq('workspace_id', account.workspace_id)
-            .eq('user_id', user.id)
-            .single();
-
-        if (!membership) {
-            return NextResponse.json(
-                { error: 'Not a member of this workspace' },
-                { status: 403 }
             );
         }
 
@@ -119,10 +101,7 @@ export async function POST(request: NextRequest) {
 
     } catch (error) {
         console.error('Engagement reply error:', error);
-        return NextResponse.json(
-            { error: 'Failed to send reply' },
-            { status: 500 }
-        );
+        return handleAPIError(error);
     }
 }
 

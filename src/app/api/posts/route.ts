@@ -1,15 +1,15 @@
 import { NextRequest } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
-  getUserWorkspace,
-  getWorkspaceFromRequest,
   getPagination,
   validateRequest,
   APIError,
-  checkWorkspaceAccess,
 } from '@/lib/api-middleware';
+import {
+  enforceLimit,
+  requireWorkspaceContext,
+} from '@/lib/workspace-context';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { platformPublisher, type Platform } from '@/lib/platforms/publisher';
@@ -434,16 +434,15 @@ async function publishImmediately({
  * GET /api/posts - List posts
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
   const { page, limit, offset } = getPagination(request);
-
-  // Get user's workspace
-  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
+  const { userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager', 'creator', 'analyst', 'client'],
+  });
 
   // Get query parameters for filtering
   const searchParams = request.nextUrl.searchParams;
   const status = searchParams.get('status');
-  const accountId = searchParams.get('account_id');
+  const accountId = searchParams.get('account_id') || searchParams.get('accountId');
   const campaignId = searchParams.get('campaign_id');
   const from = searchParams.get('from');
   const to = searchParams.get('to');
@@ -526,8 +525,6 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
  * POST /api/posts - Create a new post
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-
   // Validate request body
   const validatedData = await validateRequest(request, createPostSchema);
   const normalizedStatus = validatedData.status ?? 'draft';
@@ -536,23 +533,31 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     status: normalizedStatus,
   };
 
-  // Get user's workspace
-  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
-  const role = await checkWorkspaceAccess(user.id, workspace.id);
-
-  if (!['owner', 'admin', 'editor'].includes(role)) {
-    throw new APIError(403, 'You do not have permission to create posts', 'FORBIDDEN');
-  }
+  const { user, userClient: supabase, workspace, role, limits, usage } =
+    await requireWorkspaceContext(request, {
+      roles: ['owner', 'admin', 'manager', 'creator'],
+    });
 
   // Approval Workflow Enforcement
   // If workspace requires approval, and user is not an approver (admin/owner),
   // force status to 'pending_approval' for any non-draft status.
-  const requireApproval = (workspace as any).settings?.require_approval;
+  const requireApproval =
+    (workspace as any).workflow_mode && (workspace as any).workflow_mode !== 'none'
+      ? true
+      : (workspace as any).settings?.require_approval;
   const isApprover = ['owner', 'admin'].includes(role);
 
   if (requireApproval && !isApprover && ['published', 'scheduled'].includes(normalizedData.status)) {
     console.log(`[Approval Enforcement] Forcing status to pending_approval for user ${user.id} in workspace ${workspace.id}`);
     normalizedData.status = 'pending_approval';
+  }
+
+  if (normalizedData.status === 'scheduled') {
+    enforceLimit(
+      usage.scheduled_posts_count,
+      limits.max_scheduled_posts,
+      `Scheduled post limit reached for your ${limits.plan} plan`
+    );
   }
 
   // Validate status requirements before proceeding
@@ -639,8 +644,6 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
  * PATCH /api/posts/:id - Update a post
  */
 export const PATCH = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-
   const url = new URL(request.url);
   const postId = url.pathname.split('/').pop();
 
@@ -650,16 +653,19 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
 
   const body = await request.json();
 
-  // Get user's workspace
-  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
-  const role = await checkWorkspaceAccess(user.id, workspace.id);
+  const workspaceId =
+    request.nextUrl.searchParams.get('workspaceId') ||
+    request.nextUrl.searchParams.get('workspace_id') ||
+    request.headers.get('x-workspace-id');
 
-  if (!['owner', 'admin', 'editor'].includes(role)) {
-    throw new APIError(403, 'You do not have permission to update posts', 'FORBIDDEN');
-  }
+  const { userClient: workspaceSupabase, workspace, role, limits, usage } =
+    await requireWorkspaceContext(request, {
+      workspaceId,
+      roles: ['owner', 'admin', 'manager', 'creator'],
+    });
 
   // Fetch current post to validate status transitions
-  const { data: currentPost, error: fetchError } = await supabase
+  const { data: currentPost, error: fetchError } = await workspaceSupabase
     .from('posts')
     .select('*')
     .eq('id', postId)
@@ -681,6 +687,14 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
       );
     }
 
+    if (['approved', 'scheduled'].includes(currentPost.status) && !['owner', 'admin'].includes(role)) {
+      throw new APIError(
+        423,
+        'Approved or scheduled posts are locked for non-admin roles',
+        'CONTENT_LOCKED'
+      );
+    }
+
     // Validate the transition is allowed
     if (!validateStatusTransition(currentPost.status, body.status)) {
       throw new APIError(
@@ -696,6 +710,14 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
     const scheduledAt = body.scheduled_at || currentPost.scheduled_at;
 
     validateStatusRequirements(body.status, scheduledAt, platforms, platformAccounts);
+
+    if (body.status === 'scheduled') {
+      enforceLimit(
+        usage.scheduled_posts_count,
+        limits.max_scheduled_posts,
+        `Scheduled post limit reached for your ${limits.plan} plan`
+      );
+    }
   }
 
   // Prevent modification of published_at and external_post_id by non-system calls
@@ -704,7 +726,7 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
   delete sanitizedBody.external_post_id;
 
   // Update post
-  const { data: post, error } = await supabase
+  const { data: post, error } = await workspaceSupabase
     .from('posts')
     .update(sanitizedBody)
     .eq('id', postId)
@@ -727,8 +749,6 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
  * DELETE /api/posts/:id - Delete a post
  */
 export const DELETE = withErrorHandler(async (request: NextRequest) => {
-  const { user, supabase } = await requireAuth(request);
-
   const url = new URL(request.url);
   const postId = url.pathname.split('/').pop();
 
@@ -736,16 +756,17 @@ export const DELETE = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(400, 'Post ID is required', 'VALIDATION_ERROR');
   }
 
-  // Get user's workspace
-  const workspace = await getWorkspaceFromRequest(user.id, request, supabase);
-  const role = await checkWorkspaceAccess(user.id, workspace.id);
-
-  if (!['owner', 'admin', 'editor'].includes(role)) {
-    throw new APIError(403, 'You do not have permission to delete posts', 'FORBIDDEN');
-  }
+  const workspaceId =
+    request.nextUrl.searchParams.get('workspaceId') ||
+    request.nextUrl.searchParams.get('workspace_id') ||
+    request.headers.get('x-workspace-id');
+  const { userClient: workspaceSupabase, workspace } = await requireWorkspaceContext(request, {
+    workspaceId,
+    roles: ['owner', 'admin', 'manager'],
+  });
 
   // Delete post
-  const { error } = await supabase
+  const { error } = await workspaceSupabase
     .from('posts')
     .delete()
     .eq('id', postId)

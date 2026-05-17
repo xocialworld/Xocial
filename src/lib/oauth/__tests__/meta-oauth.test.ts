@@ -1,5 +1,9 @@
 import { getFacebookAuthUrl } from '../facebook';
-import { getInstagramAuthUrl, getInstagramFacebookAuthUrl } from '../instagram';
+import {
+  exchangeInstagramLongLivedToken,
+  getInstagramAuthUrl,
+  getInstagramFacebookAuthUrl,
+} from '../instagram';
 import { sanitizeOAuthRedirect } from '../redirect';
 
 describe('Meta OAuth helpers', () => {
@@ -115,5 +119,40 @@ describe('Meta OAuth helpers', () => {
     ).toBe('/x?filter=instagram');
     expect(sanitizeOAuthRedirect('https://evil.example/x', 'https://www.xocial.world')).toBe('/x');
     expect(sanitizeOAuthRedirect('//evil.example/x', 'https://www.xocial.world')).toBe('/x');
+  });
+
+  it('exchanges Instagram short-lived tokens with a query-string GET request', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'long-lived-token',
+        token_type: 'bearer',
+        expires_in: 5184000,
+      }),
+    } as Response);
+
+    await expect(
+      exchangeInstagramLongLivedToken(
+        { clientSecret: 'instagram-client-secret' },
+        'short-lived-token'
+      )
+    ).resolves.toEqual({
+      access_token: 'long-lived-token',
+      token_type: 'bearer',
+      expires_in: 5184000,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0];
+    const url = new URL(String(requestUrl));
+
+    expect(requestInit).toBeUndefined();
+    expect(url.origin).toBe('https://graph.instagram.com');
+    expect(url.pathname).toBe('/access_token');
+    expect(url.searchParams.get('grant_type')).toBe('ig_exchange_token');
+    expect(url.searchParams.get('client_secret')).toBe('instagram-client-secret');
+    expect(url.searchParams.get('access_token')).toBe('short-lived-token');
+
+    fetchMock.mockRestore();
   });
 });

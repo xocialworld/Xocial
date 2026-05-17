@@ -105,13 +105,9 @@ export async function exchangeInstagramLongLivedToken(
     access_token: shortLivedToken,
   });
 
-  const response = await fetch('https://graph.instagram.com/access_token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: params.toString(),
-  });
+  const response = await fetch(
+    `https://graph.instagram.com/access_token?${params.toString()}`
+  );
 
   if (!response.ok) {
     const error = await response.json().catch(() => null);

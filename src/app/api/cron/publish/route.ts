@@ -182,13 +182,9 @@ export const GET = withCronVerification(async (request: NextRequest) => {
           .eq('id', post.id);
 
         if (post.status === 'scheduled') {
-          lockQuery = lockQuery
-            .eq('status', 'scheduled')
-            .lte('scheduled_at', now.toISOString());
+          lockQuery = lockQuery.eq('status', 'scheduled');
         } else if (post.status === 'publishing') {
-          lockQuery = lockQuery
-            .eq('status', 'publishing')
-            .lte('updated_at', stuckThreshold.toISOString());
+          lockQuery = lockQuery.eq('status', 'publishing');
         } else {
           console.log(`[Cron: Publish] Post ${post.id} is no longer publishable`);
           continue;

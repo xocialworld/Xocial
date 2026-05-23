@@ -5,6 +5,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'no-store, max-age=0',
+};
+
 /**
  * Check if running in development mode
  */
@@ -65,7 +69,7 @@ export function withCronVerification(
     if (!verifyCronRequest(request)) {
       return NextResponse.json(
         { error: 'Unauthorized - Invalid cron secret' },
-        { status: 401 }
+        { status: 401, headers: NO_STORE_HEADERS }
       );
     }
 
@@ -86,7 +90,7 @@ export function cronErrorResponse(message: string, details?: any): NextResponse 
       details,
       timestamp: new Date().toISOString(),
     },
-    { status: 500 }
+    { status: 500, headers: NO_STORE_HEADERS }
   );
 }
 
@@ -98,6 +102,7 @@ export function cronSuccessResponse(data: any): NextResponse {
     success: true,
     data,
     timestamp: new Date().toISOString(),
+  }, {
+    headers: NO_STORE_HEADERS,
   });
 }
-

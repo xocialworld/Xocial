@@ -196,7 +196,6 @@ export const GET = withCronVerification(async (request: NextRequest) => {
           content: fallback,
           platformContent: perPlatform,
           accountIds,
-          scheduledFor: post.scheduled_at ? new Date(post.scheduled_at) : undefined,
         });
 
         // Analyze results

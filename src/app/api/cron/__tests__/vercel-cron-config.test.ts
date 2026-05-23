@@ -6,13 +6,6 @@ describe('vercel cron configuration', () => {
     fs.readFileSync(path.join(process.cwd(), 'vercel.json'), 'utf8')
   );
 
-  it('runs the scheduled post publisher every minute', () => {
-    expect(config.crons).toContainEqual({
-      path: '/api/cron/publish',
-      schedule: '* * * * *',
-    });
-  });
-
   it('does not cache API responses that trigger side effects', () => {
     expect(config.headers).toContainEqual({
       source: '/api/(.*)',

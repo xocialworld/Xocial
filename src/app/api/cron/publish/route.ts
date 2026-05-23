@@ -145,6 +145,9 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       return cronSuccessResponse({
         message: 'No posts to publish',
         processed: 0,
+        dueScheduled: dueScheduledPosts?.length || 0,
+        stuckPublishing: stuckPublishingPosts?.length || 0,
+        now: now.toISOString(),
         duration: Date.now() - startTime,
       });
     }
@@ -462,6 +465,9 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       failed: failureCount,
       retryScheduled: retryCount,
       duration: totalDuration,
+      dueScheduled: dueScheduledPosts?.length || 0,
+      stuckPublishing: stuckPublishingPosts?.length || 0,
+      now: now.toISOString(),
       results,
     });
   } catch (error: any) {

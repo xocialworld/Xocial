@@ -1,6 +1,6 @@
 /**
  * Cron Job: Automated Post Publishing
- * Runs every minute to publish scheduled posts
+ * Publishes scheduled posts when invoked by a cron provider
  * 
  * Features:
  * - Publishing lock to prevent duplicate processing
@@ -8,8 +8,8 @@
  * - Error categorization (retryable vs permanent)
  * - Partial success handling (some platforms succeed)
  * 
- * Triggered by: Vercel Cron
- * Schedule: * * * * * (every minute)
+ * Triggered by: Vercel Cron, an external scheduler, or a manual secure request
+ * Recommended schedule: every minute when the hosting plan supports it
  */
 
 import { NextRequest } from 'next/server';
@@ -35,11 +35,30 @@ const MAX_RETRY_ATTEMPTS = 3;
 
 // Backoff intervals (minutes) for each retry
 const RETRY_BACKOFF_MINUTES = [5, 15, 60];
+const PUBLISHING_LOCK_TTL_MINUTES = 10;
 const PUBLISH_POST_SELECT = `
   *,
   workspace:workspaces!inner(id, name),
   social_account:social_accounts(*)
 `;
+
+function hasFreshPublishingLock(metadata: unknown, now: Date): boolean {
+  const normalized = normalizeMetadata(metadata);
+  const startedAt = normalized.publishingLock?.startedAt;
+
+  if (!startedAt || typeof startedAt !== 'string') {
+    return false;
+  }
+
+  const startedAtMs = new Date(startedAt).getTime();
+
+  if (!Number.isFinite(startedAtMs)) {
+    return false;
+  }
+
+  const lockAgeMs = now.getTime() - startedAtMs;
+  return lockAgeMs >= 0 && lockAgeMs < PUBLISHING_LOCK_TTL_MINUTES * 60 * 1000;
+}
 
 /**
  * Determine if an error is retryable
@@ -99,12 +118,10 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       }
     );
 
-    // Get posts ready for publishing:
-    // 1. Scheduled posts that are due
-    // 2. Posts in 'publishing' status that have been stuck (>5 mins) - for recovery
-    // 3. Posts marked for retry that are past their retry time
+    // Get scheduled posts that are due. The production posts table constraint does
+    // not currently allow a transient "publishing" status, so locking uses an
+    // optimistic updated_at match instead of a status transition.
     const now = new Date();
-    const stuckThreshold = new Date(now.getTime() - 5 * 60 * 1000); // 5 minutes ago
     const { data: dueScheduledPosts, error: scheduledFetchError } = await supabase
       .from('posts')
       .select(PUBLISH_POST_SELECT)
@@ -118,21 +135,13 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       return cronErrorResponse('Failed to fetch scheduled posts', scheduledFetchError);
     }
 
-    const { data: stuckPublishingPosts, error: stuckFetchError } = await supabase
-      .from('posts')
-      .select(PUBLISH_POST_SELECT)
-      .eq('status', 'publishing')
-      .lte('updated_at', stuckThreshold.toISOString())
-      .order('updated_at', { ascending: true })
-      .limit(50);
+    const freshLockCount = (dueScheduledPosts || []).filter((post) =>
+      hasFreshPublishingLock(post.metadata, now)
+    ).length;
 
-    if (stuckFetchError) {
-      console.error('[Cron: Publish] Error fetching stuck publishing posts:', stuckFetchError);
-      return cronErrorResponse('Failed to fetch stuck publishing posts', stuckFetchError);
-    }
-
-    const scheduledPosts = [...(dueScheduledPosts || []), ...(stuckPublishingPosts || [])]
+    const scheduledPosts = [...(dueScheduledPosts || [])]
       .filter((post, index, list) => list.findIndex((item) => item.id === post.id) === index)
+      .filter((post) => !hasFreshPublishingLock(post.metadata, now))
       .sort((a, b) => {
         const aTime = new Date(a.scheduled_at || a.updated_at || a.created_at).getTime();
         const bTime = new Date(b.scheduled_at || b.updated_at || b.created_at).getTime();
@@ -146,7 +155,8 @@ export const GET = withCronVerification(async (request: NextRequest) => {
         message: 'No posts to publish',
         processed: 0,
         dueScheduled: dueScheduledPosts?.length || 0,
-        stuckPublishing: stuckPublishingPosts?.length || 0,
+        skippedFreshLocks: freshLockCount,
+        stuckPublishing: 0,
         now: now.toISOString(),
         duration: Date.now() - startTime,
       });
@@ -175,25 +185,25 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       try {
         console.log(`[Cron: Publish] Processing post ${post.id} (attempt ${retryCount + 1})`);
 
-        // Acquire publishing lock with atomic update
-        let lockQuery = supabase
+        // Acquire an optimistic lock without using an unsupported transient status.
+        const lockId = `${post.id}:${Date.now()}`;
+        const { data: lockedPost, error: lockError } = await supabase
           .from('posts')
           .update({ 
-            status: 'publishing',
             updated_at: new Date().toISOString(),
+            metadata: {
+              ...metadata,
+              publishingLock: {
+                id: lockId,
+                startedAt: new Date().toISOString(),
+              },
+            },
           })
-          .eq('id', post.id);
-
-        if (post.status === 'scheduled') {
-          lockQuery = lockQuery.eq('status', 'scheduled');
-        } else if (post.status === 'publishing') {
-          lockQuery = lockQuery.eq('status', 'publishing');
-        } else {
-          console.log(`[Cron: Publish] Post ${post.id} is no longer publishable`);
-          continue;
-        }
-
-        const { data: lockedPost, error: lockError } = await lockQuery.select().maybeSingle();
+          .eq('id', post.id)
+          .eq('status', 'scheduled')
+          .eq('updated_at', post.updated_at)
+          .select()
+          .maybeSingle();
 
         if (lockError || !lockedPost) {
           console.log(`[Cron: Publish] Post ${post.id} already being processed or status changed`);
@@ -466,7 +476,8 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       retryScheduled: retryCount,
       duration: totalDuration,
       dueScheduled: dueScheduledPosts?.length || 0,
-      stuckPublishing: stuckPublishingPosts?.length || 0,
+      skippedFreshLocks: freshLockCount,
+      stuckPublishing: 0,
       now: now.toISOString(),
       results,
     });

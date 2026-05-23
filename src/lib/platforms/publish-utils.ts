@@ -23,6 +23,7 @@ export async function recordPlatformPosts({
       post_id: postId,
       platform: result.platform,
       social_account_id: result.accountId ?? null,
+      external_id: result.platformPostId!,
       platform_post_id: result.platformPostId!,
       permalink: result.permalink ?? null,
       published_at: publishedAt,

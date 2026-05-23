@@ -15,7 +15,7 @@
 import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { withCronVerification, cronSuccessResponse, cronErrorResponse } from '@/lib/cron-verification';
-import { PlatformPublisher } from '@/lib/platforms/publisher';
+import { PlatformPublisher, type Platform, type PublishResult } from '@/lib/platforms/publisher';
 import {
   recordPlatformPosts,
   createInitialAnalytics,
@@ -41,6 +41,31 @@ const PUBLISH_POST_SELECT = `
   workspace:workspaces!inner(id, name),
   social_account:social_accounts(*)
 `;
+
+function isPlatform(value: unknown): value is Platform {
+  return (
+    typeof value === 'string' &&
+    ['facebook', 'instagram', 'twitter', 'linkedin', 'youtube', 'tiktok'].includes(value)
+  );
+}
+
+function addCarriedSuccess(
+  carried: Map<Platform, PublishResult>,
+  platform: unknown,
+  result: Partial<PublishResult> = {}
+) {
+  if (!isPlatform(platform) || carried.has(platform)) {
+    return;
+  }
+
+  carried.set(platform, {
+    platform,
+    success: true,
+    accountId: result.accountId,
+    platformPostId: result.platformPostId,
+    permalink: result.permalink,
+  });
+}
 
 function hasFreshPublishingLock(metadata: unknown, now: Date): boolean {
   const normalized = normalizeMetadata(metadata);
@@ -216,39 +241,91 @@ export const GET = withCronVerification(async (request: NextRequest) => {
           throw new Error('No supported platforms found for this post');
         }
 
-        const accountIds = await resolveAccountIds(
-          supabase,
-          post.workspace_id,
-          platforms,
-          metadata
-        );
+        const carriedSuccesses = new Map<Platform, PublishResult>();
+        const { data: existingPlatformPosts, error: existingPlatformPostsError } = await supabase
+          .from('platform_posts')
+          .select('platform, platform_post_id, external_id, permalink, status')
+          .eq('post_id', post.id)
+          .eq('status', 'published')
+          .in('platform', platforms);
+
+        if (existingPlatformPostsError) {
+          throw new Error(`Failed to read existing platform posts: ${existingPlatformPostsError.message}`);
+        }
+
+        (existingPlatformPosts || []).forEach((platformPost: any) => {
+          addCarriedSuccess(carriedSuccesses, platformPost.platform, {
+            platformPostId: platformPost.platform_post_id || platformPost.external_id,
+            permalink: platformPost.permalink,
+          });
+        });
+
+        if (Array.isArray(metadata.publishResults)) {
+          metadata.publishResults
+            .filter((result: any) => result?.success)
+            .forEach((result: any) => {
+              addCarriedSuccess(carriedSuccesses, result.platform, {
+                accountId: result.accountId,
+                platformPostId: result.platformPostId,
+                permalink: result.permalink,
+              });
+            });
+        }
+
+        if (Array.isArray(metadata.successfulPlatforms)) {
+          metadata.successfulPlatforms.forEach((platform: unknown) => {
+            addCarriedSuccess(carriedSuccesses, platform);
+          });
+        }
+
+        const pendingPlatforms = platforms.filter((platform) => !carriedSuccesses.has(platform));
+        const accountIds =
+          pendingPlatforms.length > 0
+            ? await resolveAccountIds(
+                supabase,
+                post.workspace_id,
+                pendingPlatforms,
+                metadata
+              )
+            : {};
 
         const mediaUrls = extractMediaUrls(post.media);
         const mediaType = inferMediaTypeFromMedia(post.media);
 
         const { fallback, perPlatform } = buildPlatformContentPayload(
           post.content,
-          platforms,
+          pendingPlatforms,
           mediaUrls,
           mediaType
         );
 
         // Publish to all platforms
-        const publishResults = await publisher.publishToAll({
-          platforms,
-          content: fallback,
-          platformContent: perPlatform,
-          accountIds,
-        });
+        const publishResults =
+          pendingPlatforms.length > 0
+            ? await publisher.publishToAll({
+                platforms: pendingPlatforms,
+                content: fallback,
+                platformContent: perPlatform,
+                accountIds,
+              })
+            : [];
+
+        const allPublishResults = [...publishResults, ...carriedSuccesses.values()];
+        const mergedAccountIds = {
+          ...(typeof metadata.accountIds === 'object' && metadata.accountIds ? metadata.accountIds : {}),
+          ...accountIds,
+        };
 
         // Analyze results
-        const allSucceeded = publishResults.every((r) => r.success);
-        const someSucceeded = publishResults.some((r) => r.success);
-        const externalIds = extractExternalIds(publishResults);
+        const allSucceeded = platforms.every((platform) =>
+          allPublishResults.some((result) => result.platform === platform && result.success)
+        );
+        const someSucceeded = allPublishResults.some((r) => r.success);
+        const externalIds = extractExternalIds(allPublishResults);
         const errors: string[] = [];
         let hasRetryableError = false;
 
-        publishResults.forEach((result) => {
+        allPublishResults.forEach((result) => {
           if (!result.success && result.error) {
             errors.push(`${result.platform}: ${result.error}`);
             if (isRetryableError(result)) {
@@ -271,10 +348,11 @@ export const GET = withCronVerification(async (request: NextRequest) => {
               external_post_id: JSON.stringify(externalIds),
               metadata: {
                 ...metadata,
-                accountIds,
-                publishResults,
+                accountIds: mergedAccountIds,
+                publishResults: allPublishResults,
                 publishedAt,
                 retryCount: undefined, // Clear retry count on success
+                publishingLock: undefined,
               },
             })
             .eq('id', post.id);
@@ -303,8 +381,8 @@ export const GET = withCronVerification(async (request: NextRequest) => {
         } else if (someSucceeded) {
           // Partial success - record what worked, but mark as partially failed
           const publishedAt = new Date().toISOString();
-          const successfulPlatforms = publishResults.filter(r => r.success).map(r => r.platform);
-          const failedPlatforms = publishResults.filter(r => !r.success).map(r => r.platform);
+          const successfulPlatforms = allPublishResults.filter(r => r.success).map(r => r.platform);
+          const failedPlatforms = allPublishResults.filter(r => !r.success).map(r => r.platform);
 
           await supabase
             .from('posts')
@@ -315,11 +393,12 @@ export const GET = withCronVerification(async (request: NextRequest) => {
               external_post_id: JSON.stringify(externalIds),
               metadata: {
                 ...metadata,
-                accountIds,
-                publishResults,
+                accountIds: mergedAccountIds,
+                publishResults: allPublishResults,
                 publishedAt,
                 successfulPlatforms,
                 failedPlatforms,
+                publishingLock: undefined,
               },
             })
             .eq('id', post.id);
@@ -357,11 +436,12 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                 error_message: `Retry ${retryCount + 1}/${MAX_RETRY_ATTEMPTS}: ${errors.join('; ')}`,
                 metadata: {
                   ...metadata,
-                  accountIds,
-                  publishResults,
+                  accountIds: mergedAccountIds,
+                  publishResults: allPublishResults,
                   retryCount: retryCount + 1,
                   lastFailedAt: new Date().toISOString(),
                   nextRetryAt: nextRetryTime.toISOString(),
+                  publishingLock: undefined,
                 },
               })
               .eq('id', post.id);
@@ -387,10 +467,11 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                   : errors.join('; '),
                 metadata: {
                   ...metadata,
-                  accountIds,
-                  publishResults,
+                  accountIds: mergedAccountIds,
+                  publishResults: allPublishResults,
                   failedAt: new Date().toISOString(),
                   finalRetryCount: retryCount,
+                  publishingLock: undefined,
                 },
               })
               .eq('id', post.id);
@@ -426,6 +507,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                 retryCount: retryCount + 1,
                 lastError: error.message,
                 nextRetryAt: nextRetryTime.toISOString(),
+                publishingLock: undefined,
               },
             })
             .eq('id', post.id);
@@ -447,6 +529,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                 ...metadata,
                 failedAt: new Date().toISOString(),
                 lastError: error.message,
+                publishingLock: undefined,
               },
             })
             .eq('id', post.id);

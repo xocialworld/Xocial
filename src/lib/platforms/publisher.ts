@@ -9,12 +9,13 @@ import { TwitterClient, createTwitterClient } from '@/lib/platforms/twitter';
 import { LinkedInClient, createLinkedInClient } from './linkedin';
 import { YouTubeClient, createYouTubeClient, publishToYouTube } from './youtube';
 import { TikTokClient, createTikTokClient } from './tiktok';
-import { retryWithBackoff, apiCircuitBreaker } from '@/lib/errors';
+import { retryWithBackoff } from '@/lib/errors';
 import { refreshMetaToken } from '@/lib/oauth/token-refresh';
 import { refreshYouTubeToken } from '@/lib/oauth/youtube';
 import { encryptToken, decryptToken } from '@/lib/encryption';
 import { createClient } from '@/lib/supabase/server';
 import { logger } from '@/lib/logger';
+import { mediaUrlLooksLikeVideo } from './publish-utils';
 
 export type Platform = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'youtube' | 'tiktok';
 
@@ -80,13 +81,11 @@ export class PlatformPublisher {
 
         const result = await retryWithBackoff(
           () =>
-            apiCircuitBreaker.execute(() =>
-              this.publishToPlatform(
-                platform,
-                accountId,
-                contentPayload,
-                request.scheduledFor
-              )
+            this.publishToPlatform(
+              platform,
+              accountId,
+              contentPayload,
+              request.scheduledFor
             ),
           {
             maxRetries: 3,
@@ -252,7 +251,7 @@ export class PlatformPublisher {
     if (hasMedia && content.mediaUrls.length > 1) {
       // Check if any are videos (can't mix in album)
       const hasVideo = content.mediaUrls.some((url: string) =>
-        url.includes('.mp4') || url.includes('video')
+        mediaUrlLooksLikeVideo(url)
       );
 
       if (hasVideo) {
@@ -276,7 +275,10 @@ export class PlatformPublisher {
 
     // Existing single media logic remains unchanged
     if (hasMedia) {
-      const isVideo = content.mediaUrls[0].includes('.mp4') || content.mediaUrls[0].includes('video');
+      const isVideo =
+        content.mediaType === 'VIDEO' ||
+        content.mediaType === 'REELS' ||
+        mediaUrlLooksLikeVideo(content.mediaUrls[0]);
 
       if (isVideo) {
         const result = await client.publishVideo({
@@ -324,14 +326,13 @@ export class PlatformPublisher {
     const isVideo =
       content.mediaType === 'VIDEO' ||
       content.mediaType === 'REELS' ||
-      content.mediaUrls[0].includes('.mp4') ||
-      content.mediaUrls[0].includes('video');
+      mediaUrlLooksLikeVideo(content.mediaUrls[0]);
 
     if (isVideo) {
       return await client.publishVideo({
         caption: content.text,
         videoUrl: content.mediaUrls[0],
-        mediaType: content.mediaType === 'REELS' ? 'REELS' : 'VIDEO',
+        mediaType: 'REELS',
       });
     } else {
       return await client.publishImage({
@@ -356,7 +357,7 @@ export class PlatformPublisher {
       // We'll try to upload but fall back to text-only if it fails
       try {
         const uploadPromises = content.mediaUrls.slice(0, 4).map(async (url: string) => {
-          const isVideo = url.includes('.mp4') || url.includes('video');
+          const isVideo = mediaUrlLooksLikeVideo(url);
           return client.uploadMedia(url, isVideo ? 'video' : 'image');
         });
 
@@ -427,11 +428,10 @@ export class PlatformPublisher {
 
     // Check if the media is a video
     const mediaUrl = content.mediaUrls[0];
-    const isVideo = mediaUrl.includes('.mp4') ||
-      mediaUrl.includes('.mov') ||
-      mediaUrl.includes('.avi') ||
-      mediaUrl.includes('.webm') ||
-      mediaUrl.includes('video');
+    const isVideo =
+      content.mediaType === 'VIDEO' ||
+      content.mediaType === 'REELS' ||
+      mediaUrlLooksLikeVideo(mediaUrl);
 
     if (!isVideo) {
       throw new Error(

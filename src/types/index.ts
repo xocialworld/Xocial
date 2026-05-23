@@ -79,7 +79,7 @@ export interface SocialAccount {
   metrics?: SocialAccountMetrics;
 }
 
-export type PostStatus = 'draft' | 'pending_approval' | 'approved' | 'scheduled' | 'published' | 'failed' | 'rejected';
+export type PostStatus = 'draft' | 'pending_approval' | 'approved' | 'scheduled' | 'published' | 'failed' | 'partial' | 'rejected';
 
 export interface Post {
   id: string;
@@ -94,6 +94,7 @@ export interface Post {
   media?: Media[];
   tags?: string[];
   external_post_id?: string;
+  error_message?: string | null;
   social_account_id?: string | null;
   created_at: string;
   updated_at: string;

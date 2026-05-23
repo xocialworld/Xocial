@@ -85,6 +85,21 @@ function getErrorMessage(payload: any, fallback: string) {
     return payload?.error?.message || payload?.error || payload?.message || fallback;
 }
 
+function getPublishResultsMessage(payload: any) {
+    const results =
+        payload?.results ||
+        payload?.error?.details?.errors ||
+        payload?.error?.details?.results ||
+        payload?.data?.results;
+
+    if (!Array.isArray(results)) return "";
+
+    return results
+        .filter((result: any) => result && result.success === false)
+        .map((result: any) => `${result.platform}: ${result.error || "Publish failed"}`)
+        .join("; ");
+}
+
 function workspaceHeader(workspaceId?: string): Record<string, string> {
     return workspaceId ? { "x-workspace-id": workspaceId } : {};
 }
@@ -162,10 +177,14 @@ export default function PostDetailPage() {
             const payload = await response.json().catch(() => ({}));
 
             if (!response.ok) {
-                throw new Error(getErrorMessage(payload, "Failed to publish post"));
+                throw new Error(getPublishResultsMessage(payload) || getErrorMessage(payload, "Failed to publish post"));
             }
 
-            toast.success(payload.message || "Post published");
+            if (payload.partial || payload.success === false) {
+                toast.warning(getPublishResultsMessage(payload) || payload.message || "Published to some platforms with errors");
+            } else {
+                toast.success(payload.message || "Post published");
+            }
             await fetchPost();
         } catch (error: any) {
             toast.error(error.message || "Failed to publish post");

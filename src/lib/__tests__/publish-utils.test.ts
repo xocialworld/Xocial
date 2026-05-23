@@ -2,6 +2,7 @@ import {
   extractExternalIds,
   parseAccountIdsFromMetadata,
   buildPlatformContentPayload,
+  inferMediaTypeFromMedia,
   recordPlatformPosts,
 } from '@/lib/platforms/publish-utils';
 import type { PublishResult } from '@/lib/platforms/publisher';
@@ -88,6 +89,45 @@ describe('publish utils', () => {
     });
   });
 
+  it('infers videos from saved media type and non-mp4 URLs', () => {
+    expect(
+      inferMediaTypeFromMedia([
+        {
+          type: 'video',
+          url: 'https://storage.example.com/uploads/Screen_Recording_2026-05-17.mov',
+        },
+      ])
+    ).toBe('VIDEO');
+
+    expect(
+      inferMediaTypeFromMedia([
+        {
+          type: 'image',
+          url: 'https://storage.example.com/uploads/photo.png',
+        },
+      ])
+    ).toBe('IMAGE');
+  });
+
+  it('carries default media type into per-platform publish payloads', () => {
+    const { fallback, perPlatform } = buildPlatformContentPayload(
+      {
+        instagram: { text: 'IG text' },
+      },
+      ['instagram'],
+      ['https://storage.example.com/uploads/video.mov'],
+      'VIDEO'
+    );
+
+    expect(fallback.mediaType).toBe('VIDEO');
+    expect(perPlatform.instagram).toEqual({
+      text: 'IG text',
+      mediaUrls: ['https://storage.example.com/uploads/video.mov'],
+      link: undefined,
+      mediaType: 'VIDEO',
+    });
+  });
+
   it('records platform posts with associated social accounts when available', async () => {
     const insertMock = jest.fn().mockResolvedValue({ error: null });
     const supabaseMock = {
@@ -137,4 +177,3 @@ describe('publish utils', () => {
     ]);
   });
 });
-

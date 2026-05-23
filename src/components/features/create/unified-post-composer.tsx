@@ -274,6 +274,31 @@ async function authHeader(): Promise<Record<string, string>> {
     return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
 }
 
+function getPublishResultsMessage(payload: any) {
+    const results =
+        payload?.results ||
+        payload?.error?.details?.errors ||
+        payload?.error?.details?.results ||
+        payload?.data?.results;
+
+    if (!Array.isArray(results)) return "";
+
+    return results
+        .filter((result: any) => result && result.success === false)
+        .map((result: any) => `${getPlatformLabel(result.platform as Platform)}: ${result.error || "Publish failed"}`)
+        .join("; ");
+}
+
+function getSubmitErrorMessage(payload: any, fallback: string) {
+    return (
+        getPublishResultsMessage(payload) ||
+        payload?.error?.message ||
+        (typeof payload?.error === "string" ? payload.error : "") ||
+        payload?.message ||
+        fallback
+    );
+}
+
 async function submitPost(
     payload: ReturnType<typeof buildPostPayload>,
     workspaceId?: string
@@ -292,7 +317,7 @@ async function submitPost(
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-        const errorMsg = data?.error?.message || data?.message || `Request failed with status ${response.status}`;
+        const errorMsg = getSubmitErrorMessage(data, `Request failed with status ${response.status}`);
         throw new Error(errorMsg);
     }
 
@@ -829,6 +854,8 @@ export function UnifiedPostComposer() {
 
             if (finalStatus === "published") {
                 toast.success("Post published successfully");
+            } else if (finalStatus === "partial") {
+                toast.warning(result.post?.error_message || "Published to some platforms with errors");
             } else if (finalStatus === "scheduled") {
                 toast.success(`Post scheduled for ${scheduledAt?.toLocaleString()}`);
             } else if (finalStatus === "pending_approval") {

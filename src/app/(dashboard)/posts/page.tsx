@@ -54,6 +54,7 @@ const statusConfig: Record<string, { icon: any; color: string; label: string }> 
     draft: { icon: FileText, color: "text-secondary-500 bg-secondary-100", label: "Draft" },
     scheduled: { icon: Clock, color: "text-blue-600 bg-blue-100", label: "Scheduled" },
     published: { icon: CheckCircle, color: "text-green-600 bg-green-100", label: "Published" },
+    partial: { icon: AlertCircle, color: "text-amber-600 bg-amber-100", label: "Partial" },
     failed: { icon: AlertCircle, color: "text-red-600 bg-red-100", label: "Failed" },
     pending_approval: { icon: Hourglass, color: "text-amber-600 bg-amber-100", label: "Pending" },
     in_review: { icon: Hourglass, color: "text-amber-600 bg-amber-100", label: "In Review" },

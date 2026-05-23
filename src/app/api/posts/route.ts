@@ -12,11 +12,12 @@ import {
 } from '@/lib/workspace-context';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { platformPublisher, type Platform } from '@/lib/platforms/publisher';
+import { platformPublisher, type Platform, type PlatformContent } from '@/lib/platforms/publisher';
 import {
   recordPlatformPosts,
   createInitialAnalytics,
   extractExternalIds,
+  inferMediaTypeFromMedia,
 } from '@/lib/platforms/publish-utils';
 import { normalizeMetadata } from '@/lib/platforms/post-publish-helpers';
 import { getCompatiblePlatforms } from '@/lib/platforms/capabilities';
@@ -87,6 +88,7 @@ const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
   approved: ['scheduled', 'published'],
   scheduled: ['draft', 'pending_approval', 'published', 'failed'],
   published: [], // Terminal state - cannot change
+  partial: ['scheduled', 'draft', 'published'], // Can retry or move back to draft after partial publish
   failed: ['scheduled', 'draft'], // Can retry by rescheduling or reverting to draft
 };
 
@@ -338,6 +340,7 @@ async function publishImmediately({
   const contentMap = buildPlatformContentMap(input.content, platforms);
   const mediaUrls =
     input.media?.map((item) => item.url).filter((url) => Boolean(url)) ?? undefined;
+  const mediaType = inferMediaTypeFromMedia(input.media);
 
   const primaryPlatform = platforms[0];
   const fallbackText = primaryPlatform ? contentMap[primaryPlatform]?.text || '' : '';
@@ -351,14 +354,16 @@ async function publishImmediately({
     content: {
       text: fallbackText,
       mediaUrls,
+      mediaType,
     },
     platformContent: platforms.reduce((acc, platform) => {
       acc[platform] = {
         text: contentMap[platform]?.text || fallbackText,
         mediaUrls,
+        mediaType,
       };
       return acc;
-    }, {} as Partial<Record<Platform, { text: string; mediaUrls?: string[] }>>),
+    }, {} as Partial<Record<Platform, PlatformContent>>),
     accountIds: platformAccounts,
   });
 
@@ -366,17 +371,22 @@ async function publishImmediately({
 
   const metadata = normalizeMetadata(post.metadata);
   const allSucceeded = publishResults.every((result) => result.success);
+  const anySucceeded = publishResults.some((result) => result.success);
   const publishedAt = new Date().toISOString();
+  const externalIds = extractExternalIds(publishResults);
+  const errors = publishResults
+    .filter((result) => !result.success && result.error)
+    .map((result) => `${result.platform}: ${result.error}`)
+    .join('; ');
 
-  if (allSucceeded) {
-    const externalIds = extractExternalIds(publishResults);
-
+  if (anySucceeded) {
     await supabase
       .from('posts')
       .update({
-        status: 'published',
+        status: allSucceeded ? 'published' : 'partial',
         published_at: publishedAt,
         external_post_id: JSON.stringify(externalIds),
+        error_message: allSucceeded ? null : errors || 'Failed to publish to selected platforms',
         metadata: {
           ...metadata,
           accountIds: platformAccounts,
@@ -406,11 +416,6 @@ async function publishImmediately({
 
     return refreshed || post;
   }
-
-  const errors = publishResults
-    .filter((result) => !result.success && result.error)
-    .map((result) => `${result.platform}: ${result.error}`)
-    .join('; ');
 
   await supabase
     .from('posts')

@@ -6,6 +6,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { decryptToken } from '@/lib/encryption';
 import { getInstagramGraphBaseUrl } from '@/lib/oauth/instagram';
+import { mediaUrlLooksLikeVideo } from './publish-utils';
 
 export interface InstagramConfig {
   accessToken: string;
@@ -74,8 +75,7 @@ export class InstagramClient {
 
     const children = await Promise.all(
       post.mediaUrls.slice(0, 10).map(async (mediaUrl) => {
-        const isVideo =
-          mediaUrl.toLowerCase().includes('.mp4') || mediaUrl.toLowerCase().includes('video');
+        const isVideo = mediaUrlLooksLikeVideo(mediaUrl);
         const containerId = await this.createMediaContainer({
           ...(isVideo ? { video_url: mediaUrl, media_type: 'VIDEO' } : { image_url: mediaUrl }),
           caption: '',

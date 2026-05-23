@@ -20,7 +20,9 @@ import {
   recordPlatformPosts,
   createInitialAnalytics,
   extractExternalIds,
+  extractMediaUrls,
   buildPlatformContentPayload,
+  inferMediaTypeFromMedia,
 } from '@/lib/platforms/publish-utils';
 import {
   normalizeMetadata,
@@ -178,16 +180,14 @@ export const GET = withCronVerification(async (request: NextRequest) => {
           metadata
         );
 
-        const mediaUrls = Array.isArray(post.media)
-          ? post.media
-              .map((item: any) => item?.url)
-              .filter((url: unknown): url is string => typeof url === 'string' && url.length > 0)
-          : [];
+        const mediaUrls = extractMediaUrls(post.media);
+        const mediaType = inferMediaTypeFromMedia(post.media);
 
         const { fallback, perPlatform } = buildPlatformContentPayload(
           post.content,
           platforms,
-          mediaUrls
+          mediaUrls,
+          mediaType
         );
 
         // Publish to all platforms

@@ -7,7 +7,9 @@ import {
   recordPlatformPosts,
   createInitialAnalytics,
   extractExternalIds,
+  extractMediaUrls,
   buildPlatformContentPayload,
+  inferMediaTypeFromMedia,
 } from '@/lib/platforms/publish-utils';
 import {
   normalizeMetadata,
@@ -66,13 +68,15 @@ export async function POST(
     const metadata = normalizeMetadata(post.metadata);
     const accountIds = await resolveAccountIds(supabase, post.workspace_id, platforms, metadata);
 
-    const mediaUrls = Array.isArray(post.media)
-      ? post.media
-          .map((item: any) => item?.url)
-          .filter((url: unknown): url is string => typeof url === 'string' && url.length > 0)
-      : [];
+    const mediaUrls = extractMediaUrls(post.media);
+    const mediaType = inferMediaTypeFromMedia(post.media);
 
-    const { fallback, perPlatform } = buildPlatformContentPayload(post.content, platforms, mediaUrls);
+    const { fallback, perPlatform } = buildPlatformContentPayload(
+      post.content,
+      platforms,
+      mediaUrls,
+      mediaType
+    );
 
     // Idempotency: find already published platform posts
     const { data: existingPosts } = await supabase
@@ -138,6 +142,7 @@ export async function POST(
       metadata: {
         ...metadata,
         accountIds,
+        publishResults: allResults,
       },
     };
 
@@ -150,17 +155,28 @@ export async function POST(
 
     await supabase.from('posts').update(updates).eq('id', postId);
 
+    if (!anySuccessful) {
+      return NextResponse.json(
+        {
+          success: false,
+          results: allResults,
+          message: 'Failed to publish to any platform',
+          error: firstError,
+        },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json({
-      success: true,
+      success: allSuccessful,
+      partial: !allSuccessful,
       results: allResults,
       message: allSuccessful
         ? 'Published to all platforms successfully'
-        : anySuccessful
-        ? 'Published to some platforms with errors'
-        : 'Failed to publish to any platform',
+        : 'Published to some platforms with errors',
+      error: firstError,
     });
   } catch (error) {
     return handleAPIError(error);
   }
 }
-

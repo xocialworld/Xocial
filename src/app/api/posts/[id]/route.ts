@@ -9,8 +9,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { handleAPIError, parseJSONBody, validateRequiredFields } from '@/lib/error-handler';
 import { APIError } from '@/lib/api-error';
-import { verifyResourceAccess } from '@/lib/api/workspace-access';
+import {
+  verifyResourceAccess,
+  verifyWorkspaceAccess,
+} from '@/lib/api/workspace-access';
 import { rateLimitMiddleware } from '@/lib/api/rate-limit';
+import { getWorkspaceIdFromRequest } from '@/lib/workspace-context';
 
 // GET - Fetch a specific post
 export async function GET(
@@ -35,20 +39,35 @@ export async function GET(
     // 2. Rate limiting
     rateLimitMiddleware(session.user.id, 'READ');
 
-    // 3. Verify workspace access
-    await verifyResourceAccess(supabase, 'posts', id, session.user.id);
+    const workspaceId = getWorkspaceIdFromRequest(request);
+    let postClient = supabase;
+    let workspaceFilter: string | null = null;
+
+    // 3. Verify workspace access. When the UI sends the selected workspace,
+    // scope the lookup to that workspace so stale URLs cannot cross tenants.
+    if (workspaceId) {
+      await verifyWorkspaceAccess(supabase, workspaceId, session.user.id);
+      workspaceFilter = workspaceId;
+    } else {
+      await verifyResourceAccess(supabase, 'posts', id, session.user.id);
+    }
 
     // 4. Fetch post with analytics
-    const { data: post, error: postError } = await supabase
+    let postQuery = postClient
       .from('posts')
       .select(`
         *,
         post_analytics(*)
       `)
-      .eq('id', id)
-      .single();
+      .eq('id', id);
 
-    if (postError) {
+    if (workspaceFilter) {
+      postQuery = postQuery.eq('workspace_id', workspaceFilter);
+    }
+
+    const { data: post, error: postError } = await postQuery.maybeSingle();
+
+    if (postError || !post) {
       throw APIError.notFound('Post', 'The requested post does not exist');
     }
 

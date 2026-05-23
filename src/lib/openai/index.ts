@@ -10,11 +10,12 @@ import type { Platform } from '@/types';
 import { DEFAULT_AI_MODEL } from '@/lib/ai/models';
 import { env } from '@/lib/env';
 
-// Initialize OpenAI provider with Vercel AI Gateway support
-// We use the Vercel AI Gateway URL for all requests if configured
+// Initialize OpenAI provider with Vercel AI Gateway support.
+// Use direct OpenAI when only OPENAI_API_KEY is configured.
+const usesGateway = Boolean(env.VERCEL_AI_GATEWAY_API_KEY);
 const openai = createOpenAI({
   apiKey: env.VERCEL_AI_GATEWAY_API_KEY || env.OPENAI_API_KEY,
-  baseURL: env.VERCEL_AI_GATEWAY_URL ? `${env.VERCEL_AI_GATEWAY_URL}/v1` : undefined,
+  baseURL: usesGateway && env.VERCEL_AI_GATEWAY_URL ? `${env.VERCEL_AI_GATEWAY_URL}/v1` : undefined,
 });
 
 const DEFAULT_PLATFORM: Platform = 'instagram';
@@ -111,6 +112,28 @@ export interface GenerateContentResult {
 
 type ChunkCallback = (payload: { platform: Platform; chunk: string }) => void;
 
+const platformContentSchema = z.object({
+  text: z.string().min(1, 'Content must not be empty'),
+  hashtags: z.array(z.string()).optional(),
+  mentions: z.array(z.string()).optional(),
+  key_points: z.array(z.string()).optional(),
+  call_to_action: z.string().optional(),
+  recommended_post_time: z.string().optional(),
+  tone: z.string().optional(),
+  style: z.string().optional(),
+  summary: z.string().optional(),
+}).passthrough();
+
+const generatedJsonSchema = z.object({
+  platform_content: z.record(platformContentSchema),
+  hashtags: z.array(z.string()).optional(),
+  summary: z.object({
+    tone: z.string().optional(),
+    style: z.string().optional(),
+    highlights: z.array(z.string()).optional(),
+  }).optional(),
+}).passthrough();
+
 function extractAIErrorMessage(error: unknown): string {
   if (!error) return 'Unknown error from AI Gateway.';
   if (error instanceof Error) return error.message;
@@ -121,6 +144,86 @@ function extractAIErrorMessage(error: unknown): string {
     err?.message ??
     err?.error?.code ??
     'AI Gateway request failed. Please retry.'
+  );
+}
+
+function getProviderOrder() {
+  return (env.VERCEL_AI_GATEWAY_ORDER || 'openai')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+function resolveModelId(id: string) {
+  if (usesGateway) {
+    return id.includes('/') ? id : `openai/${id}`;
+  }
+
+  if (!id.startsWith('openai/')) {
+    console.warn(`[AI] Direct OpenAI configured. Falling back from ${id} to gpt-4o-mini`);
+    return 'gpt-4o-mini';
+  }
+
+  return id.replace('openai/', '');
+}
+
+function getFallbackModels(modelId: string) {
+  return MODEL_FALLBACKS[modelId] || MODEL_FALLBACKS[`openai/${modelId}`] || [];
+}
+
+function extractJsonObject(rawText: string): unknown {
+  const trimmed = rawText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  const start = trimmed.indexOf('{');
+
+  if (start === -1) {
+    throw new Error('AI returned text without a JSON object.');
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < trimmed.length; i += 1) {
+    const char = trimmed[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return JSON.parse(trimmed.slice(start, i + 1));
+      }
+    }
+  }
+
+  throw new Error('AI returned incomplete JSON.');
+}
+
+function hasMatchingPlatformKeys(payload: z.infer<typeof generatedJsonSchema>, platforms: Platform[]) {
+  const contentKeys = Object.keys(payload.platform_content || {}).map((key) =>
+    key.toLowerCase().replace(/[^a-z]/g, '')
+  );
+  const targetKeys = platforms.map((platform) => platform.toLowerCase().replace(/[^a-z]/g, ''));
+
+  return targetKeys.some((target) =>
+    contentKeys.some((key) => key.includes(target) || target.includes(key))
   );
 }
 
@@ -197,117 +300,88 @@ export async function generateContent(
   const systemPrompt = buildSystemPrompt(targetPlatforms, request, lengthDescription.description);
 
   try {
-    // Helper to resolve model ID based on gateway configuration
-    const resolveModelId = (id: string) => {
-      if (!env.VERCEL_AI_GATEWAY_URL) {
-        // Direct OpenAI: Must be OpenAI model and have no prefix
-        if (!id.startsWith('openai/')) {
-          console.warn(`[AI] Gateway not configured. Falling back from ${id} to gpt-4o-mini`);
-          return 'gpt-4o-mini';
-        }
-        return id.replace('openai/', '');
-      }
-      // Gateway: Must have prefix
-      return id.includes('/') ? id : `openai/${id}`;
-    };
+    const modelString = resolveModelId(resolvedModel);
+    const fallbackModels = getFallbackModels(resolvedModel);
+    const providerOrder = getProviderOrder();
 
-    // Prepare model string based on provider configuration
-    let modelString = resolveModelId(resolvedModel);
-
-    // Get fallback models if available
-    const fallbackModels = MODEL_FALLBACKS[resolvedModel] || [];
-
-    const providerOrder = (env.VERCEL_AI_GATEWAY_ORDER || 'openai')
-      .split(',')
-      .map((p) => p.trim())
-      .filter(Boolean);
-
-    const platformContentSchema = z.object({
-      text: z.string().min(1, "Content must not be empty").describe("The generated social media post caption. MUST include the hook, body, and hashtags."),
-      hashtags: z.array(z.string()).optional(),
-      mentions: z.array(z.string()).optional(),
-      key_points: z.array(z.string()).optional(),
-      call_to_action: z.string().optional(),
-      recommended_post_time: z.string().optional(),
-      tone: z.string().optional(),
-      style: z.string().optional(),
-      summary: z.string().optional(),
-    });
-
-    const responseSchema = z.object({
-      platform_content: z.record(platformContentSchema),
-      hashtags: z.array(z.string()).optional(),
-      summary: z.object({
-        tone: z.string().optional(),
-        style: z.string().optional(),
-        highlights: z.array(z.string()).optional(),
-      }).optional(),
-    });
-
-      const execGenerateText = async (model: string) =>
-        generateObject({
-          model: openai(model),
-          schema: responseSchema,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: request.prompt },
-          ],
-          maxTokens: Math.min(
-            1800,
-            Math.max(500, lengthDescription.maxTokens * Math.max(1, targetPlatforms.length))
-          ),
-          temperature: 0.7,
-          providerOptions: {
-            gateway: {
-              order: providerOrder.length ? providerOrder : ['openai'],
-            },
-            openai: {
-              responseFormat: { type: 'json_object' },
-            },
+    const execGenerateJson = async (model: string, retryCount = 0) => {
+      const result = await generateText({
+        model: openai(model),
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: retryCount === 0
+              ? request.prompt
+              : `${request.prompt}\n\nReturn only one valid JSON object with non-empty platform_content for: ${targetPlatforms.join(', ')}.`,
           },
-        });
+        ],
+        maxTokens: Math.min(
+          1800,
+          Math.max(500, lengthDescription.maxTokens * Math.max(1, targetPlatforms.length))
+        ),
+        temperature: 0.7,
+        providerOptions: {
+          gateway: {
+            order: providerOrder.length ? providerOrder : ['openai'],
+          },
+          openai: {
+            responseFormat: { type: 'json_object' },
+          },
+        },
+      });
 
-    let result;
-    let successfulModel = modelString;
+      try {
+        const parsedJson = extractJsonObject(result.text || '');
+        const payload = generatedJsonSchema.parse(parsedJson);
+        const hasValidContent = Object.values(payload.platform_content || {}).some((pc) =>
+          Boolean(pc?.text?.trim())
+        );
+        const hasMatchingKeys = hasMatchingPlatformKeys(payload, targetPlatforms);
 
-    const attemptGeneration = async (modelToUse: string, retryCount = 0): Promise<any> => {
-        try {
-            const genResult = await execGenerateText(modelToUse);
-            if (genResult?.object?.platform_content) {
-                const content = genResult.object.platform_content;
-                const hasValidContent = Object.values(content).some((pc: any) => pc.text && pc.text.trim().length > 0);
-                const contentKeys = Object.keys(content).map(k => k.toLowerCase().replace(/[^a-z]/g, ''));
-                const targetKeys = targetPlatforms.map(p => p.toLowerCase().replace(/[^a-z]/g, ''));
-                const hasMatchingKeys = targetKeys.some(target => 
-                    contentKeys.some(key => key.includes(target) || target.includes(key))
-                );
-                if ((!hasValidContent || !hasMatchingKeys) && retryCount < 1) {
-                    console.warn(`[AI] Generated content validation failed (empty: ${!hasValidContent}, no-match: ${!hasMatchingKeys}) for ${modelToUse}, retrying...`);
-                    return attemptGeneration(modelToUse, retryCount + 1);
-                }
-            }
-            return genResult;
-        } catch (e) {
-            throw e;
+        if ((!hasValidContent || !hasMatchingKeys) && retryCount < 1) {
+          console.warn(
+            `[AI] Generated content validation failed (empty: ${!hasValidContent}, no-match: ${!hasMatchingKeys}) for ${model}, retrying...`
+          );
+          return execGenerateJson(model, retryCount + 1);
         }
+
+        if (!hasValidContent) {
+          throw new Error('AI returned empty content.');
+        }
+
+        return { payload, result };
+      } catch (error) {
+        if (retryCount < 1) {
+          console.warn(`[AI] Failed to parse generated JSON for ${model}, retrying.`, error);
+          return execGenerateJson(model, retryCount + 1);
+        }
+        throw error;
+      }
     };
+
+    let result: Awaited<ReturnType<typeof execGenerateJson>> | undefined;
+    let successfulModel = modelString;
+    const attemptErrors: string[] = [];
 
     try {
-      result = await attemptGeneration(modelString);
+      result = await execGenerateJson(modelString);
     } catch (e) {
+      const message = extractAIErrorMessage(e);
+      attemptErrors.push(`${modelString}: ${message}`);
       console.warn(`[AI] Primary model ${modelString} failed.`, e);
     }
 
-    if (!result?.object && fallbackModels.length) {
+    if (!result && fallbackModels.length) {
       for (const fb of fallbackModels) {
         const fbModel = resolveModelId(fb);
         try {
-          result = await attemptGeneration(fbModel);
-          if (result?.object) {
-            successfulModel = fbModel;
-            break;
-          }
+          result = await execGenerateJson(fbModel);
+          successfulModel = fbModel;
+          break;
         } catch (e) {
+          const message = extractAIErrorMessage(e);
+          attemptErrors.push(`${fbModel}: ${message}`);
           console.warn(`[AI] Fallback model ${fbModel} failed.`, e);
         }
       }
@@ -317,23 +391,27 @@ export async function generateContent(
     const defaultModelId = resolveModelId(DEFAULT_AI_MODEL);
     const hasTriedDefault = modelString === defaultModelId || fallbackModels.some(fb => resolveModelId(fb) === defaultModelId);
 
-    if (!result?.object && !hasTriedDefault) {
+    if (!result && !hasTriedDefault) {
       try {
         console.log(`[AI] Attempting ultimate fallback to ${defaultModelId}`);
-        result = await attemptGeneration(defaultModelId);
-        if (result?.object) {
-          successfulModel = defaultModelId;
-        }
+        result = await execGenerateJson(defaultModelId);
+        successfulModel = defaultModelId;
       } catch (e) {
+        const message = extractAIErrorMessage(e);
+        attemptErrors.push(`${defaultModelId}: ${message}`);
         console.warn(`[AI] Default model fallback failed.`, e);
       }
     }
 
-    if (!result?.object) {
-      throw new Error(`Failed to generate content. All models failed.`);
+    if (!result) {
+      throw new Error(
+        attemptErrors.length
+          ? `AI generation failed after trying all configured models. ${attemptErrors[0]}`
+          : 'AI generation failed after trying all configured models.'
+      );
     }
 
-    const payload = result.object;
+    const payload = result.payload;
 
 
     // Normalize platform keys in payload to lowercase to handle AI capitalization errors
@@ -436,8 +514,8 @@ export async function generateContent(
     const totalCharCount = analyticsEntries.reduce((sum, entry) => sum + entry.charCount, 0);
 
     // Extract model info from provider metadata if available
-    const modelUsed = (result as any).experimental_providerMetadata?.gateway?.routing?.finalProvider
-      ? `${(result as any).experimental_providerMetadata.gateway.routing.finalProvider}/${successfulModel.split('/').pop()}`
+    const modelUsed = (result.result as any).experimental_providerMetadata?.gateway?.routing?.finalProvider
+      ? `${(result.result as any).experimental_providerMetadata.gateway.routing.finalProvider}/${successfulModel.split('/').pop()}`
       : successfulModel;
 
     return {
@@ -459,7 +537,7 @@ export async function generateContent(
         perPlatform: perPlatformAnalytics,
       },
       model: modelUsed,
-      tokenUsage: result.usage?.totalTokens ?? 0,
+      tokenUsage: (result.result as any).usage?.totalTokens ?? 0,
     };
   } catch (error: any) {
     // Fallback to mock data in demo/preview mode if API fails (e.g. billing, rate limit)
@@ -632,7 +710,8 @@ function buildHighlights(content: Partial<Record<Platform, PlatformContentResult
 export async function refineContent(
   originalContent: string,
   platform: string,
-  refinementType: 'shorter' | 'longer' | 'more_emojis' | 'more_professional' | 'more_casual' | 'add_urgency'
+  refinementType: 'shorter' | 'longer' | 'more_emojis' | 'more_professional' | 'more_casual' | 'add_urgency' | 'custom',
+  customInstruction?: string
 ): Promise<string> {
   const refinementInstructions = {
     shorter: 'Make this content more concise while keeping the main message.',
@@ -641,20 +720,18 @@ export async function refineContent(
     more_professional: 'Rewrite this in a more professional tone.',
     more_casual: 'Rewrite this in a more casual, friendly tone.',
     add_urgency: 'Add urgency and a stronger call-to-action.',
+    custom: customInstruction?.trim() || 'Improve this content while keeping the main message.',
   };
 
   try {
-    const providerOrder = (env.VERCEL_AI_GATEWAY_ORDER || 'openai')
-      .split(',')
-      .map((p) => p.trim())
-      .filter(Boolean);
+    const providerOrder = getProviderOrder();
 
     const result = await generateText({
-      model: openai('gpt-4o'),
+      model: openai(resolveModelId('openai/gpt-4o')),
       messages: [
         {
           role: 'system',
-          content: `You are refining social media content for ${platform}. ${refinementInstructions[refinementType]}`,
+          content: `You are refining social media content for ${platform}. ${refinementInstructions[refinementType]} Keep the content platform-appropriate and preserve the core intent.`,
         },
         { role: 'user', content: originalContent },
       ],
@@ -683,13 +760,10 @@ export async function generateHashtags(
   count: number = 5
 ): Promise<string[]> {
   try {
-    const providerOrder = (env.VERCEL_AI_GATEWAY_ORDER || 'openai')
-      .split(',')
-      .map((p) => p.trim())
-      .filter(Boolean);
+    const providerOrder = getProviderOrder();
 
     const result = await generateText({
-      model: openai('gpt-4o-mini'),
+      model: openai(resolveModelId('openai/gpt-4o-mini')),
       messages: [
         {
           role: 'system',
@@ -730,7 +804,7 @@ export async function analyzeContent(content: string): Promise<{
 
   try {
     const result = await generateObject({
-      model: openai('gpt-4o-mini'),
+      model: openai(resolveModelId('openai/gpt-4o-mini')),
       schema: analysisSchema,
       messages: [
         {
@@ -746,7 +820,7 @@ export async function analyzeContent(content: string): Promise<{
       temperature: 0.3,
       providerOptions: {
         gateway: {
-          order: ['openai'],
+          order: getProviderOrder().length ? getProviderOrder() : ['openai'],
         },
       },
     });
@@ -770,13 +844,10 @@ export async function generateVariations(
   count: number = 3
 ): Promise<string[]> {
   try {
-    const providerOrder = (env.VERCEL_AI_GATEWAY_ORDER || 'openai')
-      .split(',')
-      .map((p) => p.trim())
-      .filter(Boolean);
+    const providerOrder = getProviderOrder();
 
     const result = await generateText({
-      model: openai('gpt-4o'),
+      model: openai(resolveModelId('openai/gpt-4o')),
       messages: [
         {
           role: 'system',

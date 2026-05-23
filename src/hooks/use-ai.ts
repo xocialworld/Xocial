@@ -82,12 +82,14 @@ export type RefinementType =
   | 'more_emojis'
   | 'more_professional'
   | 'more_casual'
-  | 'add_urgency';
+  | 'add_urgency'
+  | 'custom';
 
 async function refineAIContent(payload: {
   content: string;
   platform: Platform;
   refinementType: RefinementType;
+  customInstruction?: string;
 }) {
   const response = await fetch('/api/ai/refine', {
     method: 'POST',
@@ -293,4 +295,3 @@ export function useAIHashtags() {
     onSettled: () => useAIContentStore.getState().setHashtagLoading(false),
   });
 }
-

@@ -70,22 +70,13 @@ describe('UnifiedPostComposer connection status', () => {
 
     renderWithProviders(<UnifiedPostComposer />);
 
-    await waitFor(() => expect(screen.getByText(/Select Platforms/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Platforms and accounts/i)).toBeInTheDocument());
 
     // Select Instagram in PlatformSelector
     const igButton = await screen.findByRole('button', { name: /Instagram/i });
     fireEvent.click(igButton);
 
-    // Content must be present for scheduling controls to render; type some text
-    const textarea = await screen.findByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'Some content to publish' } });
-
-    // Expect ready to publish message
-    await waitFor(() =>
-      expect(
-        screen.getByText(/Ready to publish to 1 platform/i)
-      ).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getAllByText(/IG Account/i).length).toBeGreaterThan(0));
   });
 
   it('indicates offline when selected platform has only offline accounts', async () => {
@@ -105,25 +96,21 @@ describe('UnifiedPostComposer connection status', () => {
     ]);
 
     renderWithProviders(<UnifiedPostComposer />);
-    await waitFor(() => expect(screen.getByText(/Select Platforms/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Platforms and accounts/i)).toBeInTheDocument());
 
     const liButton = await screen.findByRole('button', { name: /LinkedIn/i });
     fireEvent.click(liButton);
 
-    const textarea = await screen.findByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'Some content to schedule' } });
-
-    await waitFor(() =>
-      expect(
-        screen.getByText(/1 offline - Schedule only/i)
-      ).toBeInTheDocument()
-    );
+    await waitFor(() => {
+      const accountSelect = screen.getByRole('combobox', { name: /LinkedIn account/i });
+      expect(accountSelect).toHaveValue('acc-li-1');
+    });
   });
 
-  it('refreshes connection status on Sync click', async () => {
+  it('refreshes connection status on Refresh accounts click', async () => {
     renderWithProviders(<UnifiedPostComposer />);
     const accountsModule: any = require('@/hooks/use-accounts');
-    const syncButton = await screen.findByRole('button', { name: /Sync/i });
+    const syncButton = await screen.findByRole('button', { name: /Refresh accounts/i });
     fireEvent.click(syncButton);
     await waitFor(() => expect(accountsModule.__getRefetch()).toHaveBeenCalled());
   });

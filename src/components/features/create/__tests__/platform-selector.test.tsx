@@ -43,14 +43,14 @@ describe('PlatformSelector', () => {
     it('renders the header text', () => {
         render(<PlatformSelector {...defaultProps} />);
 
-        expect(screen.getByText('Select Platforms')).toBeInTheDocument();
-        expect(screen.getByText('Choose where you want to publish this content')).toBeInTheDocument();
+        expect(screen.getByText('Destinations')).toBeInTheDocument();
+        expect(screen.getByText('Choose workspace accounts for this post.')).toBeInTheDocument();
     });
 
     it('shows "Select at least one platform" message when none selected', () => {
         render(<PlatformSelector {...defaultProps} />);
 
-        expect(screen.getByText('Select at least one platform to continue')).toBeInTheDocument();
+        expect(screen.getByText('Select at least one destination to continue.')).toBeInTheDocument();
     });
 
     it('shows platform count when platforms are selected', () => {
@@ -94,6 +94,6 @@ describe('PlatformSelector', () => {
         const mockRefresh = jest.fn();
         render(<PlatformSelector {...defaultProps} onRefresh={mockRefresh} />);
 
-        expect(screen.getByText('Sync')).toBeInTheDocument();
+        expect(screen.getByText('Refresh')).toBeInTheDocument();
     });
 });

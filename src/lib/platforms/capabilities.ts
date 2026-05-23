@@ -140,6 +140,13 @@ export function canPlatformHandleContent(
 
     // Check if media is required
     if (caps.requiresMedia && !options.hasImages && !options.hasVideos) {
+        if (platform === 'youtube' || platform === 'tiktok') {
+            return {
+                canHandle: false,
+                reason: `${platform} requires a video. Please add a video file.`
+            };
+        }
+
         return {
             canHandle: false,
             reason: `${platform} requires media. Please add an image or video.`
@@ -158,6 +165,13 @@ export function canPlatformHandleContent(
 
     // Check image support
     if (options.hasImages && !caps.supportsImages) {
+        if (platform === 'youtube' || platform === 'tiktok') {
+            return {
+                canHandle: false,
+                reason: `${platform} only supports video publishing here. Please add a video instead.`
+            };
+        }
+
         return {
             canHandle: false,
             reason: `${platform} doesn't support image posts via API. Please add a video instead.`

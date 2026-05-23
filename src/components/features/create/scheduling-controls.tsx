@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Calendar, Save, Send, Clock } from 'lucide-react';
+import { Calendar, Save, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Platform } from '@/types';
 import {
@@ -11,7 +11,7 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { Label } from '@/components/ui/label';
-import { format } from 'date-fns';
+import { platformNames } from '@/lib/platform-colors';
 
 interface Account {
     id: string;
@@ -38,6 +38,14 @@ function isAccountExpired(account: Account): boolean {
     return expiresAt.getTime() - 5 * 60 * 1000 < Date.now();
 }
 
+function getPlatformLabel(platform: Platform) {
+    return platformNames[platform] || platform;
+}
+
+function formatPlatformList(platforms: Platform[]) {
+    return platforms.map(getPlatformLabel).join(', ');
+}
+
 interface SchedulingControlsProps {
     selectedPlatforms: Platform[];
     hasContent: boolean;
@@ -56,6 +64,9 @@ interface SchedulingControlsProps {
     ) => Promise<void>;
     isLoading?: boolean;
     accounts: Account[];
+    accountSelections: Partial<Record<Platform, string>>;
+    onAccountSelectionsChange: (selections: Partial<Record<Platform, string>>) => void;
+    blockReason?: string;
 }
 
 export function SchedulingControls({
@@ -69,9 +80,10 @@ export function SchedulingControls({
     onMixedPublishSchedule,
     isLoading = false,
     accounts,
+    accountSelections,
+    onAccountSelectionsChange,
+    blockReason,
 }: SchedulingControlsProps) {
-    const [accountSelections, setAccountSelections] = useState<Partial<Record<Platform, string>>>({});
-
     // Scheduling state
     const [isScheduleOpen, setIsScheduleOpen] = useState(false);
     const [isMixedScheduleOpen, setIsMixedScheduleOpen] = useState(false);
@@ -92,39 +104,9 @@ export function SchedulingControls({
         setScheduledTime('10:00');
     }, [initialSchedule?.date, initialSchedule?.time]);
 
-    // Auto-select first account for each platform (preferring online ones)
-    useEffect(() => {
-        const selections: Partial<Record<Platform, string>> = {};
-        selectedPlatforms.forEach(platform => {
-            const platformAccounts = accounts.filter(
-                (acc) => acc.platform?.toLowerCase() === platform.toLowerCase()
-            );
-            if (platformAccounts.length > 0) {
-                // Preserve existing selection if valid
-                const currentSelection = accountSelections[platform];
-                const isValid = currentSelection && platformAccounts.some(a => a.id === currentSelection);
-
-                if (!isValid) {
-                    // Find first online account, otherwise default to first account
-                    const firstOnline = platformAccounts.find(acc => isAccountOnline(acc));
-                    selections[platform] = firstOnline ? firstOnline.id : platformAccounts[0].id;
-                } else {
-                    selections[platform] = currentSelection;
-                }
-            }
-        });
-
-        if (Object.keys(selections).length > 0) {
-            const hasDiff = Object.entries(selections).some(([platform, id]) => accountSelections[platform as Platform] !== id);
-            if (hasDiff) {
-                setAccountSelections(prev => ({ ...prev, ...selections }));
-            }
-        }
-    }, [selectedPlatforms, accounts, accountSelections]);
-
     const allAccountsSelected = selectedPlatforms.every(platform => accountSelections[platform]);
 
-    const canSchedule = hasContent && selectedPlatforms.length > 0 && allAccountsSelected;
+    const canSchedule = hasContent && selectedPlatforms.length > 0 && allAccountsSelected && !blockReason;
 
     // Publish requires all selected accounts to be active
     const allActive = selectedPlatforms.every(platform => {
@@ -209,16 +191,16 @@ export function SchedulingControls({
                                 return (
                                     <div key={platform} className="flex items-center gap-2">
                                         <span className="text-sm font-medium capitalize text-secondary-600 min-w-[80px]">
-                                            {platform}:
+                                            {getPlatformLabel(platform)}:
                                         </span>
                                         {platformAccounts.length > 0 ? (
                                             <div className="flex-1 flex items-center gap-2">
                                                 <select
                                                     value={selectedAccountId || ''}
-                                                    onChange={(e) => setAccountSelections(prev => ({
-                                                        ...prev,
+                                                    onChange={(e) => onAccountSelectionsChange({
+                                                        ...accountSelections,
                                                         [platform]: e.target.value
-                                                    }))}
+                                                    })}
                                                     className={cn(
                                                         "flex-1 rounded-md border px-3 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500",
                                                         selectedAccountId && !isOnline
@@ -279,8 +261,10 @@ export function SchedulingControls({
                             'Select platforms to continue'
                         ) : !hasContent ? (
                             'Add content to continue'
+                        ) : blockReason ? (
+                            <span className="text-amber-600">{blockReason}</span>
                         ) : missingAccounts.length > 0 ? (
-                            `Connect accounts: ${missingAccounts.join(', ')}`
+                            `Connect accounts: ${formatPlatformList(missingAccounts)}`
                         ) : inactiveAccounts.length > 0 ? (
                             <span className="text-amber-600">
                                 {inactiveAccounts.length} offline

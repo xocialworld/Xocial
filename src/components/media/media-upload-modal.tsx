@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -36,6 +37,14 @@ function formatFileSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function authHeader(): Promise<Record<string, string>> {
+    const {
+        data: { session },
+    } = await createBrowserSupabaseClient().auth.getSession();
+
+    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
 }
 
 export function MediaUploadModal({
@@ -117,6 +126,11 @@ export function MediaUploadModal({
 
                 const response = await fetch("/api/media/upload", {
                     method: "POST",
+                    credentials: "include",
+                    headers: {
+                        ...(workspaceId ? { "x-workspace-id": workspaceId } : {}),
+                        ...(await authHeader()),
+                    },
                     body: formData,
                 });
 

@@ -21,14 +21,51 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from '@/lib/utils';
 import type { MediaFile } from '@/types';
+import { toast } from 'sonner';
 
 interface MediaLibraryModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSelect: (files: MediaFile[]) => void;
+    workspaceId?: string;
 }
 
-export function MediaLibraryModal({ isOpen, onClose, onSelect }: MediaLibraryModalProps) {
+type MediaAsset = {
+    id: string;
+    url: string;
+    thumbnail_url?: string | null;
+    file_type?: 'image' | 'video' | string | null;
+    type?: 'image' | 'video' | string | null;
+    original_filename?: string | null;
+    file_name?: string | null;
+    filename?: string | null;
+    file_size?: number | null;
+    size_bytes?: number | null;
+    size?: number | null;
+};
+
+function normalizeMediaFile(item: MediaAsset): MediaFile {
+    const mediaType = item.type || item.file_type;
+    return {
+        id: item.id,
+        url: item.url,
+        type: mediaType === 'video' ? 'video' : 'image',
+        name: item.original_filename || item.file_name || item.filename || 'Media file',
+        size: item.size_bytes || item.file_size || item.size || 0,
+    } as MediaFile;
+}
+
+function withWorkspace(path: string, workspaceId?: string) {
+    if (!workspaceId) return path;
+    const separator = path.includes('?') ? '&' : '?';
+    return `${path}${separator}workspaceId=${encodeURIComponent(workspaceId)}`;
+}
+
+function workspaceHeader(workspaceId?: string): Record<string, string> {
+    return workspaceId ? { 'x-workspace-id': workspaceId } : {};
+}
+
+export function MediaLibraryModal({ isOpen, onClose, onSelect, workspaceId }: MediaLibraryModalProps) {
     const [media, setMedia] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -36,23 +73,37 @@ export function MediaLibraryModal({ isOpen, onClose, onSelect }: MediaLibraryMod
     const [sortBy, setSortBy] = useState('date_desc');
 
     const fetchMedia = useCallback(async (search?: string) => {
+        if (!workspaceId) {
+            setMedia([]);
+            toast.error('Select a workspace before browsing media');
+            return;
+        }
+
         setLoading(true);
         try {
             const params = new URLSearchParams();
             if (search) params.append('search', search);
             params.append('sort', sortBy);
 
-            const response = await fetch(`/api/media?${params.toString()}`);
-            if (response.ok) {
-                const data = await response.json();
-                setMedia(data.data.media || []);
+            const response = await fetch(withWorkspace(`/api/media?${params.toString()}`, workspaceId), {
+                credentials: 'include',
+                headers: workspaceHeader(workspaceId),
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(data?.error?.message || data?.message || 'Failed to load media library');
             }
+
+            setMedia(data.data?.media || data.media || []);
         } catch (error) {
             console.error('Failed to fetch media:', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to load media library');
+            setMedia([]);
         } finally {
             setLoading(false);
         }
-    }, [sortBy]);
+    }, [sortBy, workspaceId]);
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
@@ -61,14 +112,8 @@ export function MediaLibraryModal({ isOpen, onClose, onSelect }: MediaLibraryMod
 
     useEffect(() => {
         if (isOpen) {
-            fetchMedia(searchQuery);
-        }
-    }, [isOpen, searchQuery, fetchMedia]);
-
-    useEffect(() => {
-        if (isOpen) {
-            fetchMedia();
             setSelectedIds(new Set());
+            fetchMedia();
         }
     }, [isOpen, fetchMedia]);
 
@@ -85,13 +130,7 @@ export function MediaLibraryModal({ isOpen, onClose, onSelect }: MediaLibraryMod
     const handleConfirm = () => {
         const selectedFiles = media
             .filter(item => selectedIds.has(item.id))
-            .map(item => ({
-                id: item.id,
-                url: item.url,
-                type: item.file_type === 'video' ? 'video' : 'image',
-                name: item.original_filename || item.filename,
-                size: item.file_size
-            })) as MediaFile[];
+            .map(normalizeMediaFile);
 
         onSelect(selectedFiles);
         onClose();
@@ -102,8 +141,10 @@ export function MediaLibraryModal({ isOpen, onClose, onSelect }: MediaLibraryMod
         if (!confirm('Are you sure you want to delete this file?')) return;
 
         try {
-            const response = await fetch(`/api/media/${item.id}`, {
+            const response = await fetch(withWorkspace(`/api/media/${item.id}`, workspaceId), {
                 method: 'DELETE',
+                credentials: 'include',
+                headers: workspaceHeader(workspaceId),
             });
 
             if (response.ok) {
@@ -114,10 +155,12 @@ export function MediaLibraryModal({ isOpen, onClose, onSelect }: MediaLibraryMod
                     setSelectedIds(newSelected);
                 }
             } else {
-                console.error('Failed to delete media');
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data?.error?.message || data?.error || 'Failed to delete media');
             }
         } catch (error) {
             console.error('Error deleting media:', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to delete media');
         }
     };
 
@@ -199,10 +242,10 @@ export function MediaLibraryModal({ isOpen, onClose, onSelect }: MediaLibraryMod
                                                 : "border-transparent hover:border-gray-300"
                                         )}
                                     >
-                                        {item.file_type === 'image' ? (
+                                        {(item.file_type || item.type) === 'image' ? (
                                             <Image
                                                 src={item.thumbnail_url || item.url}
-                                                alt={item.original_filename || 'Media'}
+                                                alt={item.original_filename || item.file_name || item.filename || 'Media'}
                                                 fill
                                                 className="object-cover"
                                             />
@@ -238,7 +281,7 @@ export function MediaLibraryModal({ isOpen, onClose, onSelect }: MediaLibraryMod
                                         {/* File Name Overlay */}
                                         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
                                             <p className="text-xs text-white truncate">
-                                                {item.original_filename}
+                                                {item.original_filename || item.file_name || item.filename || 'Media file'}
                                             </p>
                                         </div>
                                     </div>

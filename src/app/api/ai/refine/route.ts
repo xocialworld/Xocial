@@ -24,7 +24,17 @@ const refineSchema = z.object({
     'more_professional',
     'more_casual',
     'add_urgency',
+    'custom',
   ]),
+  customInstruction: z.string().max(500).optional(),
+}).superRefine((data, ctx) => {
+  if (data.refinementType === 'custom' && !data.customInstruction?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['customInstruction'],
+      message: 'Custom instruction is required for custom regeneration',
+    });
+  }
 });
 
 /**
@@ -48,7 +58,8 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   const refinedText = await refineContent(
     validatedData.content,
     validatedData.platform,
-    validatedData.refinementType
+    validatedData.refinementType,
+    validatedData.customInstruction
   );
 
   logger.ai('ai_refine', {
@@ -73,4 +84,3 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 
   return response;
 });
-

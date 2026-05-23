@@ -110,18 +110,54 @@ export async function requireAuth(request: NextRequest) {
     error,
   } = await supabase.auth.getUser();
 
-  if (error || !user) {
-    throw new APIError(401, 'Unauthorized', 'UNAUTHORIZED');
+  if (!error && user) {
+    // Bootstrap: ensure profile exists
+    try {
+      await ensureUserProfile(user, supabase);
+    } catch (e) {
+      // Allow downstream routes to handle if needed
+    }
+
+    return { user, supabase };
   }
 
-  // Bootstrap: ensure profile exists
-  try {
-    await ensureUserProfile(user, supabase);
-  } catch (e) {
-    // Allow downstream routes to handle if needed
+  const authHeader = request.headers.get('authorization') || '';
+  const bearerToken = authHeader.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+
+  if (bearerToken) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (supabaseUrl && supabaseAnonKey) {
+      const bearerClient = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+        global: {
+          headers: {
+            Authorization: `Bearer ${bearerToken}`,
+          },
+        },
+      });
+      const {
+        data: { user: bearerUser },
+        error: bearerError,
+      } = await bearerClient.auth.getUser(bearerToken);
+
+      if (!bearerError && bearerUser) {
+        try {
+          await ensureUserProfile(bearerUser, bearerClient);
+        } catch (e) {
+          // Allow downstream routes to handle if needed
+        }
+
+        return { user: bearerUser, supabase: bearerClient };
+      }
+    }
   }
 
-  return { user, supabase };
+  throw new APIError(401, 'Unauthorized', 'UNAUTHORIZED');
 }
 
 /**

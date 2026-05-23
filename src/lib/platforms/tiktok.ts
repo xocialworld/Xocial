@@ -3,7 +3,7 @@
  * Handles video posting and engagement metrics for TikTok
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { decryptToken } from '@/lib/encryption';
 
 export interface TikTokConfig {
@@ -205,7 +205,7 @@ export class TikTokClient {
  * Helper function to create TikTok client from database
  */
 export async function createTikTokClient(accountId: string): Promise<TikTokClient> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: account, error } = await supabase
     .from('social_accounts')
@@ -230,4 +230,3 @@ export async function createTikTokClient(accountId: string): Promise<TikTokClien
     openId: account.account_id,
   });
 }
-

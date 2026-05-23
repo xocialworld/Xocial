@@ -13,7 +13,7 @@ import { retryWithBackoff } from '@/lib/errors';
 import { refreshMetaToken } from '@/lib/oauth/token-refresh';
 import { refreshYouTubeToken } from '@/lib/oauth/youtube';
 import { encryptToken, decryptToken } from '@/lib/encryption';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { logger } from '@/lib/logger';
 import { mediaUrlLooksLikeVideo } from './publish-utils';
 
@@ -194,7 +194,7 @@ export class PlatformPublisher {
       }
 
       if (platform === 'youtube') {
-        const supabase = await createClient();
+        const supabase = createAdminClient();
         const { data: account } = await supabase
           .from('social_accounts')
           .select('refresh_token')

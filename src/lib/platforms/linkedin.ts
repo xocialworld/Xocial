@@ -3,7 +3,7 @@
  * Handles LinkedIn posting and company page management
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { decryptToken } from '@/lib/encryption';
 
 export interface LinkedInConfig {
@@ -220,7 +220,7 @@ export class LinkedInClient {
  * Helper function to create LinkedIn client from database
  */
 export async function createLinkedInClient(accountId: string): Promise<LinkedInClient> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: account, error } = await supabase
     .from('social_accounts')
@@ -246,4 +246,3 @@ export async function createLinkedInClient(accountId: string): Promise<LinkedInC
     organizationUrn: account.metadata?.organizationUrn,
   });
 }
-

@@ -454,10 +454,10 @@ function categorizeTwitterError(status: number, errorText: string): { type: Twit
  * Factory function to create Twitter client
  */
 export async function createTwitterClient(accountId: string): Promise<TwitterClient> {
-  const { createClient } = await import('@/lib/supabase/server');
+  const { createAdminClient } = await import('@/lib/supabase/admin');
   const { decryptToken, encryptToken } = await import('@/lib/encryption');
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Fetch account to get access token
   const { data: account, error } = await supabase
@@ -545,8 +545,7 @@ export async function createTwitterClient(accountId: string): Promise<TwitterCli
         await supabase
           .from('social_accounts')
           .update({
-            status: 'needs_reconnection',
-            error_message: 'Token refresh failed. Please reconnect your account.',
+            is_active: false,
             updated_at: new Date().toISOString(),
           })
           .eq('id', accountId);

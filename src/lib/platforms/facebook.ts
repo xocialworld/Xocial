@@ -3,7 +3,7 @@
  * Handles Facebook Pages posting, media upload, and engagement metrics
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { decryptToken } from '@/lib/encryption';
 
 export interface FacebookConfig {
@@ -509,7 +509,7 @@ export class FacebookClient {
  * Helper function to create Facebook client from database
  */
 export async function createFacebookClient(accountId: string): Promise<FacebookClient> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: account, error } = await supabase
     .from('social_accounts')
@@ -534,4 +534,3 @@ export async function createFacebookClient(accountId: string): Promise<FacebookC
     pageId: account.account_id,
   });
 }
-

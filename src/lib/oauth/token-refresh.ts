@@ -3,7 +3,7 @@
  * Handles automatic refresh of expiring Facebook/Instagram tokens
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { decryptToken, encryptToken } from '@/lib/encryption';
 import { getFacebookLongLivedToken, getFacebookPages } from './facebook';
 import { refreshInstagramLongLivedToken } from './instagram';
@@ -40,7 +40,7 @@ function normalizeMetadata(metadata: any): Record<string, any> {
  * Check if Facebook token is expired or expiring soon (within 7 days)
  */
 export async function isFacebookTokenExpiring(accountId: string): Promise<boolean> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: account } = await supabase
     .from('social_accounts')
@@ -61,7 +61,7 @@ export async function isFacebookTokenExpiring(accountId: string): Promise<boolea
  * Exchanges current token for a new long-lived token (60 days)
  */
 export async function refreshMetaToken(accountId: string): Promise<TokenRefreshResult> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Get current token
   const { data: account } = await supabase

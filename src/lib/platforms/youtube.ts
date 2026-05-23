@@ -3,7 +3,7 @@
  * Handles video uploads, playlist management, and analytics
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { decryptToken, encryptToken } from '@/lib/encryption';
 import { uploadYouTubeVideo, setYouTubeVideoThumbnail, refreshYouTubeToken } from '@/lib/oauth/youtube';
 
@@ -390,7 +390,7 @@ export class YouTubeClient {
  * Helper function to create YouTube client from database
  */
 export async function createYouTubeClient(accountId: string): Promise<YouTubeClient> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: account, error } = await supabase
     .from('social_accounts')
@@ -426,8 +426,6 @@ export async function createYouTubeClient(accountId: string): Promise<YouTubeCli
       await supabase
         .from('social_accounts')
         .update({
-          status: 'needs_reconnection',
-          error_message: 'Access token expired and no refresh token available.',
           updated_at: new Date().toISOString(),
         })
         .eq('id', accountId);
@@ -463,8 +461,6 @@ export async function createYouTubeClient(accountId: string): Promise<YouTubeCli
           access_token: encryptedAccessToken,
           refresh_token: encryptedRefreshToken,
           token_expires_at: newExpiresAt,
-          status: 'active',
-          error_message: null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', accountId);
@@ -478,8 +474,6 @@ export async function createYouTubeClient(accountId: string): Promise<YouTubeCli
       await supabase
         .from('social_accounts')
         .update({
-          status: 'needs_reconnection',
-          error_message: 'Token refresh failed. Please reconnect your account.',
           updated_at: new Date().toISOString(),
         })
         .eq('id', accountId);

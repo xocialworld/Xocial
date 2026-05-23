@@ -3,7 +3,7 @@
  * Handles Instagram Business account posting and media management
  */
 
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { decryptToken } from '@/lib/encryption';
 import { getInstagramGraphBaseUrl } from '@/lib/oauth/instagram';
 import { mediaUrlLooksLikeVideo } from './publish-utils';
@@ -364,7 +364,7 @@ export class InstagramClient {
  * Helper function to create Instagram client from database
  */
 export async function createInstagramClient(accountId: string): Promise<InstagramClient> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: account, error } = await supabase
     .from('social_accounts')

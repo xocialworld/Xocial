@@ -35,6 +35,11 @@ const MAX_RETRY_ATTEMPTS = 3;
 
 // Backoff intervals (minutes) for each retry
 const RETRY_BACKOFF_MINUTES = [5, 15, 60];
+const PUBLISH_POST_SELECT = `
+  *,
+  workspace:workspaces!inner(id, name),
+  social_account:social_accounts(*)
+`;
 
 /**
  * Determine if an error is retryable
@@ -100,23 +105,40 @@ export const GET = withCronVerification(async (request: NextRequest) => {
     // 3. Posts marked for retry that are past their retry time
     const now = new Date();
     const stuckThreshold = new Date(now.getTime() - 5 * 60 * 1000); // 5 minutes ago
-    const readyForPublishingFilter = `and(status.eq.scheduled,scheduled_at.lte.${now.toISOString()}),and(status.eq.publishing,updated_at.lte.${stuckThreshold.toISOString()})`;
-
-    const { data: scheduledPosts, error: fetchError } = await supabase
+    const { data: dueScheduledPosts, error: scheduledFetchError } = await supabase
       .from('posts')
-      .select(`
-        *,
-        workspace:workspaces!inner(id, name),
-        social_account:social_accounts(*)
-      `)
-      .or(readyForPublishingFilter)
+      .select(PUBLISH_POST_SELECT)
+      .eq('status', 'scheduled')
+      .lte('scheduled_at', now.toISOString())
       .order('scheduled_at', { ascending: true })
-      .limit(50); // Process max 50 posts per run
+      .limit(50);
 
-    if (fetchError) {
-      console.error('[Cron: Publish] Error fetching scheduled posts:', fetchError);
-      return cronErrorResponse('Failed to fetch scheduled posts', fetchError);
+    if (scheduledFetchError) {
+      console.error('[Cron: Publish] Error fetching scheduled posts:', scheduledFetchError);
+      return cronErrorResponse('Failed to fetch scheduled posts', scheduledFetchError);
     }
+
+    const { data: stuckPublishingPosts, error: stuckFetchError } = await supabase
+      .from('posts')
+      .select(PUBLISH_POST_SELECT)
+      .eq('status', 'publishing')
+      .lte('updated_at', stuckThreshold.toISOString())
+      .order('updated_at', { ascending: true })
+      .limit(50);
+
+    if (stuckFetchError) {
+      console.error('[Cron: Publish] Error fetching stuck publishing posts:', stuckFetchError);
+      return cronErrorResponse('Failed to fetch stuck publishing posts', stuckFetchError);
+    }
+
+    const scheduledPosts = [...(dueScheduledPosts || []), ...(stuckPublishingPosts || [])]
+      .filter((post, index, list) => list.findIndex((item) => item.id === post.id) === index)
+      .sort((a, b) => {
+        const aTime = new Date(a.scheduled_at || a.updated_at || a.created_at).getTime();
+        const bTime = new Date(b.scheduled_at || b.updated_at || b.created_at).getTime();
+        return aTime - bTime;
+      })
+      .slice(0, 50);
 
     if (!scheduledPosts || scheduledPosts.length === 0) {
       console.log('[Cron: Publish] No posts to publish');
@@ -151,16 +173,28 @@ export const GET = withCronVerification(async (request: NextRequest) => {
         console.log(`[Cron: Publish] Processing post ${post.id} (attempt ${retryCount + 1})`);
 
         // Acquire publishing lock with atomic update
-        const { data: lockedPost, error: lockError } = await supabase
+        let lockQuery = supabase
           .from('posts')
           .update({ 
             status: 'publishing',
             updated_at: new Date().toISOString(),
           })
-          .eq('id', post.id)
-          .or(readyForPublishingFilter)
-          .select()
-          .single();
+          .eq('id', post.id);
+
+        if (post.status === 'scheduled') {
+          lockQuery = lockQuery
+            .eq('status', 'scheduled')
+            .lte('scheduled_at', now.toISOString());
+        } else if (post.status === 'publishing') {
+          lockQuery = lockQuery
+            .eq('status', 'publishing')
+            .lte('updated_at', stuckThreshold.toISOString());
+        } else {
+          console.log(`[Cron: Publish] Post ${post.id} is no longer publishable`);
+          continue;
+        }
+
+        const { data: lockedPost, error: lockError } = await lockQuery.select().maybeSingle();
 
         if (lockError || !lockedPost) {
           console.log(`[Cron: Publish] Post ${post.id} already being processed or status changed`);

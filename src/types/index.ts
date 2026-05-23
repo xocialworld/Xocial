@@ -353,7 +353,7 @@ export interface MediaFile {
  * - internal: Created in the app (content_items/content_variants)
  * - external: Imported from a platform (external_posts)
  */
-export type CalendarEntrySource = 'internal' | 'external';
+export type CalendarEntrySource = 'internal' | 'external' | 'legacy';
 
 /**
  * Status for calendar entries
@@ -365,6 +365,7 @@ export type CalendarEntryStatus =
   | 'approved'
   | 'scheduled'
   | 'published'
+  | 'partial'
   | 'failed'
   | 'rejected';
 

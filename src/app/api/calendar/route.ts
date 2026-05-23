@@ -109,7 +109,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     postsQuery = postsQuery.or(
       [
         `and(scheduled_at.gte.${from},scheduled_at.lte.${to})`,
-        `and(published_at.gte.${from},published_at.lte.${to},scheduled_at.is.null)`,
+        `and(published_at.gte.${from},published_at.lte.${to})`,
         `and(created_at.gte.${from},created_at.lte.${to},scheduled_at.is.null,published_at.is.null)`,
       ].join(',')
     );
@@ -136,7 +136,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   for (const post of posts || []) {
     // Determine calendar date based on status
     let calendarDate: string;
-    if (post.status === 'published') {
+    if (post.status === 'published' || post.status === 'partial') {
       calendarDate = post.published_at || post.scheduled_at || post.created_at;
     } else if (post.status === 'scheduled') {
       calendarDate = post.scheduled_at || post.created_at;
@@ -381,8 +381,9 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     pending_approval: 3,
     draft: 4,
     published: 5,
-    rejected: 6,
-    failed: 7,
+    partial: 6,
+    rejected: 7,
+    failed: 8,
   };
 
   entries.sort((a, b) => {

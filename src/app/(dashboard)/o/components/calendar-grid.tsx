@@ -214,6 +214,7 @@ export function CalendarGrid({
             switch (status) {
               case 'published': return 'bg-green-500';
               case 'scheduled': return 'bg-blue-500';
+              case 'partial': return 'bg-orange-500';
               case 'failed': return 'bg-red-500';
               case 'rejected': return 'bg-red-500';
               case 'pending_approval': return 'bg-yellow-500';

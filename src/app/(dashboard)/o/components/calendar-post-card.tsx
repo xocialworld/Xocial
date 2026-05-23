@@ -61,6 +61,7 @@ export function CalendarPostCard({ post, onClick, isDragging }: CalendarPostCard
         switch (status) {
             case 'published': return 'bg-green-50/80 border-green-200 text-green-800 hover:bg-green-100';
             case 'scheduled': return 'bg-blue-50/80 border-blue-200 text-blue-800 hover:bg-blue-100';
+            case 'partial': return 'bg-orange-50/80 border-orange-200 text-orange-800 hover:bg-orange-100';
             case 'failed': return 'bg-red-50/80 border-red-200 text-red-800 hover:bg-red-100';
             case 'approved': return 'bg-purple-50/80 border-purple-200 text-purple-800 hover:bg-purple-100';
             case 'pending_approval': return 'bg-yellow-50/80 border-yellow-200 text-yellow-800 hover:bg-yellow-100';
@@ -113,7 +114,7 @@ export function CalendarPostCard({ post, onClick, isDragging }: CalendarPostCard
                     )}
                 </div>
 
-                {post.status === 'failed' && <AlertCircle className="w-2.5 h-2.5 lg:w-3 lg:h-3 text-red-600" />}
+                {(post.status === 'failed' || post.status === 'partial') && <AlertCircle className="w-2.5 h-2.5 lg:w-3 lg:h-3 text-red-600" />}
                 {post.status === 'published' && <CheckCircle2 className="w-2.5 h-2.5 lg:w-3 lg:h-3 text-green-600" />}
             </div>
         </div>

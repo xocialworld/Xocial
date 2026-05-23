@@ -5,6 +5,23 @@ import { CalendarEntry, CalendarAPIResponse } from '@/types';
 import { useSelectedWorkspace } from '@/store/workspaceStore';
 import { createClient } from '@/lib/supabase/client';
 
+type CalendarAPIEnvelope =
+  | CalendarAPIResponse
+  | {
+      success?: boolean;
+      data?: CalendarAPIResponse;
+    };
+
+export function extractCalendarEntries(payload: CalendarAPIEnvelope | null | undefined): CalendarEntry[] {
+  const directEntries = (payload as CalendarAPIResponse | undefined)?.entries;
+  if (Array.isArray(directEntries)) return directEntries;
+
+  const wrappedEntries = (payload as { data?: CalendarAPIResponse } | undefined)?.data?.entries;
+  if (Array.isArray(wrappedEntries)) return wrappedEntries;
+
+  return [];
+}
+
 /**
  * Hook to fetch calendar entries for a date range
  * Uses the /api/calendar endpoint which returns unified entries from:
@@ -66,8 +83,8 @@ export function useCalendarPosts(start: Date, end: Date) {
       throw new Error(`Failed to fetch calendar entries: ${response.status}`);
     }
 
-    const data: CalendarAPIResponse = await response.json();
-    const entries = data.entries || [];
+    const data: CalendarAPIEnvelope = await response.json();
+    const entries = extractCalendarEntries(data);
     
     console.log('[Calendar] Fetched', entries.length, 'entries');
 

@@ -33,6 +33,7 @@ const statusColors: Record<string, { bg: string; text: string }> = {
   approved: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
   scheduled: { bg: 'bg-blue-100', text: 'text-blue-700' },
   published: { bg: 'bg-green-100', text: 'text-green-700' },
+  partial: { bg: 'bg-orange-100', text: 'text-orange-700' },
   failed: { bg: 'bg-red-100', text: 'text-red-700' },
   rejected: { bg: 'bg-red-100', text: 'text-red-700' },
 };

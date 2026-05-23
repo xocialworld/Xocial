@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { Platform } from '@/types';
 
 export const platformOptions: Platform[] = ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'youtube'];
-export const statusOptions = ['draft', 'pending_approval', 'approved', 'scheduled', 'published', 'failed', 'rejected'] as const;
+export const statusOptions = ['draft', 'pending_approval', 'approved', 'scheduled', 'published', 'partial', 'failed', 'rejected'] as const;
 
 export type Status = typeof statusOptions[number];
 

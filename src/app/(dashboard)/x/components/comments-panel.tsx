@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { X, Send, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Image from 'next/image';
@@ -20,6 +20,7 @@ import { slideInRight } from '@/lib/animations';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Post } from '@/types';
 import { toast } from 'sonner';
+import { fetchWithWorkspace } from '@/lib/fetch-with-workspace';
 
 interface Comment {
     id: string;
@@ -40,47 +41,48 @@ interface CommentsPanelProps {
     isOpen: boolean;
     onClose: () => void;
     platform: Platform;
+    accountId?: string;
 }
 
-export function CommentsPanel({ post, isOpen, onClose, platform }: CommentsPanelProps) {
+export function CommentsPanel({ post, isOpen, onClose, platform, accountId }: CommentsPanelProps) {
     const [comments, setComments] = useState<Comment[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [replyingTo, setReplyingTo] = useState<string | null>(null);
 
-    // Fetch comments when post changes
-    useEffect(() => {
+    const loadComments = useCallback(async () => {
         if (!post) return;
 
-        const fetchComments = async () => {
-            setLoading(true);
-            setError(null);
+        setLoading(true);
+        setError(null);
 
-            try {
-                const response = await fetch(`/api/comments?post_id=${post.id}`);
+        try {
+            const commentsUrl = getCommentsUrl(post, platform, accountId);
+            const response = await fetchWithWorkspace(commentsUrl);
 
-                if (!response.ok) {
-                    throw new Error('Failed to fetch comments');
-                }
-
-                const data = await response.json();
-                setComments(data.comments || []);
-            } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to load comments');
-            } finally {
-                setLoading(false);
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                throw new Error(data?.error?.message || data?.error || 'Failed to fetch comments');
             }
-        };
 
-        fetchComments();
-    }, [post]);
+            const data = await response.json();
+            setComments(normalizeComments(data, platform));
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to load comments');
+        } finally {
+            setLoading(false);
+        }
+    }, [accountId, platform, post]);
+
+    // Fetch comments when post changes
+    useEffect(() => {
+        loadComments();
+    }, [loadComments]);
 
     if (!isOpen) return null;
 
-    const mediaUrl = post?.media?.[0]?.url || (post?.media as any)?.[0];
-    const caption = typeof post?.content === 'string'
-        ? post.content
-        : (post?.content as any)?.caption || '';
+    const mediaUrl = post ? getPostMediaUrl(post) : undefined;
+    const caption = post ? getPostText(post) : '';
 
     return (
         <>
@@ -151,7 +153,7 @@ export function CommentsPanel({ post, isOpen, onClose, platform }: CommentsPanel
                             ) : error ? (
                                 <ErrorState
                                     message={error}
-                                    onRetry={() => window.location.reload()}
+                                    onRetry={loadComments}
                                 />
                             ) : comments.length === 0 ? (
                                 <EmptyState
@@ -170,13 +172,9 @@ export function CommentsPanel({ post, isOpen, onClose, platform }: CommentsPanel
                                             onCancelReply={() => setReplyingTo(null)}
                                             onReplySuccess={() => {
                                                 setReplyingTo(null);
-                                                // Refresh comments
-                                                if (post) {
-                                                    fetch(`/api/comments?post_id=${post.id}`)
-                                                        .then((res) => res.json())
-                                                        .then((data) => setComments(data.comments || []));
-                                                }
+                                                loadComments();
                                             }}
+                                            accountId={accountId}
                                         />
                                     ))}
                                 </div>
@@ -199,6 +197,7 @@ interface CommentItemProps {
     onReply: () => void;
     onCancelReply: () => void;
     onReplySuccess: () => void;
+    accountId?: string;
 }
 
 function CommentItem({
@@ -208,6 +207,7 @@ function CommentItem({
     onReply,
     onCancelReply,
     onReplySuccess,
+    accountId,
 }: CommentItemProps) {
     const [replyText, setReplyText] = useState(`@${comment.author_name} `);
     const [submitting, setSubmitting] = useState(false);
@@ -224,13 +224,10 @@ function CommentItem({
         setError(null);
 
         try {
-            const response = await fetch('/api/comments/reply', {
+            const { url, body } = getReplyRequest(platform, comment, replyText, accountId);
+            const response = await fetchWithWorkspace(url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    comment_id: comment.external_comment_id || comment.id,
-                    reply_text: replyText,
-                }),
+                body: JSON.stringify(body),
             });
 
             if (!response.ok) {
@@ -366,4 +363,172 @@ function CommentItem({
             </div>
         </div>
     );
+}
+
+function getCommentsUrl(post: Post, platform: Platform, accountId?: string): string {
+    const externalPostId = (post as any).external_post_id || post.id;
+
+    if (platform === 'youtube') {
+        if (!accountId) {
+            throw new Error('Select a YouTube account before loading comments');
+        }
+        return `/api/youtube/comments?accountId=${encodeURIComponent(accountId)}&videoId=${encodeURIComponent(externalPostId)}`;
+    }
+
+    if (platform === 'instagram') {
+        if (!accountId) {
+            throw new Error('Select an Instagram account before loading comments');
+        }
+        return `/api/instagram/comments?accountId=${encodeURIComponent(accountId)}&mediaId=${encodeURIComponent(externalPostId)}`;
+    }
+
+    return `/api/comments?content_item_id=${encodeURIComponent(post.id)}`;
+}
+
+function normalizeComments(payload: any, platform: Platform): Comment[] {
+    const rows = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload?.comments)
+            ? payload.comments
+            : [];
+
+    return rows.map((comment: any) => {
+        const author = comment.author || comment.from || {};
+        const externalId = comment.external_comment_id || comment.id;
+        const content = comment.content || comment.text || comment.body || '';
+        const createdAt =
+            comment.created_at ||
+            comment.created_time ||
+            comment.publishedAt ||
+            comment.timestamp ||
+            new Date().toISOString();
+
+        return {
+            id: String(comment.id || externalId),
+            external_comment_id: externalId ? String(externalId) : undefined,
+            author_name:
+                comment.author_name ||
+                comment.username ||
+                author.name ||
+                comment.author?.full_name ||
+                'Unknown',
+            author_avatar: comment.author_avatar || author.avatar || author.avatar_url,
+            author_id: comment.author_id || author.channelId,
+            content: typeof content === 'string' ? content : String(content || ''),
+            parent_comment_id: comment.parent_comment_id || comment.parent_external_comment_id,
+            likes: toNumber(comment.likes ?? comment.likeCount ?? comment.like_count),
+            reply_count: toNumber(comment.reply_count ?? comment.replyCount),
+            is_reply: Boolean(comment.is_reply || comment.parent_comment_id || comment.parent_external_comment_id),
+            created_at: createdAt,
+        };
+    });
+}
+
+function getReplyRequest(platform: Platform, comment: Comment, replyText: string, accountId?: string) {
+    const commentId = comment.external_comment_id || comment.id;
+
+    if (platform === 'youtube') {
+        if (!accountId) {
+            throw new Error('Select a YouTube account before replying');
+        }
+        return {
+            url: '/api/youtube/comments',
+            body: {
+                accountId,
+                commentId,
+                replyText,
+            },
+        };
+    }
+
+    if (platform === 'instagram') {
+        if (!accountId) {
+            throw new Error('Select an Instagram account before replying');
+        }
+        return {
+            url: '/api/instagram/comments',
+            body: {
+                accountId,
+                commentId,
+                message: replyText,
+            },
+        };
+    }
+
+    return {
+        url: '/api/comments/reply',
+        body: {
+            comment_id: commentId,
+            reply_text: replyText,
+        },
+    };
+}
+
+function getPostText(post: Post): string {
+    const content = post.content as any;
+
+    if (typeof content === 'string') {
+        return content;
+    }
+
+    const directText =
+        content?.caption ||
+        content?.text ||
+        content?.title ||
+        content?.description ||
+        content?.message;
+
+    if (typeof directText === 'string' && directText.trim()) {
+        return directText;
+    }
+
+    if (content && typeof content === 'object') {
+        const platformEntry = Object.values(content).find((value: any) =>
+            value &&
+            typeof value === 'object' &&
+            typeof (value.text || value.caption || value.title) === 'string'
+        ) as any;
+
+        const nestedText = platformEntry?.text || platformEntry?.caption || platformEntry?.title;
+        if (typeof nestedText === 'string' && nestedText.trim()) {
+            return nestedText;
+        }
+    }
+
+    return 'No caption available';
+}
+
+function getPostMediaUrl(post: Post): string | undefined {
+    const media = Array.isArray(post.media) ? post.media : [];
+    const firstMedia = media.find(Boolean) as any;
+
+    if (typeof firstMedia === 'string') {
+        return firstMedia;
+    }
+
+    const content = post.content as any;
+    const thumbnails = content?.thumbnails;
+
+    return (
+        firstMedia?.thumbnail ||
+        firstMedia?.thumbnail_url ||
+        firstMedia?.url ||
+        firstMedia?.media_url ||
+        firstMedia?.preview_image_url ||
+        content?.thumbnail_url ||
+        content?.media_url ||
+        thumbnails?.high?.url ||
+        thumbnails?.medium?.url ||
+        thumbnails?.default?.url
+    );
+}
+
+function toNumber(value: unknown): number {
+    const parsed = typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+            ? Number(value)
+            : 0;
+
+    return Number.isFinite(parsed) ? parsed : 0;
 }

@@ -4,7 +4,7 @@
 import * as React from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { MoreVertical, Trash2, RefreshCw, ExternalLink, TrendingUp, TrendingDown } from "lucide-react";
+import { MoreVertical, Trash2, RefreshCw, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPlatformGradient, getPlatformBadgeColor, platformNames, Platform } from "@/lib/platform-colors";
 import type { SocialAccount } from "@/types";
@@ -62,12 +62,6 @@ export function AccountCard({ account, onDisconnect, onSync, onViewPosts, classN
       onDisconnect?.(account.id);
     }
     setShowMenu(false);
-  };
-
-  // Calculate 7-day growth (mock data - in production, fetch from analytics)
-  const weeklyGrowth = {
-    posts: Math.floor(Math.random() * 20) - 5,
-    engagement: Math.floor(Math.random() * 30) - 10,
   };
 
   // Status color based on account state
@@ -192,13 +186,11 @@ export function AccountCard({ account, onDisconnect, onSync, onViewPosts, classN
           <MetricBlock
             label="Posts (7d)"
             value={metrics.postsPublished.toLocaleString()}
-            trend={weeklyGrowth.posts}
           />
           <MetricBlock
             label="Engagement"
             value={metrics.totalEngagement.toLocaleString()}
             helper={`${metrics.avgEngagementRate.toFixed(1)}% avg`}
-            trend={weeklyGrowth.engagement}
           />
         </div>
 
@@ -252,31 +244,16 @@ function MetricBlock({
   label,
   value,
   helper,
-  trend,
 }: {
   label: string;
   value: string;
   helper?: string;
-  trend?: number;
 }) {
   return (
     <div className="text-center">
       <p className="text-xl font-bold text-secondary-900">{value}</p>
       <p className="text-xs text-secondary-500">{label}</p>
       {helper && <p className="text-[10px] text-secondary-400 mt-0.5">{helper}</p>}
-      {trend !== undefined && trend !== 0 && (
-        <div className={cn(
-          "flex items-center justify-center gap-0.5 text-[10px] mt-1",
-          trend > 0 ? "text-green-600" : "text-red-600"
-        )}>
-          {trend > 0 ? (
-            <TrendingUp className="h-3 w-3" />
-          ) : (
-            <TrendingDown className="h-3 w-3" />
-          )}
-          <span>{Math.abs(trend)}</span>
-        </div>
-      )}
     </div>
   );
 }

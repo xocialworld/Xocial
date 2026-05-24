@@ -34,6 +34,46 @@ function getConnectedVia(metadata: any): string | undefined {
   return metadata.connected_via;
 }
 
+function inferInstagramPostType(item: any): string {
+  const mediaType = String(item?.media_type || '').toUpperCase();
+  const permalink = String(item?.permalink || '').toLowerCase();
+
+  if (permalink.includes('/reel/') || mediaType === 'REELS') {
+    return 'reel';
+  }
+
+  if (mediaType === 'CAROUSEL_ALBUM') {
+    return 'carousel';
+  }
+
+  if (mediaType === 'VIDEO') {
+    return 'reel';
+  }
+
+  return 'feed';
+}
+
+function normalizeInstagramMedia(item: any) {
+  if (!item?.media_url && !item?.thumbnail_url) {
+    return [];
+  }
+
+  const mediaType = String(item?.media_type || '').toUpperCase();
+  const isVideo = mediaType === 'VIDEO' || mediaType === 'REELS';
+  const url = item.media_url || item.thumbnail_url;
+
+  return [
+    {
+      id: item.id,
+      type: isVideo ? 'video' : 'image',
+      url,
+      thumbnail: item.thumbnail_url || item.media_url || url,
+      filename: `instagram-${item.id}`,
+      size: 0,
+    },
+  ];
+}
+
 /**
  * Sync Instagram media (posts) to the database
  */
@@ -74,6 +114,8 @@ export async function syncInstagramPosts(
     // Sync each post
     for (const item of media) {
       try {
+        const postType = inferInstagramPostType(item);
+        const normalizedMedia = normalizeInstagramMedia(item);
         const postData = {
           workspace_id: account.workspace_id,
           social_account_id: accountId,
@@ -81,10 +123,19 @@ export async function syncInstagramPosts(
           external_post_id: item.id,
           content: {
             caption: item.caption || '',
+            text: item.caption || '',
             media_type: item.media_type,
             media_url: item.media_url,
             permalink: item.permalink,
             thumbnail_url: item.thumbnail_url,
+          },
+          media: normalizedMedia,
+          metadata: {
+            post_type: postType,
+            instagram: {
+              media_type: item.media_type,
+              permalink: item.permalink,
+            },
           },
           status: 'published' as const,
           published_at: item.timestamp
@@ -100,6 +151,8 @@ export async function syncInstagramPosts(
           content: postData.content,
           status: postData.status,
           published_at: postData.published_at,
+          media: postData.media,
+          metadata: postData.metadata,
         });
 
         // Fetch and store insights

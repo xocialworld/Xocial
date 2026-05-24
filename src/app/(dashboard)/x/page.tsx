@@ -257,6 +257,7 @@ export default function XPage() {
         account={selectedAccount}
         isOpen={isPostsDrawerOpen}
         onClose={closePostsDrawer}
+        onSynced={refetchAccounts}
         onPostClick={(post) => {
           useAccountsStore.getState().openComments(post);
         }}
@@ -268,6 +269,7 @@ export default function XPage() {
         isOpen={isCommentsOpen}
         onClose={closeComments}
         platform={(selectedAccount?.platform as any) || 'instagram'}
+        accountId={selectedAccount?.id}
       />
     </PageContainer>
   );

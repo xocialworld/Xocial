@@ -163,6 +163,19 @@ export async function getRecentVideos(
     return data.items || [];
 }
 
+function parseYouTubeDurationSeconds(duration: string | undefined): number {
+    if (!duration) return 0;
+
+    const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+    if (!match) return 0;
+
+    const hours = parseInt((match[1] || '').replace('H', ''), 10) || 0;
+    const minutes = parseInt((match[2] || '').replace('M', ''), 10) || 0;
+    const seconds = parseInt((match[3] || '').replace('S', ''), 10) || 0;
+
+    return hours * 3600 + minutes * 60 + seconds;
+}
+
 /**
  * Get all YouTube accounts for a workspace
  */
@@ -245,6 +258,15 @@ export async function syncYouTubeVideos(
 
                 // Fetch detailed stats for the video
                 const videoStats = await getYouTubeVideoStats(accessToken, videoId);
+                const durationSeconds = parseYouTubeDurationSeconds(videoStats.contentDetails?.duration);
+                const thumbnailUrl =
+                    video.snippet?.thumbnails?.high?.url ||
+                    videoStats.snippet?.thumbnails?.high?.url ||
+                    video.snippet?.thumbnails?.medium?.url ||
+                    videoStats.snippet?.thumbnails?.medium?.url ||
+                    video.snippet?.thumbnails?.default?.url ||
+                    videoStats.snippet?.thumbnails?.default?.url;
+                const postType = durationSeconds > 0 && durationSeconds <= 60 ? 'short' : 'video';
 
                 // Prepare post data
                 const postData = {
@@ -259,10 +281,21 @@ export async function syncYouTubeVideos(
                         thumbnails: video.snippet?.thumbnails || videoStats.snippet?.thumbnails,
                     },
                     platforms: ['youtube'],
-                    post_type: 'video',
+                    post_type: postType,
                     status: 'published',
                     published_at: video.snippet?.publishedAt || videoStats.snippet?.publishedAt,
+                    media: thumbnailUrl ? [{
+                        id: videoId,
+                        type: 'video',
+                        url: `https://www.youtube.com/watch?v=${videoId}`,
+                        thumbnail: thumbnailUrl,
+                        filename: `youtube-${videoId}`,
+                        size: 0,
+                        duration: durationSeconds,
+                        videoId,
+                    }] : null,
                     metadata: {
+                        post_type: postType,
                         youtube: {
                             videoId: videoId,
                             channelId: account.account_id,
@@ -282,7 +315,7 @@ export async function syncYouTubeVideos(
                     status: postData.status,
                     published_at: postData.published_at,
                     scheduled_at: null,
-                    media: null,
+                    media: postData.media,
                     metadata: postData.metadata,
                 });
 

@@ -27,9 +27,10 @@ interface PostsDrawerProps {
     isOpen: boolean;
     onClose: () => void;
     onPostClick: (post: Post) => void;
+    onSynced?: () => void | Promise<void>;
 }
 
-export function PostsDrawer({ account, isOpen, onClose, onPostClick }: PostsDrawerProps) {
+export function PostsDrawer({ account, isOpen, onClose, onPostClick, onSynced }: PostsDrawerProps) {
     const [posts, setPosts] = useState<Post[]>([]);
     const [loading, setLoading] = useState(false);
     const [syncing, setSyncing] = useState(false);
@@ -128,7 +129,7 @@ export function PostsDrawer({ account, isOpen, onClose, onPostClick }: PostsDraw
 
         setSyncing(true);
         try {
-            const response = await fetch(`/api/accounts/${account.id}/sync-posts`, {
+            const response = await fetchWithWorkspace(`/api/accounts/${account.id}/sync-posts`, {
                 method: 'POST',
             });
 
@@ -141,6 +142,7 @@ export function PostsDrawer({ account, isOpen, onClose, onPostClick }: PostsDraw
 
             // Refresh posts list
             await fetchPosts(true);
+            await onSynced?.();
         } catch (err) {
             toast.error('Failed to sync posts');
             console.error(err);
@@ -292,7 +294,7 @@ export function PostsDrawer({ account, isOpen, onClose, onPostClick }: PostsDraw
                             ) : error ? (
                                 <ErrorState
                                     message={error}
-                                    onRetry={() => window.location.reload()}
+                                    onRetry={() => fetchPosts()}
                                 />
                             ) : posts.length === 0 ? (
                                 <EmptyState
@@ -338,11 +340,9 @@ interface PostItemProps {
 }
 
 function PostItem({ post, onClick }: PostItemProps) {
-    // Get first media URL if available
-    const mediaUrl = (post.media?.[0] as any)?.thumbnail || post.media?.[0]?.url || (post.media as any)?.[0];
-    const caption = typeof post.content === 'string'
-        ? post.content
-        : (post.content as any)?.caption || '';
+    const mediaUrl = getPostMediaUrl(post);
+    const caption = getPostText(post);
+    const metrics = getPostMetrics(post);
 
     // Format timestamp
     const getRelativeTime = (date: string | Date) => {
@@ -386,34 +386,34 @@ function PostItem({ post, onClick }: PostItemProps) {
 
                 {/* Metrics Row */}
                 <div className="flex items-center gap-4 text-sm text-gray-600">
-                    {post.metrics?.likes !== undefined && (
+                    {metrics.likes !== undefined && (
                         <div className="flex items-center gap-1">
                             <Heart className="h-4 w-4" />
-                            <span>{post.metrics.likes.toLocaleString()}</span>
+                            <span>{metrics.likes.toLocaleString()}</span>
                         </div>
                     )}
-                    {post.metrics?.comments !== undefined && (
+                    {metrics.comments !== undefined && (
                         <div className="flex items-center gap-1">
                             <MessageCircle className="h-4 w-4" />
-                            <span>{post.metrics.comments.toLocaleString()}</span>
+                            <span>{metrics.comments.toLocaleString()}</span>
                         </div>
                     )}
-                    {post.metrics?.shares !== undefined && (
+                    {metrics.shares !== undefined && (
                         <div className="flex items-center gap-1">
                             <Share2 className="h-4 w-4" />
-                            <span>{post.metrics.shares.toLocaleString()}</span>
+                            <span>{metrics.shares.toLocaleString()}</span>
                         </div>
                     )}
-                    {post.metrics?.saves !== undefined && (
+                    {metrics.saves !== undefined && (
                         <div className="flex items-center gap-1">
                             <Bookmark className="h-4 w-4" />
-                            <span>{post.metrics.saves.toLocaleString()}</span>
+                            <span>{metrics.saves.toLocaleString()}</span>
                         </div>
                     )}
-                    {post.metrics?.views !== undefined && (
+                    {metrics.views !== undefined && (
                         <div className="flex items-center gap-1">
                             <Eye className="h-4 w-4" />
-                            <span>{post.metrics.views.toLocaleString()}</span>
+                            <span>{metrics.views.toLocaleString()}</span>
                         </div>
                     )}
                 </div>
@@ -425,4 +425,76 @@ function PostItem({ post, onClick }: PostItemProps) {
             </div>
         </div>
     );
+}
+
+function getPostText(post: Post): string {
+    const content = post.content as any;
+
+    if (typeof content === 'string') {
+        return content;
+    }
+
+    const directText =
+        content?.caption ||
+        content?.text ||
+        content?.title ||
+        content?.description ||
+        content?.message;
+
+    if (typeof directText === 'string' && directText.trim()) {
+        return directText;
+    }
+
+    if (content && typeof content === 'object') {
+        const platformEntry = Object.values(content).find((value: any) =>
+            value &&
+            typeof value === 'object' &&
+            typeof (value.text || value.caption || value.title) === 'string'
+        ) as any;
+
+        const nestedText = platformEntry?.text || platformEntry?.caption || platformEntry?.title;
+        if (typeof nestedText === 'string' && nestedText.trim()) {
+            return nestedText;
+        }
+    }
+
+    return 'No caption available';
+}
+
+function getPostMediaUrl(post: Post): string | undefined {
+    const media = Array.isArray(post.media) ? post.media : [];
+    const firstMedia = media.find(Boolean) as any;
+
+    if (typeof firstMedia === 'string') {
+        return firstMedia;
+    }
+
+    const content = post.content as any;
+    const thumbnails = content?.thumbnails;
+
+    return (
+        firstMedia?.thumbnail ||
+        firstMedia?.thumbnail_url ||
+        firstMedia?.url ||
+        firstMedia?.media_url ||
+        firstMedia?.preview_image_url ||
+        content?.thumbnail_url ||
+        content?.media_url ||
+        thumbnails?.high?.url ||
+        thumbnails?.medium?.url ||
+        thumbnails?.default?.url
+    );
+}
+
+function getPostMetrics(post: Post) {
+    const analytics = (post as any).post_analytics?.[0] || {};
+    const metrics = (post as any).metrics || {};
+
+    return {
+        likes: metrics.likes ?? analytics.likes,
+        comments: metrics.comments ?? analytics.comments,
+        shares: metrics.shares ?? analytics.shares,
+        saves: metrics.saves ?? analytics.saves,
+        views: metrics.views ?? analytics.video_views ?? analytics.impressions,
+    };
 }

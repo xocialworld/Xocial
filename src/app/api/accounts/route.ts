@@ -58,6 +58,293 @@ const DEFAULT_ACCOUNT_METRICS = {
   totalVideoViews: 0,
 };
 
+type AccountMetrics = typeof DEFAULT_ACCOUNT_METRICS;
+
+function toMetricNumber(value: unknown): number {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number(value)
+      : 0;
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function createDefaultMetrics(lastSyncedAt?: string | null): AccountMetrics {
+  return {
+    ...DEFAULT_ACCOUNT_METRICS,
+    lastSyncedAt: lastSyncedAt ?? null,
+  };
+}
+
+function extractMetricValues(source: any) {
+  const likes = toMetricNumber(source?.likes ?? source?.like_count);
+  const comments = toMetricNumber(source?.comments ?? source?.comment_count);
+  const shares = toMetricNumber(source?.shares ?? source?.share_count);
+  const views = toMetricNumber(
+    source?.views ??
+    source?.video_views ??
+    source?.view_count ??
+    source?.impressions
+  );
+  const engagement = toMetricNumber(source?.engagement ?? source?.engagements) || likes + comments + shares;
+
+  return {
+    likes,
+    comments,
+    shares,
+    views,
+    engagement,
+    engagementRate: toMetricNumber(source?.engagement_rate),
+  };
+}
+
+async function getDirectAccountMetrics(
+  supabase: any,
+  workspaceId: string,
+  accounts: Array<Record<string, any> & { id: string }>,
+  startDate: string,
+  endDate?: string
+): Promise<Map<string, AccountMetrics>> {
+  const metricsByAccount = new Map<string, AccountMetrics>();
+  const accountIds = accounts.map((account) => account.id);
+
+  accounts.forEach((account) => {
+    metricsByAccount.set(account.id, createDefaultMetrics(account.last_synced_at));
+  });
+
+  if (accountIds.length === 0) {
+    return metricsByAccount;
+  }
+
+  const entriesByKey = new Map<string, {
+    accountId: string;
+    publishedAt: string | null;
+    likes: number;
+    comments: number;
+    shares: number;
+    views: number;
+    engagement: number;
+    engagementRate: number;
+  }>();
+
+  const upsertEntry = (
+    key: string,
+    entry: {
+      accountId: string;
+      publishedAt: string | null;
+      likes?: number;
+      comments?: number;
+      shares?: number;
+      views?: number;
+      engagement?: number;
+      engagementRate?: number;
+    }
+  ) => {
+    const current = entriesByKey.get(key);
+    if (!current) {
+      entriesByKey.set(key, {
+        accountId: entry.accountId,
+        publishedAt: entry.publishedAt,
+        likes: entry.likes ?? 0,
+        comments: entry.comments ?? 0,
+        shares: entry.shares ?? 0,
+        views: entry.views ?? 0,
+        engagement: entry.engagement ?? 0,
+        engagementRate: entry.engagementRate ?? 0,
+      });
+      return;
+    }
+
+    entriesByKey.set(key, {
+      ...current,
+      publishedAt: current.publishedAt || entry.publishedAt,
+      likes: Math.max(current.likes, entry.likes ?? 0),
+      comments: Math.max(current.comments, entry.comments ?? 0),
+      shares: Math.max(current.shares, entry.shares ?? 0),
+      views: Math.max(current.views, entry.views ?? 0),
+      engagement: Math.max(current.engagement, entry.engagement ?? 0),
+      engagementRate: Math.max(current.engagementRate, entry.engagementRate ?? 0),
+    });
+  };
+
+  try {
+    let postsQuery = supabase
+      .from('posts')
+      .select('id, social_account_id, external_post_id, published_at')
+      .eq('workspace_id', workspaceId)
+      .in('social_account_id', accountIds)
+      .in('status', ['published', 'partial'])
+      .gte('published_at', startDate);
+
+    if (endDate) {
+      postsQuery = postsQuery.lte('published_at', endDate);
+    }
+
+    const { data: posts, error: postsError } = await postsQuery;
+
+    if (postsError) {
+      console.warn('[Accounts] Failed to aggregate recent posts', postsError);
+    }
+
+    const postRows = posts || [];
+    const postIds = postRows.map((post: any) => post.id).filter(Boolean);
+    const analyticsByPostId = new Map<string, any>();
+
+    if (postIds.length > 0) {
+      const { data: analyticsRows, error: analyticsError } = await supabase
+        .from('post_analytics')
+        .select('post_id, likes, comments, shares, impressions, video_views, engagement, engagement_rate, fetched_at')
+        .in('post_id', postIds)
+        .order('fetched_at', { ascending: false });
+
+      if (analyticsError) {
+        console.warn('[Accounts] Failed to aggregate post analytics', analyticsError);
+      }
+
+      (analyticsRows || []).forEach((row: any) => {
+        if (row.post_id && !analyticsByPostId.has(row.post_id)) {
+          analyticsByPostId.set(row.post_id, row);
+        }
+      });
+    }
+
+    postRows.forEach((post: any) => {
+      const accountId = post.social_account_id;
+      if (!accountId) return;
+
+      const analytics = analyticsByPostId.get(post.id);
+      const values = extractMetricValues(analytics);
+      const key = `${accountId}:${post.external_post_id || post.id}`;
+
+      upsertEntry(key, {
+        accountId,
+        publishedAt: post.published_at,
+        likes: values.likes,
+        comments: values.comments,
+        shares: values.shares,
+        views: values.views,
+        engagement: values.engagement,
+        engagementRate: values.engagementRate,
+      });
+    });
+  } catch (error) {
+    console.warn('[Accounts] Direct post metrics aggregation failed', error);
+  }
+
+  try {
+    let externalQuery = supabase
+      .from('external_posts')
+      .select('id, social_account_id, external_post_id, published_at, metrics')
+      .eq('workspace_id', workspaceId)
+      .in('social_account_id', accountIds)
+      .gte('published_at', startDate);
+
+    if (endDate) {
+      externalQuery = externalQuery.lte('published_at', endDate);
+    }
+
+    const { data: externalPosts, error: externalError } = await externalQuery;
+
+    if (externalError) {
+      console.warn('[Accounts] Failed to aggregate external post metrics', externalError);
+    }
+
+    (externalPosts || []).forEach((post: any) => {
+      const accountId = post.social_account_id;
+      if (!accountId) return;
+
+      const values = extractMetricValues(post.metrics);
+      const key = `${accountId}:${post.external_post_id || post.id}`;
+
+      upsertEntry(key, {
+        accountId,
+        publishedAt: post.published_at,
+        likes: values.likes,
+        comments: values.comments,
+        shares: values.shares,
+        views: values.views,
+        engagement: values.engagement,
+        engagementRate: values.engagementRate,
+      });
+    });
+  } catch (error) {
+    console.warn('[Accounts] External post metrics aggregation failed', error);
+  }
+
+  try {
+    let platformPostsQuery = supabase
+      .from('platform_posts')
+      .select('id, post_id, social_account_id, platform_post_id, external_id, published_at')
+      .in('social_account_id', accountIds)
+      .eq('status', 'published')
+      .gte('published_at', startDate);
+
+    if (endDate) {
+      platformPostsQuery = platformPostsQuery.lte('published_at', endDate);
+    }
+
+    const { data: platformPosts, error: platformPostsError } = await platformPostsQuery;
+
+    if (platformPostsError) {
+      console.warn('[Accounts] Failed to aggregate platform post metrics', platformPostsError);
+    }
+
+    (platformPosts || []).forEach((post: any) => {
+      const accountId = post.social_account_id;
+      if (!accountId) return;
+
+      const key = `${accountId}:${post.platform_post_id || post.external_id || post.post_id || post.id}`;
+      upsertEntry(key, {
+        accountId,
+        publishedAt: post.published_at,
+      });
+    });
+  } catch (error) {
+    console.warn('[Accounts] Platform post metrics aggregation failed', error);
+  }
+
+  entriesByKey.forEach((entry) => {
+    const current = metricsByAccount.get(entry.accountId) ?? createDefaultMetrics();
+    const lastPublishedAt =
+      entry.publishedAt &&
+        (!current.lastPublishedAt || new Date(entry.publishedAt) > new Date(current.lastPublishedAt))
+        ? entry.publishedAt
+        : current.lastPublishedAt;
+
+    metricsByAccount.set(entry.accountId, {
+      ...current,
+      postsPublished: current.postsPublished + 1,
+      totalLikes: current.totalLikes + entry.likes,
+      totalComments: current.totalComments + entry.comments,
+      totalShares: current.totalShares + entry.shares,
+      totalEngagement: current.totalEngagement + entry.engagement,
+      totalVideoViews: current.totalVideoViews + entry.views,
+      avgEngagementRate: Math.max(current.avgEngagementRate, entry.engagementRate),
+      lastPublishedAt,
+    });
+  });
+
+  metricsByAccount.forEach((metrics, accountId) => {
+    const entries = Array.from(entriesByKey.values()).filter((entry) => entry.accountId === accountId);
+    const explicitRates = entries
+      .map((entry) => entry.engagementRate)
+      .filter((rate) => rate > 0);
+    const calculatedRate = metrics.totalVideoViews > 0
+      ? (metrics.totalEngagement / metrics.totalVideoViews) * 100
+      : 0;
+
+    metricsByAccount.set(accountId, {
+      ...metrics,
+      avgEngagementRate: explicitRates.length > 0
+        ? explicitRates.reduce((sum, rate) => sum + rate, 0) / explicitRates.length
+        : calculatedRate,
+    });
+  });
+
+  return metricsByAccount;
+}
+
 function sanitizeAccountMetadata(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(sanitizeAccountMetadata);
@@ -209,10 +496,33 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   }
 
   const accountRows = (accounts || []) as unknown as Array<Record<string, any> & { id: string }>;
-  const enrichedAccounts = accountRows.map((account) => ({
-    ...sanitizeAccountResponse(account),
-    metrics: metricsMap.get(account.id) ?? { ...DEFAULT_ACCOUNT_METRICS },
-  }));
+  const defaultMetricsFrom = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const directMetricsMap = await getDirectAccountMetrics(
+    supabase,
+    workspace.id,
+    accountRows,
+    metricsFrom ? new Date(metricsFrom).toISOString() : defaultMetricsFrom,
+    metricsTo ? new Date(metricsTo).toISOString() : undefined
+  );
+
+  const enrichedAccounts = accountRows.map((account) => {
+    const rpcMetrics = metricsMap.get(account.id) ?? createDefaultMetrics(account.last_synced_at);
+    const directMetrics = directMetricsMap.get(account.id) ?? createDefaultMetrics(account.last_synced_at);
+
+    return {
+      ...sanitizeAccountResponse(account),
+      metrics: {
+        ...rpcMetrics,
+        ...directMetrics,
+        lastPublishedAt: directMetrics.lastPublishedAt ?? rpcMetrics.lastPublishedAt,
+        lastSyncedAt:
+          directMetrics.lastSyncedAt ??
+          rpcMetrics.lastSyncedAt ??
+          account.last_synced_at ??
+          null,
+      },
+    };
+  });
 
   return successResponse(
     {

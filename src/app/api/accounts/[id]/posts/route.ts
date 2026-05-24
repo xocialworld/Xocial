@@ -56,6 +56,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         .from('posts')
         .select(`
       id,
+      social_account_id,
       content,
       media,
       platforms,
@@ -74,10 +75,6 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         .order('published_at', { ascending: false })
         .limit(limit + 1);
 
-    if (postType && postType !== 'all') {
-        query = query.contains('metadata', { post_type: postType });
-    }
-
     // Apply cursor-based pagination
     if (cursor) {
         query = query.lt('published_at', cursor);
@@ -87,6 +84,121 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
 
     if (postsError) {
         throw new APIError(500, postsError.message, 'DATABASE_ERROR');
+    }
+
+    let platformRows: any[] = [];
+    try {
+        let platformPostsQuery = supabase
+            .from('platform_posts')
+            .select('id, post_id, platform, social_account_id, platform_post_id, external_id, permalink, published_at, status, metadata')
+            .eq('social_account_id', account.id)
+            .eq('platform', platform)
+            .eq('status', 'published')
+            .order('published_at', { ascending: false })
+            .limit(limit + 1);
+
+        if (cursor) {
+            platformPostsQuery = platformPostsQuery.lt('published_at', cursor);
+        }
+
+        const { data: platformPosts, error: platformPostsError } = await platformPostsQuery;
+
+        if (!platformPostsError && platformPosts?.length) {
+            const platformPostIds = Array.from(
+                new Set(platformPosts.map((row: any) => row.post_id).filter(Boolean))
+            );
+            const postsById = new Map<string, any>();
+
+            if (platformPostIds.length > 0) {
+                const { data: linkedPosts } = await supabase
+                    .from('posts')
+                    .select(`
+      id,
+      content,
+      media,
+      platforms,
+      workspace_id,
+      metadata,
+      status,
+      published_at,
+      scheduled_at,
+      created_at,
+      external_post_id
+        `)
+                    .eq('workspace_id', workspace.id)
+                    .in('id', platformPostIds);
+
+                (linkedPosts || []).forEach((post: any) => {
+                    postsById.set(post.id, post);
+                });
+            }
+
+            platformRows = platformPosts.map((row: any) => {
+                const linkedPost = postsById.get(row.post_id);
+                return {
+                    id: linkedPost?.id || row.post_id || row.id,
+                    social_account_id: account.id,
+                    content: linkedPost?.content || {},
+                    media: linkedPost?.media || [],
+                    platforms: [platform],
+                    workspace_id: workspace.id,
+                    metadata: {
+                        ...(linkedPost?.metadata || {}),
+                        ...(row.metadata || {}),
+                        permalink: row.permalink,
+                    },
+                    status: 'published',
+                    published_at: row.published_at || linkedPost?.published_at,
+                    scheduled_at: linkedPost?.scheduled_at || null,
+                    created_at: linkedPost?.created_at || row.published_at,
+                    external_post_id: row.platform_post_id || row.external_id || linkedPost?.external_post_id,
+                };
+            });
+        }
+    } catch (error) {
+        console.warn('[Account Posts] platform_posts fallback failed', error);
+    }
+
+    let externalRows: any[] = [];
+    try {
+        let externalQuery = supabase
+            .from('external_posts')
+            .select('id, content, media, post_type, published_at, created_at, external_post_id, metrics, permalink')
+            .eq('workspace_id', workspace.id)
+            .eq('social_account_id', account.id)
+            .eq('platform', platform)
+            .order('published_at', { ascending: false })
+            .limit(limit + 1);
+
+        if (cursor) {
+            externalQuery = externalQuery.lt('published_at', cursor);
+        }
+
+        const { data: importedPosts, error: importedError } = await externalQuery;
+
+        if (!importedError) {
+            externalRows = (importedPosts || []).map((post: any) => ({
+                id: post.id,
+                social_account_id: account.id,
+                content: post.content || {},
+                media: post.media || [],
+                platforms: [platform],
+                workspace_id: workspace.id,
+                metadata: {
+                    post_type: post.post_type,
+                    permalink: post.permalink,
+                    source: 'external_posts',
+                },
+                status: 'published',
+                published_at: post.published_at,
+                scheduled_at: null,
+                created_at: post.created_at || post.published_at,
+                external_post_id: post.external_post_id,
+                metrics: post.metrics || undefined,
+            }));
+        }
+    } catch (error) {
+        console.warn('[Account Posts] external_posts fallback failed', error);
     }
 
     // Fetch fresh data from APIs to ensure realtime accuracy
@@ -114,10 +226,16 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
                     const isShort = durationSec > 0 && durationSec <= 60;
                     freshPosts.push({
                         id: vid, // Temporary ID matching external
-                        content: { caption: details.snippet.title },
+                        content: {
+                            caption: details.snippet.title,
+                            text: details.snippet.title,
+                            title: details.snippet.title,
+                            description: details.snippet.description || '',
+                        },
                         media: [{ type: 'video', url: details.snippet.thumbnails?.high?.url || details.snippet.thumbnails?.default?.url }],
                         platforms: ['youtube'],
                         workspace_id: account.workspace_id,
+                        social_account_id: account.id,
                         metadata: { post_type: isShort ? 'short' : 'video' },
                         status: 'published',
                         published_at: details.snippet.publishedAt,
@@ -160,6 +278,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
                     media: mediaItems,
                     platforms: ['twitter'],
                     workspace_id: account.workspace_id,
+                    social_account_id: account.id,
                     metadata: { post_type: 'tweet' },
                     status: 'published',
                     published_at: tweet.created_at,
@@ -193,7 +312,23 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         }
     });
 
-    // 2. Add DB posts if not already present
+    // 2. Add imported external posts as a fallback with platform-native metrics/media
+    externalRows.forEach((p: any) => {
+        const extId = p.external_post_id;
+        if (!extId || !mergedPostsMap.has(extId)) {
+            mergedPostsMap.set(extId || `external_${p.id}`, p);
+        }
+    });
+
+    // 3. Add records created by publish-now/scheduled workflows through platform_posts
+    platformRows.forEach((p: any) => {
+        const extId = p.external_post_id;
+        if (!extId || !mergedPostsMap.has(extId)) {
+            mergedPostsMap.set(extId || `platform_${p.id}`, p);
+        }
+    });
+
+    // 4. Add DB posts if not already present; if a platform copy exists, keep its metrics/media and attach the DB id
     dbPosts.forEach((p: any) => {
         const extId = p.external_post_id;
         if (!extId || !mergedPostsMap.has(extId)) {
@@ -204,6 +339,9 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
             // If already have fresh post, might want to populate DB ID for internal references
             const fresh = mergedPostsMap.get(extId);
             fresh.id = p.id; // Keep DB ID for consistency if it exists
+            fresh.social_account_id = p.social_account_id || fresh.social_account_id;
+            fresh.content = Object.keys(fresh.content || {}).length > 0 ? fresh.content : p.content;
+            fresh.media = Array.isArray(fresh.media) && fresh.media.length > 0 ? fresh.media : p.media;
         }
     });
 
@@ -279,6 +417,14 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
             post_type: extractedPostType,
             content: post?.content || {},
             media: post?.media || [],
+            social_account_id: post?.social_account_id || account.id,
+            metrics: {
+                likes: metrics.likes || 0,
+                comments: metrics.comments || 0,
+                shares: metrics.shares || 0,
+                saves: metrics.saves || 0,
+                views: metrics.views || 0,
+            },
             post_analytics: [{
                 likes: metrics.likes || 0,
                 comments: metrics.comments || 0,

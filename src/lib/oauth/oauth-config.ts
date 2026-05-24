@@ -47,11 +47,12 @@ export const OAUTH_CONFIG: Record<
       'pages_manage_posts',
       'pages_read_user_content',
       'pages_manage_engagement',
+      'read_insights',
     ],
     endpoints: {
-      auth: 'https://www.facebook.com/v24.0/dialog/oauth',
-      token: 'https://graph.facebook.com/v24.0/oauth/access_token',
-      user: 'https://graph.facebook.com/v24.0/me',
+      auth: 'https://www.facebook.com/v25.0/dialog/oauth',
+      token: 'https://graph.facebook.com/v25.0/oauth/access_token',
+      user: 'https://graph.facebook.com/v25.0/me',
     },
   },
   instagram: {
@@ -68,11 +69,11 @@ export const OAUTH_CONFIG: Record<
     },
   },
   twitter: {
-    scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
+    scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access', 'media.write'],
     endpoints: {
       auth: 'https://twitter.com/i/oauth2/authorize',
-      token: 'https://api.twitter.com/2/oauth2/token',
-      user: 'https://api.twitter.com/2/users/me',
+      token: 'https://api.x.com/2/oauth2/token',
+      user: 'https://api.x.com/2/users/me',
     },
   },
   linkedin: {
@@ -81,9 +82,13 @@ export const OAUTH_CONFIG: Record<
       'profile',
       'email',
       'w_member_social',
+      'r_member_postAnalytics',
       'r_organization_social',
       'w_organization_social',
       'rw_organization_admin',
+      'r_organization_social_feed',
+      'w_member_social_feed',
+      'w_organization_social_feed',
     ],
     endpoints: {
       auth: 'https://www.linkedin.com/oauth/v2/authorization',

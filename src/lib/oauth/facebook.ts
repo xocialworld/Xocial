@@ -42,6 +42,10 @@ export interface FacebookPage {
   fan_count?: number;
 }
 
+export const META_GRAPH_API_VERSION = process.env.META_GRAPH_API_VERSION || 'v25.0';
+export const META_GRAPH_API_BASE_URL = `https://graph.facebook.com/${META_GRAPH_API_VERSION}`;
+export const META_FACEBOOK_AUTH_BASE_URL = `https://www.facebook.com/${META_GRAPH_API_VERSION}`;
+
 /**
  * Generate Facebook OAuth authorization URL
  */
@@ -56,6 +60,7 @@ export function getFacebookAuthUrl(
     'pages_manage_posts',
     'pages_read_user_content',
     'pages_manage_engagement',
+    'read_insights',
   ];
 
   if (includeInstagramScopes) {
@@ -80,7 +85,7 @@ export function getFacebookAuthUrl(
     params.set('auth_type', 'rerequest');
   }
 
-  return `https://www.facebook.com/v24.0/dialog/oauth?${params.toString()}`;
+  return `${META_FACEBOOK_AUTH_BASE_URL}/dialog/oauth?${params.toString()}`;
 }
 
 /**
@@ -98,7 +103,7 @@ export async function exchangeFacebookCode(
   });
 
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/oauth/access_token?${params.toString()}`
+    `${META_GRAPH_API_BASE_URL}/oauth/access_token?${params.toString()}`
   );
 
   if (!response.ok) {
@@ -123,7 +128,7 @@ export async function getFacebookLongLivedToken(
   });
 
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/oauth/access_token?${params.toString()}`
+    `${META_GRAPH_API_BASE_URL}/oauth/access_token?${params.toString()}`
   );
 
   if (!response.ok) {
@@ -155,7 +160,7 @@ export async function getFacebookProfile(
   accessToken: string
 ): Promise<FacebookProfile> {
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/me?fields=id,name,email,picture&access_token=${accessToken}`
+    `${META_GRAPH_API_BASE_URL}/me?fields=id,name,email,picture&access_token=${accessToken}`
   );
 
   if (!response.ok) {
@@ -183,7 +188,7 @@ export async function getFacebookPages(
   ].join(',');
 
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/me/accounts?fields=${fields}&access_token=${accessToken}`
+    `${META_GRAPH_API_BASE_URL}/me/accounts?fields=${fields}&access_token=${accessToken}`
   );
 
   if (!response.ok) {
@@ -218,7 +223,7 @@ export async function getFacebookPagePosts(
   ];
 
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/${pageId}/posts?fields=${fields.join(',')}&limit=${limit}&access_token=${accessToken}`
+    `${META_GRAPH_API_BASE_URL}/${pageId}/posts?fields=${fields.join(',')}&limit=${limit}&access_token=${accessToken}`
   );
 
   if (!response.ok) {
@@ -247,7 +252,7 @@ export async function getFacebookPostComments(
   ];
 
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/${postId}/comments?fields=${fields.join(',')}&access_token=${accessToken}`
+    `${META_GRAPH_API_BASE_URL}/${postId}/comments?fields=${fields.join(',')}&access_token=${accessToken}`
   );
 
   if (!response.ok) {
@@ -274,7 +279,7 @@ export async function getFacebookPageInsights(
   ];
 
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/${pageId}/insights?metric=${metrics.join(',')}&period=${period}&access_token=${accessToken}`
+    `${META_GRAPH_API_BASE_URL}/${pageId}/insights?metric=${metrics.join(',')}&period=${period}&access_token=${accessToken}`
   );
 
   if (!response.ok) {
@@ -299,7 +304,7 @@ export async function publishFacebookPost(
   }
 ): Promise<{ id: string }> {
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/${pageId}/feed`,
+    `${META_GRAPH_API_BASE_URL}/${pageId}/feed`,
     {
       method: 'POST',
       headers: {
@@ -336,7 +341,7 @@ export async function getFacebookPostInsights(
   ];
 
   const response = await fetch(
-    `https://graph.facebook.com/v24.0/${postId}/insights?metric=${metrics.join(',')}&access_token=${accessToken}`
+    `${META_GRAPH_API_BASE_URL}/${postId}/insights?metric=${metrics.join(',')}&access_token=${accessToken}`
   );
 
   if (!response.ok) {

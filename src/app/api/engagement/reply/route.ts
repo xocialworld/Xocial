@@ -198,7 +198,7 @@ async function replyToTwitter(
         }
 
         // Twitter API v2 - Create tweet as reply
-        const response = await fetch('https://api.twitter.com/2/tweets', {
+        const response = await fetch('https://api.x.com/2/tweets', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${accessToken}`,

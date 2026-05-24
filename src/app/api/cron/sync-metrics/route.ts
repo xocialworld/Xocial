@@ -12,7 +12,7 @@ import { withCronVerification, cronSuccessResponse, cronErrorResponse } from '@/
 import { createFacebookClient } from '@/lib/platforms/facebook';
 import { createInstagramClient } from '@/lib/platforms/instagram';
 import { createTwitterClient } from '@/lib/platforms/twitter';
-import { createLinkedInClient } from '@/lib/platforms/linkedin';
+import { createLinkedInClientFromToken } from '@/lib/platforms/linkedin';
 import { createYouTubeClient } from '@/lib/platforms/youtube';
 import { createTikTokClient } from '@/lib/platforms/tiktok';
 
@@ -333,13 +333,13 @@ async function fetchTwitterMetrics(postId: string, accessToken: string) {
 
 async function fetchLinkedInMetrics(postId: string, accessToken: string) {
   try {
-    const client = await createLinkedInClient(accessToken);
-    const stats = await (client as any).getPostStatistics?.(postId) || {};
+    const client = createLinkedInClientFromToken(accessToken);
+    const stats = await client.getPostStats(postId);
 
     return {
       impressions: stats.impressions || 0,
       reach: stats.reach || 0,
-      engagement: stats.engagement || 0,
+      engagement: stats.engagement || stats.likes + stats.comments + stats.shares || 0,
       likes: stats.likes || 0,
       comments: stats.comments || 0,
       shares: stats.shares || 0,

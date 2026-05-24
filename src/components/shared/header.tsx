@@ -1,10 +1,10 @@
 'use client';
 /* eslint-disable @next/next/no-img-element -- Header avatar falls back to social platform URLs requiring <img> usage */
 
-import * as React from "react";
-import Link from "next/link";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import * as React from 'react';
+import Link from 'next/link';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import {
   Search,
   LogOut,
@@ -17,14 +17,14 @@ import {
   Settings,
   CreditCard,
   Bell,
-  Inbox
-} from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { toast } from "sonner";
-import { useRouter } from "next/navigation";
-import { WorkspaceSwitcher } from "@/components/shared/workspace-switcher";
-import { NotificationCenter } from "@/components/shared/notification-center";
-import { HelpDrawer } from "@/components/shared/help-drawer";
+  Inbox,
+} from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
+import { WorkspaceSwitcher } from '@/components/shared/workspace-switcher';
+import { NotificationCenter } from '@/components/shared/notification-center';
+import { HelpDrawer } from '@/components/shared/help-drawer';
 
 interface HeaderProps {
   user?: {
@@ -57,10 +57,10 @@ export function Header({ user }: HeaderProps) {
     const { error } = await supabase.auth.signOut();
 
     if (error) {
-      toast.error("Failed to sign out");
+      toast.error('Failed to sign out');
     } else {
-      toast.success("Signed out successfully");
-      router.push("/auth/login");
+      toast.success('Signed out successfully');
+      router.push('/auth/login');
       router.refresh();
     }
   };
@@ -79,30 +79,33 @@ export function Header({ user }: HeaderProps) {
           <div className="hidden sm:block h-5 w-px bg-secondary-200" />
 
           {/* Search */}
-          <div className={cn(
-            "relative flex-1 max-w-md transition-all duration-300",
-            searchFocused && "max-w-xl"
-          )}>
+          <div
+            className={cn(
+              'relative flex-1 max-w-md transition-all duration-300',
+              searchFocused && 'max-w-xl'
+            )}
+          >
             <div className="relative">
-              <Search className={cn(
-                "absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transition-colors",
-                searchFocused ? "text-primary-500" : "text-secondary-400"
-              )} />
+              <Search
+                className={cn(
+                  'absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transition-colors',
+                  searchFocused ? 'text-primary-500' : 'text-secondary-400'
+                )}
+              />
               <input
                 type="text"
                 placeholder="Search posts, accounts..."
                 className={cn(
-                  "w-full rounded-lg border bg-secondary-50/80 py-2 pl-10 pr-12 text-sm transition-all duration-300",
+                  'w-full rounded-lg border bg-secondary-50/80 py-2 pl-10 pr-12 text-sm transition-all duration-300',
                   searchFocused
-                    ? "border-primary-300 bg-white ring-2 ring-primary-500/10 outline-none"
-                    : "border-secondary-200 hover:border-secondary-300 focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/10"
+                    ? 'border-primary-300 bg-white ring-2 ring-primary-500/10 outline-none'
+                    : 'border-secondary-200 hover:border-secondary-300 focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/10'
                 )}
                 onFocus={() => setSearchFocused(true)}
                 onBlur={() => setSearchFocused(false)}
               />
               <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium text-secondary-400 bg-secondary-100 rounded border border-secondary-200">
-                <Command className="h-2.5 w-2.5" />
-                K
+                <Command className="h-2.5 w-2.5" />K
               </kbd>
             </div>
           </div>
@@ -112,22 +115,28 @@ export function Header({ user }: HeaderProps) {
         <div className="flex items-center gap-1">
           {/* AI Assistant Quick Access */}
           <Button
+            asChild
             variant="ghost"
             size="sm"
             className="hidden md:flex gap-1.5 h-8 px-2.5 text-secondary-600 hover:text-primary-600 hover:bg-primary-50"
           >
-            <Sparkles className="h-4 w-4" />
-            <span className="text-xs font-medium">AI</span>
+            <Link href="/c">
+              <Sparkles className="h-4 w-4" />
+              <span className="text-xs font-medium">AI</span>
+            </Link>
           </Button>
 
           {/* Upgrade Button */}
           <Button
+            asChild
             variant="ghost"
             size="sm"
             className="hidden lg:flex gap-1.5 h-8 px-2.5 text-secondary-600 hover:text-primary-600 hover:bg-primary-50"
           >
-            <Zap className="h-4 w-4" />
-            <span className="text-xs font-medium">Upgrade</span>
+            <Link href="/settings?tab=billing">
+              <Zap className="h-4 w-4" />
+              <span className="text-xs font-medium">Upgrade</span>
+            </Link>
           </Button>
 
           {/* Help */}
@@ -140,7 +149,7 @@ export function Header({ user }: HeaderProps) {
           </button>
 
           {/* Engagement Inbox */}
-          <Link href="/e">
+          <Link href="/i">
             <button
               className="p-2 rounded-lg text-secondary-400 hover:text-pink-600 hover:bg-pink-50 transition-colors relative"
               title="Engagement Inbox"
@@ -157,10 +166,8 @@ export function Header({ user }: HeaderProps) {
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
               className={cn(
-                "flex items-center gap-2 rounded-lg px-2 py-1.5 transition-all",
-                showUserMenu
-                  ? "bg-secondary-100"
-                  : "hover:bg-secondary-50"
+                'flex items-center gap-2 rounded-lg px-2 py-1.5 transition-all',
+                showUserMenu ? 'bg-secondary-100' : 'hover:bg-secondary-50'
               )}
             >
               {user?.avatar_url?.length ? (
@@ -171,13 +178,15 @@ export function Header({ user }: HeaderProps) {
                 />
               ) : (
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-600 text-xs font-medium text-white ring-2 ring-white shadow-sm">
-                  {user?.name?.charAt(0).toUpperCase() || "U"}
+                  {user?.name?.charAt(0).toUpperCase() || 'U'}
                 </div>
               )}
-              <ChevronDown className={cn(
-                "hidden sm:block h-3.5 w-3.5 text-secondary-400 transition-transform",
-                showUserMenu && "rotate-180"
-              )} />
+              <ChevronDown
+                className={cn(
+                  'hidden sm:block h-3.5 w-3.5 text-secondary-400 transition-transform',
+                  showUserMenu && 'rotate-180'
+                )}
+              />
             </button>
 
             {/* User Dropdown */}
@@ -194,12 +203,16 @@ export function Header({ user }: HeaderProps) {
                       />
                     ) : (
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-600 text-sm font-medium text-white">
-                        {user?.name?.charAt(0).toUpperCase() || "U"}
+                        {user?.name?.charAt(0).toUpperCase() || 'U'}
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-secondary-900 truncate">{user?.name || "User"}</p>
-                      <p className="text-xs text-secondary-500 truncate">{user?.email || "user@example.com"}</p>
+                      <p className="text-sm font-semibold text-secondary-900 truncate">
+                        {user?.name || 'User'}
+                      </p>
+                      <p className="text-xs text-secondary-500 truncate">
+                        {user?.email || 'user@example.com'}
+                      </p>
                     </div>
                   </div>
                 </div>

@@ -13,6 +13,8 @@ import { createClient } from '@supabase/supabase-js';
 import { withCronVerification, cronSuccessResponse, cronErrorResponse } from '@/lib/cron-verification';
 import { refreshMetaToken } from '@/lib/oauth/token-refresh';
 import { refreshYouTubeToken } from '@/lib/oauth/youtube';
+import { refreshTwitterToken } from '@/lib/platforms/twitter';
+import { refreshLinkedInToken } from '@/lib/oauth/linkedin';
 import { encryptToken, decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 
@@ -115,6 +117,60 @@ export const GET = withCronVerification(async (request: NextRequest) => {
           if (updateError) throw updateError;
 
           result = { success: true, platform: 'youtube' };
+        } else if (account.platform === 'twitter') {
+          const tokenResponse = await refreshTwitterToken(
+            {
+              clientId: process.env.TWITTER_CLIENT_ID!,
+              clientSecret: process.env.TWITTER_CLIENT_SECRET!,
+              redirectUri: '',
+            },
+            decryptToken(account.refresh_token)
+          );
+
+          const { error: updateError } = await supabase
+            .from('social_accounts')
+            .update({
+              access_token: encryptToken(tokenResponse.access_token),
+              refresh_token: tokenResponse.refresh_token
+                ? encryptToken(tokenResponse.refresh_token)
+                : account.refresh_token,
+              token_expires_at: new Date(
+                Date.now() + tokenResponse.expires_in * 1000
+              ).toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', account.id);
+
+          if (updateError) throw updateError;
+
+          result = { success: true, platform: 'twitter' };
+        } else if (account.platform === 'linkedin') {
+          const tokenResponse = await refreshLinkedInToken(
+            {
+              clientId: process.env.LINKEDIN_CLIENT_ID!,
+              clientSecret: process.env.LINKEDIN_CLIENT_SECRET!,
+              redirectUri: '',
+            },
+            decryptToken(account.refresh_token)
+          );
+
+          const { error: updateError } = await supabase
+            .from('social_accounts')
+            .update({
+              access_token: encryptToken(tokenResponse.access_token),
+              refresh_token: tokenResponse.refresh_token
+                ? encryptToken(tokenResponse.refresh_token)
+                : account.refresh_token,
+              token_expires_at: new Date(
+                Date.now() + tokenResponse.expires_in * 1000
+              ).toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', account.id);
+
+          if (updateError) throw updateError;
+
+          result = { success: true, platform: 'linkedin' };
         } else {
           // Platform not yet implemented for token refresh
           result = { success: false, error: `Token refresh not implemented for ${account.platform}` };
@@ -184,4 +240,3 @@ export const GET = withCronVerification(async (request: NextRequest) => {
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-

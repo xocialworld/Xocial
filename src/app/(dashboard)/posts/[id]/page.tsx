@@ -48,6 +48,31 @@ type PostMediaItem = {
     name?: string;
 };
 
+type PlatformEvidenceItem = {
+    id: string;
+    platform: string;
+    platformPostId?: string | null;
+    externalId?: string | null;
+    permalink?: string | null;
+    status: string;
+    publishedAt?: string | null;
+    lastAttemptAt?: string | null;
+    attemptCount?: number;
+    errorMessage?: string | null;
+};
+
+type ActivityTimelineItem = {
+    id: string;
+    eventType: string;
+    source: string;
+    platform?: string | null;
+    statusBefore?: string | null;
+    statusAfter?: string | null;
+    message?: string | null;
+    errorMessage?: string | null;
+    occurredAt: string;
+};
+
 const platformIcons: Record<string, any> = {
     instagram: Instagram,
     facebook: Facebook,
@@ -112,6 +137,8 @@ export default function PostDetailPage() {
     const postId = params.id as string;
 
     const [post, setPost] = useState<Post | null>(null);
+    const [platformEvidence, setPlatformEvidence] = useState<PlatformEvidenceItem[]>([]);
+    const [timeline, setTimeline] = useState<ActivityTimelineItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [publishing, setPublishing] = useState(false);
     const [scheduling, setScheduling] = useState(false);
@@ -138,6 +165,8 @@ export default function PostDetailPage() {
             }
 
             setPost(nextPost);
+            setPlatformEvidence(Array.isArray(payload?.data?.platformEvidence) ? payload.data.platformEvidence : []);
+            setTimeline(Array.isArray(payload?.data?.timeline) ? payload.data.timeline : []);
 
             const initialSchedule = nextPost.scheduled_at
                 ? new Date(nextPost.scheduled_at)
@@ -147,6 +176,8 @@ export default function PostDetailPage() {
         } catch (error: any) {
             console.error("Fetch post error:", error);
             setPost(null);
+            setPlatformEvidence([]);
+            setTimeline([]);
             toast.error(error.message || "Failed to load post");
         } finally {
             setLoading(false);
@@ -462,6 +493,112 @@ export default function PostDetailPage() {
                         })
                     )}
                 </div>
+
+                <Card className="mt-8">
+                    <CardHeader>
+                        <CardTitle className="text-base">Publish evidence</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {platformEvidence.length === 0 ? (
+                            <p className="text-sm text-secondary-500">
+                                No platform publish evidence has been recorded yet.
+                            </p>
+                        ) : (
+                            <div className="space-y-3">
+                                {platformEvidence.map((item) => {
+                                    const Icon = platformIcons[item.platform] || MessageSquare;
+                                    const isFailed = item.status === "failed";
+
+                                    return (
+                                        <div key={item.id} className="rounded-lg border border-secondary-200 p-3">
+                                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                                <div className="flex min-w-0 items-start gap-3">
+                                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary-100">
+                                                        <Icon className="h-4 w-4 text-secondary-600" />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <p className="font-medium capitalize text-secondary-900">{item.platform}</p>
+                                                            <Badge className={cn("capitalize", statusColors[item.status] || statusColors.draft)}>
+                                                                {item.status}
+                                                            </Badge>
+                                                        </div>
+                                                        <p className="mt-1 break-all text-xs text-secondary-500">
+                                                            Platform ID: {item.platformPostId || item.externalId || "Not available"}
+                                                        </p>
+                                                        {(item.publishedAt || item.lastAttemptAt) && (
+                                                            <p className="mt-1 text-xs text-secondary-500">
+                                                                {item.publishedAt
+                                                                    ? `Published ${format(new Date(item.publishedAt), "MMM d, yyyy h:mm a")}`
+                                                                    : `Last attempt ${format(new Date(item.lastAttemptAt as string), "MMM d, yyyy h:mm a")}`}
+                                                            </p>
+                                                        )}
+                                                        {isFailed && item.errorMessage && (
+                                                            <p className="mt-2 text-sm text-red-600">{item.errorMessage}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                {item.permalink && !item.permalink.includes("demo.local") && (
+                                                    <Button variant="outline" size="sm" asChild>
+                                                        <a href={item.permalink} target="_blank" rel="noreferrer">
+                                                            <ExternalLink className="mr-2 h-4 w-4" />
+                                                            Open
+                                                        </a>
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+                <Card className="mt-6">
+                    <CardHeader>
+                        <CardTitle className="text-base">Activity timeline</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {timeline.length === 0 ? (
+                            <p className="text-sm text-secondary-500">
+                                No activity has been recorded yet.
+                            </p>
+                        ) : (
+                            <div className="space-y-4">
+                                {timeline.map((event) => (
+                                    <div key={event.id} className="flex gap-3">
+                                        <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary-100">
+                                            <Clock className="h-3.5 w-3.5 text-secondary-600" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <p className="text-sm font-medium capitalize text-secondary-900">
+                                                    {event.message || event.eventType.replace(/_/g, " ")}
+                                                </p>
+                                                {event.platform && (
+                                                    <Badge variant="secondary" className="capitalize">
+                                                        {event.platform}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                            <p className="mt-1 text-xs text-secondary-500">
+                                                {format(new Date(event.occurredAt), "MMM d, yyyy h:mm a")}
+                                                {event.source ? ` by ${event.source}` : ""}
+                                                {event.statusBefore && event.statusAfter
+                                                    ? ` · ${event.statusBefore} -> ${event.statusAfter}`
+                                                    : ""}
+                                            </p>
+                                            {event.errorMessage && (
+                                                <p className="mt-1 text-sm text-red-600">{event.errorMessage}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
 
                 {post.published_at && (
                     <Card className="mt-8">

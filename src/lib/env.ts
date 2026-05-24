@@ -59,6 +59,7 @@ const envSchema = z.object({
   FACEBOOK_APP_ID: z.string().optional(),
   FACEBOOK_APP_SECRET: z.string().optional(),
   FACEBOOK_LOGIN_CONFIG_ID: z.string().optional(),
+  META_GRAPH_API_VERSION: z.string().optional(),
   INSTAGRAM_LOGIN_CONFIG_ID: z.string().optional(),
   INSTAGRAM_FACEBOOK_LOGIN_CONFIG_ID: z.string().optional(),
 
@@ -74,6 +75,7 @@ const envSchema = z.object({
   // OAuth - LinkedIn
   LINKEDIN_CLIENT_ID: z.string().optional(),
   LINKEDIN_CLIENT_SECRET: z.string().optional(),
+  LINKEDIN_API_VERSION: z.string().optional(),
 
   // OAuth - YouTube
   YOUTUBE_CLIENT_ID: z.string().optional(),

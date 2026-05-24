@@ -5,6 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { decryptToken } from '@/lib/encryption';
+import { META_GRAPH_API_BASE_URL } from '@/lib/oauth/facebook';
 
 export interface FacebookConfig {
   accessToken: string;
@@ -27,7 +28,7 @@ export interface FacebookMediaPost {
 }
 
 export class FacebookClient {
-  private baseUrl = 'https://graph.facebook.com/v24.0';
+  private baseUrl = META_GRAPH_API_BASE_URL;
   private accessToken: string;
   private pageId: string;
 

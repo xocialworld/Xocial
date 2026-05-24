@@ -1,20 +1,24 @@
 /**
  * Cron Job: Automated Post Publishing
  * Publishes scheduled posts when invoked by a cron provider
- * 
+ *
  * Features:
  * - Publishing lock to prevent duplicate processing
  * - Retry logic with exponential backoff
  * - Error categorization (retryable vs permanent)
  * - Partial success handling (some platforms succeed)
- * 
+ *
  * Triggered by: Vercel Cron, an external scheduler, or a manual secure request
  * Recommended schedule: every minute when the hosting plan supports it
  */
 
 import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { withCronVerification, cronSuccessResponse, cronErrorResponse } from '@/lib/cron-verification';
+import {
+  withCronVerification,
+  cronSuccessResponse,
+  cronErrorResponse,
+} from '@/lib/cron-verification';
 import { PlatformPublisher, type Platform, type PublishResult } from '@/lib/platforms/publisher';
 import {
   recordPlatformPosts,
@@ -29,6 +33,12 @@ import {
   normalizePlatforms,
   resolveAccountIds,
 } from '@/lib/platforms/post-publish-helpers';
+import {
+  finishJobRun,
+  recordPostActivity,
+  recordPublishAttempt,
+  startJobRun,
+} from '@/lib/observability/job-runs';
 
 // Maximum retry attempts before permanent failure
 const MAX_RETRY_ATTEMPTS = 3;
@@ -91,10 +101,10 @@ function hasFreshPublishingLock(metadata: unknown, now: Date): boolean {
 function isRetryableError(error: any): boolean {
   // Server errors (5xx) are retryable
   if (error.originalStatus >= 500) return true;
-  
+
   // Rate limit errors are retryable
   if (error.type === 'RATE_LIMIT' || error.type === 'SERVER_ERROR') return true;
-  
+
   // Specific retryable error messages
   const retryableMessages = [
     'ETIMEDOUT',
@@ -106,16 +116,17 @@ function isRetryableError(error: any): boolean {
     'service unavailable',
     'internal server error',
   ];
-  
+
   const errorMessage = (error.message || '').toLowerCase();
-  return retryableMessages.some(msg => errorMessage.includes(msg));
+  return retryableMessages.some((msg) => errorMessage.includes(msg));
 }
 
 /**
  * Calculate next retry time based on attempt number
  */
 function calculateNextRetryTime(attemptNumber: number): Date {
-  const backoffMinutes = RETRY_BACKOFF_MINUTES[Math.min(attemptNumber, RETRY_BACKOFF_MINUTES.length - 1)];
+  const backoffMinutes =
+    RETRY_BACKOFF_MINUTES[Math.min(attemptNumber, RETRY_BACKOFF_MINUTES.length - 1)];
   const nextRetry = new Date();
   nextRetry.setMinutes(nextRetry.getMinutes() + backoffMinutes);
   return nextRetry;
@@ -127,7 +138,7 @@ function calculateNextRetryTime(attemptNumber: number): Date {
  */
 export const GET = withCronVerification(async (request: NextRequest) => {
   const startTime = Date.now();
-  
+
   try {
     console.log('[Cron: Publish] Starting automated publishing job');
 
@@ -142,6 +153,11 @@ export const GET = withCronVerification(async (request: NextRequest) => {
         },
       }
     );
+    const jobRun = await startJobRun(supabase, {
+      jobType: 'publish_scheduled',
+      trigger: 'cron',
+      metadata: { invokedAt: new Date().toISOString() },
+    });
 
     // Get scheduled posts that are due. The production posts table constraint does
     // not currently allow a transient "publishing" status, so locking uses an
@@ -176,6 +192,16 @@ export const GET = withCronVerification(async (request: NextRequest) => {
 
     if (!scheduledPosts || scheduledPosts.length === 0) {
       console.log('[Cron: Publish] No posts to publish');
+      await finishJobRun(supabase, jobRun?.id, {
+        status: 'succeeded',
+        processedCount: 0,
+        succeededCount: 0,
+        failedCount: 0,
+        metadata: {
+          dueScheduled: dueScheduledPosts?.length || 0,
+          skippedFreshLocks: freshLockCount,
+        },
+      });
       return cronSuccessResponse({
         message: 'No posts to publish',
         processed: 0,
@@ -198,7 +224,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       duration: number;
       retryScheduled?: boolean;
     }> = [];
-    
+
     const publisher = new PlatformPublisher();
 
     // Process each post
@@ -206,7 +232,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       const postStartTime = Date.now();
       const metadata = normalizeMetadata(post.metadata);
       const retryCount = metadata.retryCount || 0;
-      
+
       try {
         console.log(`[Cron: Publish] Processing post ${post.id} (attempt ${retryCount + 1})`);
 
@@ -214,13 +240,16 @@ export const GET = withCronVerification(async (request: NextRequest) => {
         const lockId = `${post.id}:${Date.now()}`;
         const { data: lockedPost, error: lockError } = await supabase
           .from('posts')
-          .update({ 
+          .update({
             updated_at: new Date().toISOString(),
             metadata: {
               ...metadata,
               publishingLock: {
                 id: lockId,
                 startedAt: new Date().toISOString(),
+                expiresAt: new Date(
+                  Date.now() + PUBLISHING_LOCK_TTL_MINUTES * 60 * 1000
+                ).toISOString(),
               },
             },
           })
@@ -250,7 +279,9 @@ export const GET = withCronVerification(async (request: NextRequest) => {
           .in('platform', platforms);
 
         if (existingPlatformPostsError) {
-          throw new Error(`Failed to read existing platform posts: ${existingPlatformPostsError.message}`);
+          throw new Error(
+            `Failed to read existing platform posts: ${existingPlatformPostsError.message}`
+          );
         }
 
         (existingPlatformPosts || []).forEach((platformPost: any) => {
@@ -281,12 +312,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
         const pendingPlatforms = platforms.filter((platform) => !carriedSuccesses.has(platform));
         const accountIds =
           pendingPlatforms.length > 0
-            ? await resolveAccountIds(
-                supabase,
-                post.workspace_id,
-                pendingPlatforms,
-                metadata
-              )
+            ? await resolveAccountIds(supabase, post.workspace_id, pendingPlatforms, metadata)
             : {};
 
         const mediaUrls = extractMediaUrls(post.media);
@@ -311,8 +337,11 @@ export const GET = withCronVerification(async (request: NextRequest) => {
             : [];
 
         const allPublishResults = [...publishResults, ...carriedSuccesses.values()];
+        const attemptNo = retryCount + 1;
         const mergedAccountIds = {
-          ...(typeof metadata.accountIds === 'object' && metadata.accountIds ? metadata.accountIds : {}),
+          ...(typeof metadata.accountIds === 'object' && metadata.accountIds
+            ? metadata.accountIds
+            : {}),
           ...accountIds,
         };
 
@@ -334,6 +363,40 @@ export const GET = withCronVerification(async (request: NextRequest) => {
           }
         });
 
+        if (publishResults.length > 0) {
+          await recordPlatformPosts({
+            supabase,
+            postId: post.id,
+            publishResults,
+            workspaceId: post.workspace_id,
+            jobRunId: jobRun?.id,
+            attemptNo,
+          });
+
+          await createInitialAnalytics({
+            supabase,
+            postId: post.id,
+            publishResults,
+          });
+
+          await Promise.all(
+            publishResults.map((result) =>
+              recordPublishAttempt(supabase, {
+                workspaceId: post.workspace_id,
+                postId: post.id,
+                platform: result.platform,
+                socialAccountId: result.accountId || mergedAccountIds[result.platform] || null,
+                attemptNo,
+                status: result.success ? 'published' : 'failed',
+                platformPostId: result.platformPostId || null,
+                permalink: result.permalink || null,
+                errorMessage: result.success ? null : result.error || 'Publish failed',
+                jobRunId: jobRun?.id,
+              })
+            )
+          );
+        }
+
         // Update post with results
         if (allSucceeded) {
           // Complete success
@@ -352,26 +415,27 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                 publishResults: allPublishResults,
                 publishedAt,
                 retryCount: undefined, // Clear retry count on success
+                publishAttempts: attemptNo,
+                lastPublishJobRunId: jobRun?.id,
                 publishingLock: undefined,
               },
             })
             .eq('id', post.id);
 
-          await recordPlatformPosts({
-            supabase,
+          await recordPostActivity(supabase, {
+            workspaceId: post.workspace_id,
             postId: post.id,
-            publishResults,
-            publishedAt,
-          });
-
-          await createInitialAnalytics({
-            supabase,
-            postId: post.id,
-            publishResults,
+            source: 'cron',
+            eventType: 'publish_succeeded',
+            statusBefore: post.status,
+            statusAfter: 'published',
+            jobRunId: jobRun?.id,
+            message: 'Scheduled post published to all platforms',
+            metadata: { results: allPublishResults },
           });
 
           console.log(`[Cron: Publish] Successfully published post ${post.id}`);
-          
+
           results.push({
             postId: post.id,
             success: true,
@@ -381,8 +445,12 @@ export const GET = withCronVerification(async (request: NextRequest) => {
         } else if (someSucceeded) {
           // Partial success - record what worked, but mark as partially failed
           const publishedAt = new Date().toISOString();
-          const successfulPlatforms = allPublishResults.filter(r => r.success).map(r => r.platform);
-          const failedPlatforms = allPublishResults.filter(r => !r.success).map(r => r.platform);
+          const successfulPlatforms = allPublishResults
+            .filter((r) => r.success)
+            .map((r) => r.platform);
+          const failedPlatforms = allPublishResults
+            .filter((r) => !r.success)
+            .map((r) => r.platform);
 
           await supabase
             .from('posts')
@@ -398,21 +466,30 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                 publishedAt,
                 successfulPlatforms,
                 failedPlatforms,
+                publishAttempts: attemptNo,
+                lastPublishJobRunId: jobRun?.id,
                 publishingLock: undefined,
               },
             })
             .eq('id', post.id);
 
-          // Record successful platform posts
-          await recordPlatformPosts({
-            supabase,
+          await recordPostActivity(supabase, {
+            workspaceId: post.workspace_id,
             postId: post.id,
-            publishResults: publishResults.filter(r => r.success),
-            publishedAt,
+            source: 'cron',
+            eventType: 'publish_partial',
+            statusBefore: post.status,
+            statusAfter: 'partial',
+            jobRunId: jobRun?.id,
+            message: 'Scheduled post published to some platforms with errors',
+            errorMessage: errors.join('; '),
+            metadata: { results: allPublishResults },
           });
 
-          console.log(`[Cron: Publish] Partial success for post ${post.id}: ${successfulPlatforms.join(', ')}`);
-          
+          console.log(
+            `[Cron: Publish] Partial success for post ${post.id}: ${successfulPlatforms.join(', ')}`
+          );
+
           results.push({
             postId: post.id,
             success: false,
@@ -423,11 +500,11 @@ export const GET = withCronVerification(async (request: NextRequest) => {
         } else {
           // Complete failure - determine if we should retry
           const shouldRetry = hasRetryableError && retryCount < MAX_RETRY_ATTEMPTS;
-          
+
           if (shouldRetry) {
             // Schedule retry with backoff
             const nextRetryTime = calculateNextRetryTime(retryCount);
-            
+
             await supabase
               .from('posts')
               .update({
@@ -439,6 +516,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                   accountIds: mergedAccountIds,
                   publishResults: allPublishResults,
                   retryCount: retryCount + 1,
+                  publishAttempts: attemptNo,
                   lastFailedAt: new Date().toISOString(),
                   nextRetryAt: nextRetryTime.toISOString(),
                   publishingLock: undefined,
@@ -446,8 +524,22 @@ export const GET = withCronVerification(async (request: NextRequest) => {
               })
               .eq('id', post.id);
 
-            console.log(`[Cron: Publish] Scheduled retry for post ${post.id} at ${nextRetryTime.toISOString()}`);
-            
+            console.log(
+              `[Cron: Publish] Scheduled retry for post ${post.id} at ${nextRetryTime.toISOString()}`
+            );
+            await recordPostActivity(supabase, {
+              workspaceId: post.workspace_id,
+              postId: post.id,
+              source: 'cron',
+              eventType: 'publish_retry_scheduled',
+              statusBefore: post.status,
+              statusAfter: 'scheduled',
+              jobRunId: jobRun?.id,
+              message: `Scheduled retry for ${nextRetryTime.toISOString()}`,
+              errorMessage: errors.join('; '),
+              metadata: { results: allPublishResults, nextRetryAt: nextRetryTime.toISOString() },
+            });
+
             results.push({
               postId: post.id,
               success: false,
@@ -462,13 +554,15 @@ export const GET = withCronVerification(async (request: NextRequest) => {
               .from('posts')
               .update({
                 status: 'failed',
-                error_message: retryCount >= MAX_RETRY_ATTEMPTS 
-                  ? `Failed after ${MAX_RETRY_ATTEMPTS} attempts: ${errors.join('; ')}`
-                  : errors.join('; '),
+                error_message:
+                  retryCount >= MAX_RETRY_ATTEMPTS
+                    ? `Failed after ${MAX_RETRY_ATTEMPTS} attempts: ${errors.join('; ')}`
+                    : errors.join('; '),
                 metadata: {
                   ...metadata,
                   accountIds: mergedAccountIds,
                   publishResults: allPublishResults,
+                  publishAttempts: attemptNo,
                   failedAt: new Date().toISOString(),
                   finalRetryCount: retryCount,
                   publishingLock: undefined,
@@ -477,7 +571,19 @@ export const GET = withCronVerification(async (request: NextRequest) => {
               .eq('id', post.id);
 
             console.error(`[Cron: Publish] Permanent failure for post ${post.id}:`, errors);
-            
+            await recordPostActivity(supabase, {
+              workspaceId: post.workspace_id,
+              postId: post.id,
+              source: 'cron',
+              eventType: 'publish_failed',
+              statusBefore: post.status,
+              statusAfter: 'failed',
+              jobRunId: jobRun?.id,
+              message: 'Scheduled publish failed',
+              errorMessage: errors.join('; '),
+              metadata: { results: allPublishResults },
+            });
+
             results.push({
               postId: post.id,
               success: false,
@@ -495,7 +601,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
 
         if (shouldRetry) {
           const nextRetryTime = calculateNextRetryTime(retryCount);
-          
+
           await supabase
             .from('posts')
             .update({
@@ -549,7 +655,26 @@ export const GET = withCronVerification(async (request: NextRequest) => {
     const retryCount = results.filter((r) => r.retryScheduled).length;
     const totalDuration = Date.now() - startTime;
 
-    console.log(`[Cron: Publish] Completed: ${successCount} succeeded, ${failureCount} failed, ${retryCount} scheduled for retry in ${totalDuration}ms`);
+    console.log(
+      `[Cron: Publish] Completed: ${successCount} succeeded, ${failureCount} failed, ${retryCount} scheduled for retry in ${totalDuration}ms`
+    );
+    await finishJobRun(supabase, jobRun?.id, {
+      status:
+        failureCount > 0
+          ? successCount > 0 || retryCount > 0
+            ? 'partial'
+            : 'failed'
+          : 'succeeded',
+      processedCount: results.length,
+      succeededCount: successCount,
+      failedCount: failureCount,
+      retryCount,
+      metadata: {
+        dueScheduled: dueScheduledPosts?.length || 0,
+        skippedFreshLocks: freshLockCount,
+        results,
+      },
+    });
 
     return cronSuccessResponse({
       message: 'Publishing job completed',

@@ -129,10 +129,10 @@ describe('publish utils', () => {
   });
 
   it('records platform posts with associated social accounts when available', async () => {
-    const insertMock = jest.fn().mockResolvedValue({ error: null });
+    const upsertMock = jest.fn().mockResolvedValue({ error: null });
     const supabaseMock = {
       from: jest.fn(() => ({
-        insert: insertMock,
+        upsert: upsertMock,
       })),
     } as any;
 
@@ -160,20 +160,37 @@ describe('publish utils', () => {
       postId: 'post-abc',
       publishResults: results,
       publishedAt: '2025-11-14T00:00:00.000Z',
+      workspaceId: 'workspace-1',
+      jobRunId: 'job-1',
+      attemptNo: 2,
     });
 
     expect(supabaseMock.from).toHaveBeenCalledWith('platform_posts');
-    expect(insertMock).toHaveBeenCalledWith([
-      expect.objectContaining({
-        platform: 'youtube',
-        platform_post_id: 'yt_001',
-        social_account_id: 'acc-123',
-      }),
-      expect.objectContaining({
-        platform: 'instagram',
-        platform_post_id: 'ig_001',
-        social_account_id: null,
-      }),
-    ]);
+    expect(upsertMock).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          workspace_id: 'workspace-1',
+          platform: 'youtube',
+          platform_post_id: 'yt_001',
+          social_account_id: 'acc-123',
+          status: 'published',
+          attempt_count: 2,
+        }),
+        expect.objectContaining({
+          workspace_id: 'workspace-1',
+          platform: 'instagram',
+          platform_post_id: 'ig_001',
+          social_account_id: null,
+          status: 'published',
+        }),
+        expect.objectContaining({
+          workspace_id: 'workspace-1',
+          platform: 'facebook',
+          status: 'failed',
+          error_message: 'Publish failed',
+        }),
+      ],
+      { onConflict: 'post_id,social_account_id,platform' }
+    );
   });
 });

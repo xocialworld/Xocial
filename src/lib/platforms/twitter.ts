@@ -52,8 +52,7 @@ export interface Tweet {
 // ─── 2. Twitter API Client ───────────────────────────────────────────
 
 export class TwitterClient {
-  private baseUrl = 'https://api.twitter.com/2';
-  private uploadUrl = 'https://upload.twitter.com/1.1';
+  private baseUrl = 'https://api.x.com/2';
   private accessToken: string;
 
   constructor(accessToken: string) {
@@ -146,7 +145,6 @@ export class TwitterClient {
         throw new Error(`Failed to fetch media from URL: ${mediaResponse.status}`);
       }
 
-      const mediaBlob = await mediaResponse.blob();
       const mediaBuffer = await mediaResponse.arrayBuffer();
       const mediaSize = mediaBuffer.byteLength;
 
@@ -178,9 +176,9 @@ export class TwitterClient {
         const errorText = await initResponse.text();
         console.error('[Twitter] v2 Media upload INIT failed:', initResponse.status, errorText);
 
-        // Fall back to trying the v1.1 endpoint with form-data (some accounts may have access)
-        console.log('[Twitter] Trying v1.1 fallback...');
-        return await this.uploadMediaV1Fallback(mediaBuffer, mediaType, contentType);
+        throw new Error(
+          `X media upload initialize failed: ${errorText}. Make sure the app has the media.write scope and an API tier that includes media upload.`
+        );
       }
 
       const initData = await initResponse.json();
@@ -238,39 +236,6 @@ export class TwitterClient {
       console.error('[Twitter] Media upload error:', error);
       throw error;
     }
-  }
-
-  /**
-   * Fallback to v1.1 media upload (may work for some accounts)
-   */
-  private async uploadMediaV1Fallback(
-    mediaBuffer: ArrayBuffer,
-    mediaType: 'image' | 'video',
-    contentType: string
-  ): Promise<string> {
-    const base64Media = Buffer.from(mediaBuffer).toString('base64');
-
-    // Try simple upload first (for images < 5MB)
-    const formData = new FormData();
-    formData.append('media_data', base64Media);
-
-    const response = await fetch(`${this.uploadUrl}/media/upload.json`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[Twitter] v1.1 fallback failed:', errorText);
-      throw new Error(`Twitter media upload failed: ${errorText}. Note: Media upload may require additional API access.`);
-    }
-
-    const data = await response.json();
-    console.log('[Twitter] v1.1 upload successful:', data.media_id_string);
-    return data.media_id_string;
   }
 
   /**
@@ -582,7 +547,7 @@ export async function getTwitterUserProfile(accessToken: string, userId: string)
 }
 
 export async function getTwitterUserTweets(accessToken: string, userId: string, maxTweets: number = 50) {
-  const baseUrl = 'https://api.twitter.com/2';
+  const baseUrl = 'https://api.x.com/2';
   const url = `${baseUrl}/users/${userId}/tweets`;
   const params = new URLSearchParams({
     'max_results': Math.min(Math.max(maxTweets, 5), 100).toString(), // Twitter requires min 5

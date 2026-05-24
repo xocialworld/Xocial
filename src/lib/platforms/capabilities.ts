@@ -30,7 +30,8 @@ export const PLATFORM_CAPABILITIES: Record<Platform, PlatformContentCapabilities
         notes: [
             'Maximum 4 images or 1 video per post',
             'Videos up to 2:20 for most accounts',
-            '⚠️ Image uploads require Twitter API access being updated (Q1 2025)',
+            'Media upload requires the X media.write OAuth scope and a supported API tier',
+            'Scheduling is handled by Xocial because the organic X API does not expose scheduled posts',
         ],
     },
 
@@ -47,6 +48,7 @@ export const PLATFORM_CAPABILITIES: Record<Platform, PlatformContentCapabilities
             'Up to 10 images in a photo album',
             'Videos can be scheduled for later',
             'Supports link previews',
+            'Publishing is available for Facebook Pages, not personal profiles',
         ],
     },
 
@@ -80,6 +82,8 @@ export const PLATFORM_CAPABILITIES: Record<Platform, PlatformContentCapabilities
             'Professional content performs best',
             'Up to 9 images per post',
             'Articles can include external links',
+            'Scheduling is handled by Xocial because the LinkedIn Posts API publishes immediately',
+            'Organization publishing and analytics require approved LinkedIn Community Management access',
         ],
     },
 

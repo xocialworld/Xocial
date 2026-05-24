@@ -41,7 +41,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     const accessToken = decryptToken(account.access_token);
     const twitterUserId = account.account_id;
 
-    const apiUrl = `https://api.twitter.com/2/users/${twitterUserId}`;
+    const apiUrl = `https://api.x.com/2/users/${twitterUserId}`;
     const params = new URLSearchParams({
         'user.fields': 'public_metrics',
     });

@@ -3,19 +3,21 @@
  * Orchestrates publishing to multiple social media platforms
  */
 
-import { FacebookClient, createFacebookClient } from './facebook';
-import { InstagramClient, createInstagramClient } from './instagram';
-import { TwitterClient, createTwitterClient } from '@/lib/platforms/twitter';
-import { LinkedInClient, createLinkedInClient } from './linkedin';
-import { YouTubeClient, createYouTubeClient, publishToYouTube } from './youtube';
-import { TikTokClient, createTikTokClient } from './tiktok';
+import { createFacebookClient } from './facebook';
+import { createInstagramClient } from './instagram';
+import { createTwitterClient, refreshTwitterToken } from '@/lib/platforms/twitter';
+import { createLinkedInClient } from './linkedin';
+import { publishToYouTube } from './youtube';
+import { createTikTokClient } from './tiktok';
 import { retryWithBackoff } from '@/lib/errors';
 import { refreshMetaToken } from '@/lib/oauth/token-refresh';
 import { refreshYouTubeToken } from '@/lib/oauth/youtube';
+import { refreshLinkedInToken } from '@/lib/oauth/linkedin';
 import { encryptToken, decryptToken } from '@/lib/encryption';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logger } from '@/lib/logger';
 import { mediaUrlLooksLikeVideo } from './publish-utils';
+import { assertDemoPublishAllowed } from '@/lib/demo-guards';
 
 export type Platform = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'youtube' | 'tiktok';
 
@@ -52,6 +54,7 @@ export class PlatformPublisher {
 
     const demoMode = process.env.DEMO_PUBLISH === 'true';
     if (demoMode) {
+      assertDemoPublishAllowed();
       return request.platforms.map((platform) => ({
         platform,
         accountId: request.accountIds[platform],
@@ -69,8 +72,7 @@ export class PlatformPublisher {
           throw new Error(`No account ID for ${platform}`);
         }
 
-        const platformSpecific =
-          request.platformContent?.[platform] ?? request.content;
+        const platformSpecific = request.platformContent?.[platform] ?? request.content;
 
         const contentPayload: PlatformContent = {
           text: platformSpecific.text ?? request.content.text,
@@ -80,13 +82,7 @@ export class PlatformPublisher {
         };
 
         const result = await retryWithBackoff(
-          () =>
-            this.publishToPlatform(
-              platform,
-              accountId,
-              contentPayload,
-              request.scheduledFor
-            ),
+          () => this.publishToPlatform(platform, accountId, contentPayload, request.scheduledFor),
           {
             maxRetries: 3,
             initialDelay: 750,
@@ -130,7 +126,9 @@ export class PlatformPublisher {
     } catch (error: any) {
       // Attempt token refresh on auth errors
       if (this.shouldRefreshToken(error)) {
-        logger.info(`[Publisher] Attempting token refresh for ${platform} account ${accountId}`, { error: error.message });
+        logger.info(`[Publisher] Attempting token refresh for ${platform} account ${accountId}`, {
+          error: error.message,
+        });
         const refreshed = await this.refreshAccountToken(platform, accountId);
 
         if (refreshed) {
@@ -230,6 +228,74 @@ export class PlatformPublisher {
         return true;
       }
 
+      if (platform === 'twitter') {
+        const supabase = createAdminClient();
+        const { data: account } = await supabase
+          .from('social_accounts')
+          .select('refresh_token')
+          .eq('id', accountId)
+          .single();
+
+        if (!account?.refresh_token) return false;
+
+        const tokenResponse = await refreshTwitterToken(
+          {
+            clientId: process.env.TWITTER_CLIENT_ID!,
+            clientSecret: process.env.TWITTER_CLIENT_SECRET!,
+            redirectUri: '',
+          },
+          decryptToken(account.refresh_token)
+        );
+
+        await supabase
+          .from('social_accounts')
+          .update({
+            access_token: encryptToken(tokenResponse.access_token),
+            refresh_token: tokenResponse.refresh_token
+              ? encryptToken(tokenResponse.refresh_token)
+              : account.refresh_token,
+            token_expires_at: new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', accountId);
+
+        return true;
+      }
+
+      if (platform === 'linkedin') {
+        const supabase = createAdminClient();
+        const { data: account } = await supabase
+          .from('social_accounts')
+          .select('refresh_token')
+          .eq('id', accountId)
+          .single();
+
+        if (!account?.refresh_token) return false;
+
+        const tokenResponse = await refreshLinkedInToken(
+          {
+            clientId: process.env.LINKEDIN_CLIENT_ID!,
+            clientSecret: process.env.LINKEDIN_CLIENT_SECRET!,
+            redirectUri: '',
+          },
+          decryptToken(account.refresh_token)
+        );
+
+        await supabase
+          .from('social_accounts')
+          .update({
+            access_token: encryptToken(tokenResponse.access_token),
+            refresh_token: tokenResponse.refresh_token
+              ? encryptToken(tokenResponse.refresh_token)
+              : account.refresh_token,
+            token_expires_at: new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', accountId);
+
+        return true;
+      }
+
       return false;
     } catch (e) {
       logger.error(`[Publisher] Token refresh failed for ${platform}`, e as Error);
@@ -250,9 +316,7 @@ export class PlatformPublisher {
     // Handle multiple photos (carousel/album) - NEW in v24.0
     if (hasMedia && content.mediaUrls.length > 1) {
       // Check if any are videos (can't mix in album)
-      const hasVideo = content.mediaUrls.some((url: string) =>
-        mediaUrlLooksLikeVideo(url)
-      );
+      const hasVideo = content.mediaUrls.some((url: string) => mediaUrlLooksLikeVideo(url));
 
       if (hasVideo) {
         // If there are videos, just post the first one
@@ -305,10 +369,7 @@ export class PlatformPublisher {
     }
   }
 
-  private async publishToInstagram(
-    accountId: string,
-    content: any
-  ): Promise<{ id: string }> {
+  private async publishToInstagram(accountId: string, content: any): Promise<{ id: string }> {
     const client = await createInstagramClient(accountId);
 
     if (!content.mediaUrls || content.mediaUrls.length === 0) {
@@ -346,17 +407,27 @@ export class PlatformPublisher {
   private async publishToTwitter(
     accountId: string,
     content: any
-  ): Promise<{ id: string }> {
+  ): Promise<{ id: string; permalink?: string }> {
     const client = await createTwitterClient(accountId);
 
     let mediaIds: string[] = [];
 
     if (content.mediaUrls && content.mediaUrls.length > 0) {
-      // Upload media first (max 4 images or 1 video for Twitter)
-      // Note: Twitter's media upload v1.1 API requires OAuth 1.0a, not OAuth 2.0
-      // We'll try to upload but fall back to text-only if it fails
+      const mediaUrls = content.mediaUrls as string[];
+      const hasVideo = mediaUrls.some((url: string) => mediaUrlLooksLikeVideo(url));
+
+      if (hasVideo && mediaUrls.length > 1) {
+        throw new Error(
+          'X supports either one video/GIF or up to four images per post, not mixed media.'
+        );
+      }
+
+      if (!hasVideo && mediaUrls.length > 4) {
+        throw new Error('X supports up to four images per post.');
+      }
+
       try {
-        const uploadPromises = content.mediaUrls.slice(0, 4).map(async (url: string) => {
+        const uploadPromises = mediaUrls.map(async (url: string) => {
           const isVideo = mediaUrlLooksLikeVideo(url);
           return client.uploadMedia(url, isVideo ? 'video' : 'image');
         });
@@ -364,15 +435,10 @@ export class PlatformPublisher {
         mediaIds = await Promise.all(uploadPromises);
         logger.info('[Twitter] Media upload successful', { mediaIds });
       } catch (mediaError: any) {
-        // Media upload failed - Twitter's v2 media API is still rolling out
-        // Fall back to text-only posting as agreed with user
-        logger.warn('[Twitter] Media upload failed, posting text-only as fallback', {
+        logger.warn('[Twitter] Media upload failed', {
           error: mediaError.message,
-          note: 'Twitter v2 media API rollout in progress. User has been warned in UI.'
         });
-
-        // Continue with text-only tweet (user has been warned in UI)
-        mediaIds = [];
+        throw mediaError;
       }
     }
 
@@ -383,7 +449,7 @@ export class PlatformPublisher {
       });
 
       logger.info('[Twitter] Tweet published successfully', { tweetId: result.data.id });
-      return { id: result.data.id };
+      return { id: result.data.id, permalink: `https://x.com/i/web/status/${result.data.id}` };
     } catch (tweetError: any) {
       logger.error('[Twitter] Failed to publish tweet', tweetError);
       throw tweetError;
@@ -393,20 +459,22 @@ export class PlatformPublisher {
   private async publishToLinkedIn(
     accountId: string,
     content: any
-  ): Promise<{ id: string }> {
+  ): Promise<{ id: string; permalink?: string }> {
     const client = await createLinkedInClient(accountId);
 
     const result = await client.createPost({
       text: content.text,
       mediaUrls: content.mediaUrls,
       visibility: 'PUBLIC',
-      article: content.link ? {
-        source: content.link,
-        title: content.text.substring(0, 100),
-      } : undefined,
+      article: content.link
+        ? {
+            source: content.link,
+            title: content.text.substring(0, 100),
+          }
+        : undefined,
     });
 
-    return { id: result.id };
+    return { id: result.id, permalink: `https://www.linkedin.com/feed/update/${result.id}` };
   }
 
   private async publishToYouTube(
@@ -422,7 +490,7 @@ export class PlatformPublisher {
     if (!content.mediaUrls || content.mediaUrls.length === 0) {
       throw new Error(
         'YouTube requires a video file. Text-only posts and images are not supported via the YouTube API. ' +
-        'Please upload a video to post to YouTube.'
+          'Please upload a video to post to YouTube.'
       );
     }
 
@@ -436,7 +504,7 @@ export class PlatformPublisher {
     if (!isVideo) {
       throw new Error(
         'YouTube only supports video uploads. The uploaded media appears to be an image. ' +
-        'Please upload a video file (.mp4, .mov, .webm) to post to YouTube, or deselect YouTube from the target platforms.'
+          'Please upload a video file (.mp4, .mov, .webm) to post to YouTube, or deselect YouTube from the target platforms.'
       );
     }
 
@@ -463,10 +531,7 @@ export class PlatformPublisher {
     return { id: result.id };
   }
 
-  private async publishToTikTok(
-    accountId: string,
-    content: any
-  ): Promise<{ id: string }> {
+  private async publishToTikTok(accountId: string, content: any): Promise<{ id: string }> {
     const client = await createTikTokClient(accountId);
 
     if (!content.mediaUrls || content.mediaUrls.length === 0) {
@@ -488,7 +553,7 @@ export class PlatformPublisher {
   private extractHashtags(text: string): string[] {
     const hashtagRegex = /#(\w+)/g;
     const matches = text.match(hashtagRegex);
-    return matches ? matches.map(tag => tag.substring(1)) : [];
+    return matches ? matches.map((tag) => tag.substring(1)) : [];
   }
 
   /**

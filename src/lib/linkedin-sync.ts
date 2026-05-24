@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { decryptToken } from '@/lib/encryption';
 import {
-    getLinkedInUserPosts,
+    getLinkedInAuthorPosts,
     getLinkedInPostStats,
     getLinkedInProfile,
 } from '@/lib/oauth/linkedin';
@@ -32,9 +32,14 @@ export async function syncLinkedInPosts(
         if (!account) throw new Error('LinkedIn account not found');
 
         const accessToken = decryptToken(account.access_token);
-        const personId = account.account_id;
+        const authorUrn =
+            account.metadata?.organizationUrn ||
+            account.metadata?.personUrn ||
+            (account.metadata?.type === 'organization'
+                ? `urn:li:organization:${account.account_id}`
+                : `urn:li:person:${account.account_id}`);
 
-        const posts = await getLinkedInUserPosts(accessToken, personId, options.maxPosts);
+        const posts = await getLinkedInAuthorPosts(accessToken, authorUrn, options.maxPosts);
 
         for (const post of posts) {
             try {
@@ -45,10 +50,15 @@ export async function syncLinkedInPosts(
                     external_post_id: post.id,
                     content: {
                         text: post.commentary || post.text || '',
-                        article: post.article,
+                        article: post.content?.article || post.article,
+                        content: post.content,
                     },
                     status: 'published' as const,
-                    published_at: post.created?.time ? new Date(post.created.time).toISOString() : new Date().toISOString(),
+                    published_at: post.createdAt
+                        ? new Date(post.createdAt).toISOString()
+                        : post.created?.time
+                            ? new Date(post.created.time).toISOString()
+                            : new Date().toISOString(),
                 };
 
                 const { id: postId } = await upsertPostByExternalId(supabase as any, {
@@ -69,9 +79,9 @@ export async function syncLinkedInPosts(
                             post_id: postId,
                             platform: 'linkedin',
                             impressions: stats.impressionCount || 0,
-                            likes: stats.likeCount || 0,
-                            comments: stats.commentCount || 0,
-                            shares: stats.shareCount || 0,
+                            likes: stats.likeCount || stats.likes || 0,
+                            comments: stats.commentCount || stats.comments || 0,
+                            shares: stats.shareCount || stats.shares || 0,
                             engagement: stats.engagementCount || 0,
                             fetched_at: new Date().toISOString(),
                         };
@@ -136,9 +146,9 @@ export async function syncLinkedInAnalytics(accountId: string): Promise<SyncResu
                         post_id: post.id,
                         platform: 'linkedin',
                         impressions: stats.impressionCount || 0,
-                        likes: stats.likeCount || 0,
-                        comments: stats.commentCount || 0,
-                        shares: stats.shareCount || 0,
+                        likes: stats.likeCount || stats.likes || 0,
+                        comments: stats.commentCount || stats.comments || 0,
+                        shares: stats.shareCount || stats.shares || 0,
                         engagement: stats.engagementCount || 0,
                         fetched_at: new Date().toISOString(),
                     };

@@ -16,13 +16,16 @@ import {
   normalizePlatforms,
   resolveAccountIds,
 } from '@/lib/platforms/post-publish-helpers';
+import {
+  finishJobRun,
+  recordPostActivity,
+  recordPublishAttempt,
+  startJobRun,
+} from '@/lib/observability/job-runs';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient();
 
@@ -66,6 +69,27 @@ export async function POST(
     }
 
     const metadata = normalizeMetadata(post.metadata);
+    const attemptNo = Number(metadata.publishAttempts || post.publish_attempts || 0) + 1;
+    const jobRun = await startJobRun(supabase, {
+      workspaceId: post.workspace_id,
+      jobType: 'publish_now',
+      trigger: 'user',
+      metadata: { postId, platforms },
+    });
+
+    await recordPostActivity(supabase, {
+      workspaceId: post.workspace_id,
+      postId,
+      actorUserId: user.id,
+      source: 'user',
+      eventType: 'publish_started',
+      statusBefore: post.status,
+      statusAfter: post.status,
+      jobRunId: jobRun?.id,
+      message: 'Publishing started',
+      metadata: { platforms },
+    });
+
     const accountIds = await resolveAccountIds(supabase, post.workspace_id, platforms, metadata);
 
     const mediaUrls = extractMediaUrls(post.media);
@@ -123,6 +147,9 @@ export async function POST(
         postId,
         publishResults: results,
         publishedAt,
+        workspaceId: post.workspace_id,
+        jobRunId: jobRun?.id,
+        attemptNo,
       });
       await createInitialAnalytics({
         supabase,
@@ -134,19 +161,42 @@ export async function POST(
     const allSuccessful = allResults.length > 0 && allResults.every((r) => r.success);
     const anySuccessful = allResults.some((r) => r.success);
     const firstError = allResults.find((r) => !r.success)?.error || null;
+    const publishedAt = anySuccessful ? new Date().toISOString() : null;
+
+    await Promise.all(
+      allResults.map((result) =>
+        recordPublishAttempt(supabase, {
+          workspaceId: post.workspace_id,
+          postId,
+          platform: result.platform,
+          socialAccountId: result.accountId || accountIds[result.platform] || null,
+          attemptNo,
+          status: result.success ? 'published' : 'failed',
+          platformPostId: result.platformPostId || null,
+          permalink: result.permalink || null,
+          errorMessage: result.success ? null : result.error || 'Publish failed',
+          jobRunId: jobRun?.id,
+          responseMetadata: { carried: alreadyPublished.has(result.platform) },
+        })
+      )
+    );
 
     const updates: Record<string, any> = {
       status: allSuccessful ? 'published' : anySuccessful ? 'partial' : 'failed',
       error_message: firstError,
+      publish_attempts: attemptNo,
+      last_publish_error: firstError,
       metadata: {
         ...metadata,
         accountIds,
         publishResults: allResults,
+        publishAttempts: attemptNo,
+        lastPublishJobRunId: jobRun?.id,
       },
     };
 
     if (anySuccessful) {
-      updates.published_at = new Date().toISOString();
+      updates.published_at = publishedAt;
       updates.external_post_id = JSON.stringify(extractExternalIds(allResults));
     } else {
       updates.published_at = null;
@@ -154,13 +204,53 @@ export async function POST(
 
     await supabase.from('posts').update(updates).eq('id', postId);
 
+    await recordPostActivity(supabase, {
+      workspaceId: post.workspace_id,
+      postId,
+      actorUserId: user.id,
+      source: 'user',
+      eventType: allSuccessful
+        ? 'publish_succeeded'
+        : anySuccessful
+          ? 'publish_partial'
+          : 'publish_failed',
+      statusBefore: post.status,
+      statusAfter: updates.status,
+      jobRunId: jobRun?.id,
+      message: allSuccessful
+        ? 'Published to all selected platforms'
+        : anySuccessful
+          ? 'Published to some platforms with errors'
+          : 'Failed to publish to selected platforms',
+      errorMessage: firstError,
+      metadata: { results: allResults },
+    });
+
+    await finishJobRun(supabase, jobRun?.id, {
+      status: allSuccessful ? 'succeeded' : anySuccessful ? 'partial' : 'failed',
+      processedCount: allResults.length,
+      succeededCount: allResults.filter((result) => result.success).length,
+      failedCount: allResults.filter((result) => !result.success).length,
+      errorMessage: firstError,
+      metadata: { postId, results: allResults },
+    });
+
     if (!anySuccessful) {
       return NextResponse.json(
         {
           success: false,
+          data: {
+            post: { ...post, ...updates },
+            platformPosts: [],
+            results: allResults,
+            partial: false,
+          },
           results: allResults,
           message: 'Failed to publish to any platform',
-          error: firstError,
+          error: {
+            code: 'PUBLISH_FAILED',
+            message: firstError || 'Failed to publish to any platform',
+          },
         },
         { status: 502 }
       );
@@ -168,6 +258,12 @@ export async function POST(
 
     return NextResponse.json({
       success: allSuccessful,
+      data: {
+        post: { ...post, ...updates },
+        platformPosts: [],
+        results: allResults,
+        partial: !allSuccessful,
+      },
       partial: !allSuccessful,
       results: allResults,
       message: allSuccessful

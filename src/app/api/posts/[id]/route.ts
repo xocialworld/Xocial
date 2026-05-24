@@ -9,18 +9,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { handleAPIError, parseJSONBody, validateRequiredFields } from '@/lib/error-handler';
 import { APIError } from '@/lib/api-error';
-import {
-  verifyResourceAccess,
-  verifyWorkspaceAccess,
-} from '@/lib/api/workspace-access';
+import { verifyResourceAccess, verifyWorkspaceAccess } from '@/lib/api/workspace-access';
 import { rateLimitMiddleware } from '@/lib/api/rate-limit';
 import { getWorkspaceIdFromRequest } from '@/lib/workspace-context';
+import { dbPlatformPostToContract, dbPostActivityToContract } from '@/lib/contracts/posts';
 
 // GET - Fetch a specific post
-export async function GET(
-  request: NextRequest,
-  props: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   try {
     const params = await props.params;
     const id = params.id;
@@ -55,10 +50,12 @@ export async function GET(
     // 4. Fetch post with analytics
     let postQuery = postClient
       .from('posts')
-      .select(`
+      .select(
+        `
         *,
         post_analytics(*)
-      `)
+      `
+      )
       .eq('id', id);
 
     if (workspaceFilter) {
@@ -71,9 +68,47 @@ export async function GET(
       throw APIError.notFound('Post', 'The requested post does not exist');
     }
 
+    let platformEvidence: any[] = [];
+    let timeline: any[] = [];
+
+    const { data: platformRows, error: platformEvidenceError } = await supabase
+      .from('platform_posts')
+      .select('*')
+      .eq('post_id', id)
+      .order('published_at', { ascending: false });
+
+    if (!platformEvidenceError && Array.isArray(platformRows)) {
+      platformEvidence = platformRows.map(dbPlatformPostToContract);
+    } else if (platformEvidenceError && platformEvidenceError.code !== '42P01') {
+      console.warn(
+        '[Post Detail] Failed to load platform evidence:',
+        platformEvidenceError.message
+      );
+    }
+
+    const { data: timelineRows, error: timelineError } = await supabase
+      .from('post_activity_events')
+      .select('*')
+      .eq('post_id', id)
+      .order('occurred_at', { ascending: false })
+      .limit(100);
+
+    if (!timelineError && Array.isArray(timelineRows)) {
+      timeline = timelineRows.map(dbPostActivityToContract);
+    } else if (timelineError && timelineError.code !== '42P01') {
+      console.warn('[Post Detail] Failed to load post activity:', timelineError.message);
+    }
+
     // 5. Return success response
     return NextResponse.json(
-      { data: post },
+      {
+        success: true,
+        data: {
+          post,
+          platformEvidence,
+          timeline,
+        },
+      },
       { status: 200 }
     );
   } catch (error) {
@@ -82,10 +117,7 @@ export async function GET(
 }
 
 // PATCH - Update a post
-export async function PATCH(
-  request: NextRequest,
-  props: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   try {
     const params = await props.params;
     const id = params.id;
@@ -146,20 +178,14 @@ export async function PATCH(
     }
 
     // 7. Return success response
-    return NextResponse.json(
-      { data: post },
-      { status: 200 }
-    );
+    return NextResponse.json({ data: post }, { status: 200 });
   } catch (error) {
     return handleAPIError(error);
   }
 }
 
 // DELETE - Delete a post
-export async function DELETE(
-  request: NextRequest,
-  props: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   try {
     const params = await props.params;
     const id = params.id;

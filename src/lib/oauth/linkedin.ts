@@ -3,6 +3,11 @@
  * OAuth 2.0 for LinkedIn authentication and API interactions
  */
 
+import { OAUTH_CONFIG } from './oauth-config';
+
+export const LINKEDIN_MARKETING_API_VERSION = process.env.LINKEDIN_API_VERSION || '202605';
+const LINKEDIN_REST_BASE_URL = 'https://api.linkedin.com/rest';
+
 export interface LinkedInOAuthConfig {
   clientId: string;
   clientSecret: string;
@@ -38,38 +43,71 @@ export interface LinkedInOrganization {
   name: string;
   localizedName: string;
   vanityName?: string;
+  role?: string;
   logoV2?: {
     original?: string;
   };
 }
 
+function linkedInRestHeaders(accessToken: string, contentType = false): HeadersInit {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    'LinkedIn-Version': LINKEDIN_MARKETING_API_VERSION,
+    'X-Restli-Protocol-Version': '2.0.0',
+    ...(contentType ? { 'Content-Type': 'application/json' } : {}),
+  };
+}
+
+async function linkedInError(response: Response, fallback: string) {
+  const text = await response.text();
+  if (!text) return fallback;
+
+  try {
+    const json = JSON.parse(text);
+    return json.message || json.detail || json.error_description || fallback;
+  } catch {
+    return text;
+  }
+}
+
 /**
- * Get user posts (shares/UGC)
+ * Get posts for a LinkedIn member or organization author URN.
+ */
+export async function getLinkedInAuthorPosts(
+  accessToken: string,
+  authorUrn: string,
+  limit: number = 25
+): Promise<any[]> {
+  const params = new URLSearchParams({
+    q: 'author',
+    author: authorUrn,
+    count: Math.min(Math.max(limit, 1), 100).toString(),
+  });
+
+  const response = await fetch(`${LINKEDIN_REST_BASE_URL}/posts?${params.toString()}`, {
+    headers: linkedInRestHeaders(accessToken),
+  });
+
+  if (!response.ok) {
+    throw new Error(await linkedInError(response, 'Failed to fetch LinkedIn posts'));
+  }
+
+  const data = await response.json();
+  return data.elements || [];
+}
+
+/**
+ * Backward-compatible helper for personal profile post sync.
  */
 export async function getLinkedInUserPosts(
   accessToken: string,
   personId: string,
   limit: number = 25
 ): Promise<any[]> {
-  const author = `urn:li:person:${personId}`;
-  const response = await fetch(
-    `https://api.linkedin.com/v2/ugcPosts?q=authors&authors=List(${encodeURIComponent(
-      author
-    )})&count=${limit}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'LinkedIn-Version': '202401',
-      },
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch LinkedIn user posts');
-  }
-
-  const data = await response.json();
-  return data.elements || [];
+  const author = personId.startsWith('urn:li:')
+    ? personId
+    : `urn:li:person:${personId}`;
+  return getLinkedInAuthorPosts(accessToken, author, limit);
 }
 
 /**
@@ -84,15 +122,7 @@ export function getLinkedInAuthUrl(
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     state,
-    scope: [
-      'openid',
-      'profile',
-      'email',
-      'w_member_social',
-      'r_organization_social',
-      'w_organization_social',
-      'rw_organization_admin',
-    ].join(' '),
+    scope: OAUTH_CONFIG.linkedin.scopes.join(' '),
   });
 
   return `https://www.linkedin.com/oauth/v2/authorization?${params.toString()}`;
@@ -185,21 +215,21 @@ export async function getLinkedInOrganizations(
 ): Promise<LinkedInOrganization[]> {
   // Note: This requires organization admin access
   const response = await fetch(
-    'https://api.linkedin.com/v2/organizationAcls?q=roleAssignee&projection=(elements*(organization~(id,localizedName,vanityName,logoV2(original))))',
+    `${LINKEDIN_REST_BASE_URL}/organizationAcls?q=roleAssignee&projection=(elements*(role,organization~(id,localizedName,vanityName,logoV2(original))))`,
     {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'LinkedIn-Version': '202401',
-      },
+      headers: linkedInRestHeaders(accessToken),
     }
   );
 
   if (!response.ok) {
-    throw new Error('Failed to fetch LinkedIn organizations');
+    throw new Error(await linkedInError(response, 'Failed to fetch LinkedIn organizations'));
   }
 
   const data = await response.json();
-  return data.elements?.map((element: any) => element['organization~']) || [];
+  return data.elements?.map((element: any) => ({
+    ...(element['organization~'] || {}),
+    role: element.role,
+  })) || [];
 }
 
 /**
@@ -213,37 +243,34 @@ export async function createLinkedInPost(
     visibility?: 'PUBLIC' | 'CONNECTIONS';
   }
 ): Promise<{ id: string }> {
-  const response = await fetch('https://api.linkedin.com/v2/ugcPosts', {
+  const response = await fetch(`${LINKEDIN_REST_BASE_URL}/posts`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      'X-Restli-Protocol-Version': '2.0.0',
-      'LinkedIn-Version': '202401',
-    },
+    headers: linkedInRestHeaders(accessToken, true),
     body: JSON.stringify({
       author: content.author,
+      commentary: content.text,
+      visibility: content.visibility || 'PUBLIC',
+      distribution: {
+        feedDistribution: 'MAIN_FEED',
+        targetEntities: [],
+        thirdPartyDistributionChannels: [],
+      },
       lifecycleState: 'PUBLISHED',
-      specificContent: {
-        'com.linkedin.ugc.ShareContent': {
-          shareCommentary: {
-            text: content.text,
-          },
-          shareMediaCategory: 'NONE',
-        },
-      },
-      visibility: {
-        'com.linkedin.ugc.MemberNetworkVisibility': content.visibility || 'PUBLIC',
-      },
+      isReshareDisabledByAuthor: false,
     }),
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Failed to create LinkedIn post');
+    throw new Error(await linkedInError(response, 'Failed to create LinkedIn post'));
   }
 
-  return response.json();
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+  const id = data.id || response.headers.get('x-restli-id');
+  if (!id) {
+    throw new Error('LinkedIn post was created but no post URN was returned');
+  }
+  return { id };
 }
 
 /**
@@ -254,17 +281,14 @@ export async function getLinkedInPostStats(
   shareUrn: string
 ): Promise<any> {
   const response = await fetch(
-    `https://api.linkedin.com/v2/socialActions/${encodeURIComponent(shareUrn)}`,
+    `${LINKEDIN_REST_BASE_URL}/socialActions/${encodeURIComponent(shareUrn)}`,
     {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'LinkedIn-Version': '202401',
-      },
+      headers: linkedInRestHeaders(accessToken),
     }
   );
 
   if (!response.ok) {
-    throw new Error('Failed to fetch LinkedIn post stats');
+    throw new Error(await linkedInError(response, 'Failed to fetch LinkedIn post stats'));
   }
 
   return response.json();
@@ -293,17 +317,14 @@ export async function getLinkedInOrganizationStats(
   }
 
   const response = await fetch(
-    `https://api.linkedin.com/v2/organizationalEntityShareStatistics?${params.toString()}`,
+    `${LINKEDIN_REST_BASE_URL}/organizationalEntityShareStatistics?${params.toString()}`,
     {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'LinkedIn-Version': '202401',
-      },
+      headers: linkedInRestHeaders(accessToken),
     }
   );
 
   if (!response.ok) {
-    throw new Error('Failed to fetch LinkedIn organization stats');
+    throw new Error(await linkedInError(response, 'Failed to fetch LinkedIn organization stats'));
   }
 
   return response.json();
@@ -317,18 +338,14 @@ export async function deleteLinkedInPost(
   shareUrn: string
 ): Promise<void> {
   const response = await fetch(
-    `https://api.linkedin.com/v2/ugcPosts/${encodeURIComponent(shareUrn)}`,
+    `${LINKEDIN_REST_BASE_URL}/posts/${encodeURIComponent(shareUrn)}`,
     {
       method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'LinkedIn-Version': '202401',
-      },
+      headers: linkedInRestHeaders(accessToken),
     }
   );
 
   if (!response.ok) {
-    throw new Error('Failed to delete LinkedIn post');
+    throw new Error(await linkedInError(response, 'Failed to delete LinkedIn post'));
   }
 }
-

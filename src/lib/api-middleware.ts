@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { logger } from '@/lib/logger';
 import { slugify } from '@/lib/utils';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { ApiEnvelope, ApiMeta } from '@/lib/contracts/api';
 
 /**
  * API Error class for consistent error handling
@@ -32,11 +33,7 @@ export interface APIResponse<T = any> {
     code?: string;
     details?: any;
   };
-  meta?: {
-    page?: number;
-    limit?: number;
-    total?: number;
-  };
+  meta?: ApiMeta | Record<string, unknown>;
 }
 
 /**
@@ -45,12 +42,12 @@ export interface APIResponse<T = any> {
 export function successResponse<T>(
   data: T,
   meta?: APIResponse['meta']
-): NextResponse<APIResponse<T>> {
+): NextResponse<ApiEnvelope<T, APIResponse['meta']>> {
   return NextResponse.json({
     success: true,
     data,
     ...(meta && { meta }),
-  });
+  } as ApiEnvelope<T, APIResponse['meta']>);
 }
 
 /**
@@ -68,10 +65,8 @@ export function errorResponse(
       success: false,
       error: {
         message: error.message,
-        code,
-        ...(error instanceof APIError && error.details
-          ? { details: error.details }
-          : {}),
+        code: code || 'INTERNAL_ERROR',
+        ...(error instanceof APIError && error.details ? { details: error.details } : {}),
       },
     },
     { status }
@@ -81,20 +76,13 @@ export function errorResponse(
 /**
  * Validate request body with Zod schema
  */
-export async function validateRequest<T>(
-  request: NextRequest,
-  schema: z.ZodSchema<T>
-): Promise<T> {
+export async function validateRequest<T>(request: NextRequest, schema: z.ZodSchema<T>): Promise<T> {
   try {
     const body = await request.json();
     return schema.parse(body);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      throw new APIError(
-        400,
-        'Validation error',
-        'VALIDATION_ERROR'
-      );
+      throw new APIError(400, 'Validation error', 'VALIDATION_ERROR');
     }
     throw new APIError(400, 'Invalid request body', 'INVALID_BODY');
   }
@@ -202,16 +190,14 @@ async function ensureWorkspaceMembership(
   userId: string,
   role: WorkspaceRole = 'owner'
 ): Promise<boolean> {
-  const { error } = await supabase
-    .from('workspace_members')
-    .upsert(
-      {
-        workspace_id: workspaceId,
-        user_id: userId,
-        role,
-      },
-      { onConflict: 'workspace_id,user_id' }
-    );
+  const { error } = await supabase.from('workspace_members').upsert(
+    {
+      workspace_id: workspaceId,
+      user_id: userId,
+      role,
+    },
+    { onConflict: 'workspace_id,user_id' }
+  );
   return !error;
 }
 
@@ -240,8 +226,9 @@ export async function ensureUserProfile(
 
   if (existing) return existing;
 
-  const nameCandidate = (user.user_metadata && (user.user_metadata.name || user.user_metadata.full_name))
-    || (user.email ? String(user.email).split('@')[0] : 'User');
+  const nameCandidate =
+    (user.user_metadata && (user.user_metadata.name || user.user_metadata.full_name)) ||
+    (user.email ? String(user.email).split('@')[0] : 'User');
   const email = user.email ?? `${user.id}@local.invalid`;
 
   const { error } = await supabase
@@ -283,10 +270,7 @@ async function ensureAccountForProfile(
     return null;
   }
 
-  const accountName =
-    profile.name?.trim() ||
-    profile.email?.split('@')[0] ||
-    'Xocial Account';
+  const accountName = profile.name?.trim() || profile.email?.split('@')[0] || 'Xocial Account';
   const slug = `${slugify(accountName) || 'account'}-${profile.id.replace(/-/g, '').slice(0, 8)}`;
 
   const { data: account, error } = await serviceClient
@@ -327,13 +311,8 @@ async function createWorkspaceForUser(
   const serviceClient = createServiceRoleClient();
   const account = await ensureAccountForProfile(serviceClient, profile);
 
-  const baseName =
-    profile.name?.trim() ||
-    profile.email?.split('@')[0] ||
-    'Workspace';
-  const workspaceName = baseName.endsWith("'s Workspace")
-    ? baseName
-    : `${baseName}'s Workspace`;
+  const baseName = profile.name?.trim() || profile.email?.split('@')[0] || 'Workspace';
+  const workspaceName = baseName.endsWith("'s Workspace") ? baseName : `${baseName}'s Workspace`;
 
   const slugBase = slugify(baseName || 'workspace') || 'workspace';
   const uniqueSuffix = profile.id.replace(/-/g, '').slice(0, 8);
@@ -404,7 +383,9 @@ async function createWorkspaceForUser(
     }
 
     // Handle unique slug conflicts by fetching existing owned workspace
-    const isUniqueViolation = (error as any)?.code === '23505' || String((error as any)?.message || '').includes('workspaces_slug_key');
+    const isUniqueViolation =
+      (error as any)?.code === '23505' ||
+      String((error as any)?.message || '').includes('workspaces_slug_key');
     if (isUniqueViolation) {
       const { data: owned, error: ownedErr } = await serviceClient
         .from('workspaces')
@@ -425,7 +406,11 @@ async function createWorkspaceForUser(
       userId: profile.id,
       workspaceName,
     });
-    throw new APIError(500, `Failed to create workspace: ${error?.message}`, 'WORKSPACE_CREATE_FAILED');
+    throw new APIError(
+      500,
+      `Failed to create workspace: ${error?.message}`,
+      'WORKSPACE_CREATE_FAILED'
+    );
   }
 
   await ensureWorkspaceMembership(serviceClient, newWorkspace.id, profile.id, 'owner');
@@ -466,7 +451,11 @@ export async function getUserWorkspace(userId: string, existingClient?: Supabase
       .eq('id', userId)
       .maybeSingle();
     if (!reloaded) {
-      throw new APIError(404, 'User profile not found. Please complete registration.', 'PROFILE_NOT_FOUND');
+      throw new APIError(
+        404,
+        'User profile not found. Please complete registration.',
+        'PROFILE_NOT_FOUND'
+      );
     }
     profile = reloaded;
   }
@@ -513,8 +502,7 @@ export async function getWorkspaceFromRequest(
   existingClient?: SupabaseClient
 ) {
   const workspaceId =
-    request.nextUrl.searchParams.get('workspaceId') ||
-    request.headers.get('x-workspace-id');
+    request.nextUrl.searchParams.get('workspaceId') || request.headers.get('x-workspace-id');
 
   const supabase = existingClient ?? (await createClient());
 
@@ -640,9 +628,7 @@ export async function enforceUserRateLimit(
     .select('id', { count: 'exact', head: true })
     .gte(timeColumn, since);
   const byUser =
-    table === 'ai_generations'
-      ? query.eq('created_by', userId)
-      : query.eq('user_id', userId);
+    table === 'ai_generations' ? query.eq('created_by', userId) : query.eq('user_id', userId);
   const { count, error } = await byUser;
   if (error) {
     return true;
@@ -666,10 +652,7 @@ export function withErrorHandler(
         return errorResponse(error);
       }
 
-      return errorResponse(
-        new Error('An unexpected error occurred'),
-        500
-      );
+      return errorResponse(new Error('An unexpected error occurred'), 500);
     }
   };
 }
@@ -717,8 +700,5 @@ export function handleAPIError(error: unknown): NextResponse {
     return errorResponse(new APIError(500, error.message), 500);
   }
 
-  return errorResponse(
-    new APIError(500, 'An unexpected error occurred'),
-    500
-  );
+  return errorResponse(new APIError(500, 'An unexpected error occurred'), 500);
 }

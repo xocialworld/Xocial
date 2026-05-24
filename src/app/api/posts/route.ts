@@ -6,10 +6,7 @@ import {
   validateRequest,
   APIError,
 } from '@/lib/api-middleware';
-import {
-  enforceLimit,
-  requireWorkspaceContext,
-} from '@/lib/workspace-context';
+import { enforceLimit, requireWorkspaceContext } from '@/lib/workspace-context';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { platformPublisher, type Platform, type PlatformContent } from '@/lib/platforms/publisher';
@@ -21,11 +18,24 @@ import {
 } from '@/lib/platforms/publish-utils';
 import { normalizeMetadata } from '@/lib/platforms/post-publish-helpers';
 import { getCompatiblePlatforms } from '@/lib/platforms/capabilities';
+import {
+  finishJobRun,
+  recordPostActivity,
+  recordPublishAttempt,
+  startJobRun,
+} from '@/lib/observability/job-runs';
 
 /**
  * Validation schemas
  */
-const PLATFORM_VALUES = ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok', 'youtube'] as const;
+const PLATFORM_VALUES = [
+  'facebook',
+  'instagram',
+  'twitter',
+  'linkedin',
+  'tiktok',
+  'youtube',
+] as const;
 
 const platformEnum = z.enum(PLATFORM_VALUES);
 
@@ -118,16 +128,12 @@ function validateStatusRequirements(
         'MISSING_SCHEDULED_AT'
       );
     }
-    
+
     // Validate scheduled date is in the future
     const scheduledDate = new Date(scheduledAt);
     const now = new Date();
     if (scheduledDate <= now) {
-      throw new APIError(
-        400,
-        'Scheduled time must be in the future',
-        'INVALID_SCHEDULED_TIME'
-      );
+      throw new APIError(400, 'Scheduled time must be in the future', 'INVALID_SCHEDULED_TIME');
     }
   }
 
@@ -142,7 +148,7 @@ function validateStatusRequirements(
     }
 
     // Ensure all platforms have accounts assigned
-    const missing = platforms.filter(p => !platformAccounts[p]);
+    const missing = platforms.filter((p) => !platformAccounts[p]);
     if (missing.length > 0) {
       throw new APIError(
         400,
@@ -154,11 +160,7 @@ function validateStatusRequirements(
 
   // Posts must have at least one platform
   if (platforms.length === 0) {
-    throw new APIError(
-      400,
-      'At least one platform is required',
-      'MISSING_PLATFORMS'
-    );
+    throw new APIError(400, 'At least one platform is required', 'MISSING_PLATFORMS');
   }
 }
 
@@ -225,10 +227,13 @@ async function ensurePlatformAccounts(
     }
   });
 
-  return normalizedEntries.reduce((acc, [platform, accountId]) => {
-    acc[platform] = accountId;
-    return acc;
-  }, {} as Partial<Record<Platform, string>>);
+  return normalizedEntries.reduce(
+    (acc, [platform, accountId]) => {
+      acc[platform] = accountId;
+      return acc;
+    },
+    {} as Partial<Record<Platform, string>>
+  );
 }
 
 async function ensureMediaOwnership(
@@ -261,10 +266,7 @@ async function ensureMediaOwnership(
   }
 }
 
-function buildPlatformContentMap(
-  content: ValidatedPostInput['content'],
-  platforms: Platform[]
-) {
+function buildPlatformContentMap(content: ValidatedPostInput['content'], platforms: Platform[]) {
   const fallbackText =
     content.default?.text ||
     platforms
@@ -272,12 +274,15 @@ function buildPlatformContentMap(
       .find((text): text is string => Boolean(text)) ||
     '';
 
-  return platforms.reduce((acc, platform) => {
-    acc[platform] = {
-      text: content[platform]?.text || fallbackText,
-    };
-    return acc;
-  }, {} as Partial<Record<Platform, { text: string }>>);
+  return platforms.reduce(
+    (acc, platform) => {
+      acc[platform] = {
+        text: content[platform]?.text || fallbackText,
+      };
+      return acc;
+    },
+    {} as Partial<Record<Platform, { text: string }>>
+  );
 }
 
 function shouldPublishImmediately(input: ValidatedPostInput) {
@@ -287,16 +292,13 @@ function shouldPublishImmediately(input: ValidatedPostInput) {
 /**
  * Validate that the content is compatible with all selected platforms
  */
-function validateContentForPlatforms(
-  platforms: Platform[],
-  input: ValidatedPostInput
-): void {
+function validateContentForPlatforms(platforms: Platform[], input: ValidatedPostInput): void {
   const media = input.media || [];
-  const hasText = Object.values(input.content).some(c => c?.text?.trim());
-  const hasImages = media.some(m => m.type === 'image');
-  const hasVideos = media.some(m => m.type === 'video');
-  const imageCount = media.filter(m => m.type === 'image').length;
-  const videoCount = media.filter(m => m.type === 'video').length;
+  const hasText = Object.values(input.content).some((c) => c?.text?.trim());
+  const hasImages = media.some((m) => m.type === 'image');
+  const hasVideos = media.some((m) => m.type === 'video');
+  const imageCount = media.filter((m) => m.type === 'image').length;
+  const videoCount = media.filter((m) => m.type === 'video').length;
 
   const { incompatible } = getCompatiblePlatforms(platforms, {
     hasText,
@@ -307,7 +309,7 @@ function validateContentForPlatforms(
   });
 
   if (incompatible.length > 0) {
-    const errorMessages = incompatible.map(i => `${i.platform}: ${i.reason}`);
+    const errorMessages = incompatible.map((i) => `${i.platform}: ${i.reason}`);
     throw new APIError(
       400,
       `Content not supported for: ${errorMessages.join('; ')}`,
@@ -322,11 +324,13 @@ async function publishImmediately({
   post,
   input,
   platformAccounts,
+  userId,
 }: {
   supabase: SupabaseClient;
   post: any;
   input: ValidatedPostInput;
   platformAccounts: Partial<Record<Platform, string>>;
+  userId: string;
 }) {
   const platforms = (post.platforms || []) as Platform[];
 
@@ -338,8 +342,7 @@ async function publishImmediately({
   validateContentForPlatforms(platforms, input);
 
   const contentMap = buildPlatformContentMap(input.content, platforms);
-  const mediaUrls =
-    input.media?.map((item) => item.url).filter((url) => Boolean(url)) ?? undefined;
+  const mediaUrls = input.media?.map((item) => item.url).filter((url) => Boolean(url)) ?? undefined;
   const mediaType = inferMediaTypeFromMedia(input.media);
 
   const primaryPlatform = platforms[0];
@@ -349,6 +352,28 @@ async function publishImmediately({
   console.log('[publishImmediately] Fallback text length:', fallbackText.length);
   console.log('[publishImmediately] Media URLs:', mediaUrls);
 
+  const metadata = normalizeMetadata(post.metadata);
+  const attemptNo = Number(metadata.publishAttempts || post.publish_attempts || 0) + 1;
+  const jobRun = await startJobRun(supabase, {
+    workspaceId: post.workspace_id,
+    jobType: 'publish_now',
+    trigger: 'user',
+    metadata: { postId: post.id, platforms },
+  });
+
+  await recordPostActivity(supabase, {
+    workspaceId: post.workspace_id,
+    postId: post.id,
+    actorUserId: userId,
+    source: 'user',
+    eventType: 'publish_started',
+    statusBefore: post.status,
+    statusAfter: post.status,
+    jobRunId: jobRun?.id,
+    message: 'Publishing started',
+    metadata: { platforms },
+  });
+
   const publishResults = await platformPublisher.publishToAll({
     platforms,
     content: {
@@ -356,20 +381,22 @@ async function publishImmediately({
       mediaUrls,
       mediaType,
     },
-    platformContent: platforms.reduce((acc, platform) => {
-      acc[platform] = {
-        text: contentMap[platform]?.text || fallbackText,
-        mediaUrls,
-        mediaType,
-      };
-      return acc;
-    }, {} as Partial<Record<Platform, PlatformContent>>),
+    platformContent: platforms.reduce(
+      (acc, platform) => {
+        acc[platform] = {
+          text: contentMap[platform]?.text || fallbackText,
+          mediaUrls,
+          mediaType,
+        };
+        return acc;
+      },
+      {} as Partial<Record<Platform, PlatformContent>>
+    ),
     accountIds: platformAccounts,
   });
 
   console.log('[publishImmediately] Publish results:', publishResults);
 
-  const metadata = normalizeMetadata(post.metadata);
   const allSucceeded = publishResults.every((result) => result.success);
   const anySucceeded = publishResults.some((result) => result.success);
   const publishedAt = new Date().toISOString();
@@ -387,10 +414,16 @@ async function publishImmediately({
         published_at: publishedAt,
         external_post_id: JSON.stringify(externalIds),
         error_message: allSucceeded ? null : errors || 'Failed to publish to selected platforms',
+        publish_attempts: attemptNo,
+        last_publish_error: allSucceeded
+          ? null
+          : errors || 'Failed to publish to selected platforms',
         metadata: {
           ...metadata,
           accountIds: platformAccounts,
           publishResults,
+          publishAttempts: attemptNo,
+          lastPublishJobRunId: jobRun?.id,
         },
       })
       .eq('id', post.id);
@@ -400,6 +433,9 @@ async function publishImmediately({
       postId: post.id,
       publishResults,
       publishedAt,
+      workspaceId: post.workspace_id,
+      jobRunId: jobRun?.id,
+      attemptNo,
     });
 
     await createInitialAnalytics({
@@ -408,11 +444,49 @@ async function publishImmediately({
       publishResults,
     });
 
-    const { data: refreshed } = await supabase
-      .from('posts')
-      .select('*')
-      .eq('id', post.id)
-      .single();
+    await Promise.all(
+      publishResults.map((result) =>
+        recordPublishAttempt(supabase, {
+          workspaceId: post.workspace_id,
+          postId: post.id,
+          platform: result.platform,
+          socialAccountId: result.accountId || platformAccounts[result.platform] || null,
+          attemptNo,
+          status: result.success ? 'published' : 'failed',
+          platformPostId: result.platformPostId || null,
+          permalink: result.permalink || null,
+          errorMessage: result.success ? null : result.error || 'Publish failed',
+          jobRunId: jobRun?.id,
+        })
+      )
+    );
+
+    await recordPostActivity(supabase, {
+      workspaceId: post.workspace_id,
+      postId: post.id,
+      actorUserId: userId,
+      source: 'user',
+      eventType: allSucceeded ? 'publish_succeeded' : 'publish_partial',
+      statusBefore: post.status,
+      statusAfter: allSucceeded ? 'published' : 'partial',
+      jobRunId: jobRun?.id,
+      message: allSucceeded
+        ? 'Published to all selected platforms'
+        : 'Published to some platforms with errors',
+      errorMessage: allSucceeded ? null : errors || 'Failed to publish to selected platforms',
+      metadata: { results: publishResults },
+    });
+
+    await finishJobRun(supabase, jobRun?.id, {
+      status: allSucceeded ? 'succeeded' : 'partial',
+      processedCount: publishResults.length,
+      succeededCount: publishResults.filter((result) => result.success).length,
+      failedCount: publishResults.filter((result) => !result.success).length,
+      errorMessage: allSucceeded ? null : errors || 'Failed to publish to selected platforms',
+      metadata: { postId: post.id, results: publishResults },
+    });
+
+    const { data: refreshed } = await supabase.from('posts').select('*').eq('id', post.id).single();
 
     return refreshed || post;
   }
@@ -422,13 +496,66 @@ async function publishImmediately({
     .update({
       status: 'failed',
       error_message: errors || 'Failed to publish to selected platforms',
+      publish_attempts: attemptNo,
+      last_publish_error: errors || 'Failed to publish to selected platforms',
       metadata: {
         ...metadata,
         accountIds: platformAccounts,
         publishResults,
+        publishAttempts: attemptNo,
+        lastPublishJobRunId: jobRun?.id,
       },
     })
     .eq('id', post.id);
+
+  await recordPlatformPosts({
+    supabase,
+    postId: post.id,
+    publishResults,
+    workspaceId: post.workspace_id,
+    jobRunId: jobRun?.id,
+    attemptNo,
+  });
+
+  await Promise.all(
+    publishResults.map((result) =>
+      recordPublishAttempt(supabase, {
+        workspaceId: post.workspace_id,
+        postId: post.id,
+        platform: result.platform,
+        socialAccountId: result.accountId || platformAccounts[result.platform] || null,
+        attemptNo,
+        status: 'failed',
+        platformPostId: result.platformPostId || null,
+        permalink: result.permalink || null,
+        errorMessage: result.error || 'Publish failed',
+        jobRunId: jobRun?.id,
+      })
+    )
+  );
+
+  await recordPostActivity(supabase, {
+    workspaceId: post.workspace_id,
+    postId: post.id,
+    actorUserId: userId,
+    source: 'user',
+    eventType: 'publish_failed',
+    statusBefore: post.status,
+    statusAfter: 'failed',
+    jobRunId: jobRun?.id,
+    message: 'Failed to publish to selected platforms',
+    errorMessage: errors || 'Failed to publish to selected platforms',
+    metadata: { results: publishResults },
+  });
+
+  await finishJobRun(supabase, jobRun?.id, {
+    status: 'failed',
+    processedCount: publishResults.length,
+    succeededCount: 0,
+    failedCount: publishResults.length,
+    errorMessage: errors || 'Failed to publish to selected platforms',
+    metadata: { postId: post.id, results: publishResults },
+  });
 
   throw new APIError(502, 'Failed to publish to one or more platforms', 'PUBLISH_FAILED', {
     errors: publishResults,
@@ -456,10 +583,13 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   // Build query
   let query = supabase
     .from('posts')
-    .select(`
+    .select(
+      `
       *,
       post_analytics(*)
-    `, { count: 'exact' })
+    `,
+      { count: 'exact' }
+    )
     .eq('workspace_id', workspace.id)
     .order('created_at', { ascending: false });
 
@@ -538,10 +668,16 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     status: normalizedStatus,
   };
 
-  const { user, userClient: supabase, workspace, role, limits, usage } =
-    await requireWorkspaceContext(request, {
-      roles: ['owner', 'admin', 'manager', 'creator'],
-    });
+  const {
+    user,
+    userClient: supabase,
+    workspace,
+    role,
+    limits,
+    usage,
+  } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager', 'creator'],
+  });
 
   // Approval Workflow Enforcement
   // If workspace requires approval, and user is not an approver (admin/owner),
@@ -552,8 +688,14 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       : (workspace as any).settings?.require_approval;
   const isApprover = ['owner', 'admin'].includes(role);
 
-  if (requireApproval && !isApprover && ['published', 'scheduled'].includes(normalizedData.status)) {
-    console.log(`[Approval Enforcement] Forcing status to pending_approval for user ${user.id} in workspace ${workspace.id}`);
+  if (
+    requireApproval &&
+    !isApprover &&
+    ['published', 'scheduled'].includes(normalizedData.status)
+  ) {
+    console.log(
+      `[Approval Enforcement] Forcing status to pending_approval for user ${user.id} in workspace ${workspace.id}`
+    );
     normalizedData.status = 'pending_approval';
   }
 
@@ -627,6 +769,23 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(500, error.message, 'DATABASE_ERROR');
   }
 
+  await recordPostActivity(supabase, {
+    workspaceId: workspace.id,
+    postId: post.id,
+    actorUserId: user.id,
+    source: 'user',
+    eventType: normalizedData.status === 'scheduled' ? 'scheduled' : 'created',
+    statusAfter: normalizedData.status,
+    message:
+      normalizedData.status === 'scheduled'
+        ? `Post scheduled for ${normalizedData.scheduled_at}`
+        : 'Post created',
+    metadata: {
+      platforms: normalizedData.platforms,
+      scheduledAt: normalizedData.scheduled_at,
+    },
+  });
+
   // NOTE: Dual-write to content_items/content_variants removed for performance
   // and to maintain single source of truth. The `posts` table is the canonical store.
   // SRS migration can be done as a separate future initiative.
@@ -637,6 +796,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       post,
       input: normalizedData,
       platformAccounts: normalizedAccounts,
+      userId: user.id,
     });
 
     return successResponse({ post: updatedPost });
@@ -663,11 +823,16 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
     request.nextUrl.searchParams.get('workspace_id') ||
     request.headers.get('x-workspace-id');
 
-  const { userClient: workspaceSupabase, workspace, role, limits, usage } =
-    await requireWorkspaceContext(request, {
-      workspaceId,
-      roles: ['owner', 'admin', 'manager', 'creator'],
-    });
+  const {
+    userClient: workspaceSupabase,
+    workspace,
+    role,
+    limits,
+    usage,
+  } = await requireWorkspaceContext(request, {
+    workspaceId,
+    roles: ['owner', 'admin', 'manager', 'creator'],
+  });
 
   // Fetch current post to validate status transitions
   const { data: currentPost, error: fetchError } = await workspaceSupabase
@@ -685,14 +850,13 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
   if (body.status && body.status !== currentPost.status) {
     // Published posts cannot be modified
     if (currentPost.status === 'published') {
-      throw new APIError(
-        400,
-        'Published posts cannot be modified',
-        'INVALID_STATUS_TRANSITION'
-      );
+      throw new APIError(400, 'Published posts cannot be modified', 'INVALID_STATUS_TRANSITION');
     }
 
-    if (['approved', 'scheduled'].includes(currentPost.status) && !['owner', 'admin'].includes(role)) {
+    if (
+      ['approved', 'scheduled'].includes(currentPost.status) &&
+      !['owner', 'admin'].includes(role)
+    ) {
       throw new APIError(
         423,
         'Approved or scheduled posts are locked for non-admin roles',
@@ -745,6 +909,22 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
 
   if (!post) {
     throw new APIError(404, 'Post not found', 'POST_NOT_FOUND');
+  }
+
+  if (body.status && body.status !== currentPost.status) {
+    await recordPostActivity(workspaceSupabase, {
+      workspaceId: workspace.id,
+      postId,
+      source: 'user',
+      eventType: body.status === 'scheduled' ? 'scheduled' : 'status_changed',
+      statusBefore: currentPost.status,
+      statusAfter: body.status,
+      message:
+        body.status === 'scheduled'
+          ? `Post scheduled for ${body.scheduled_at || currentPost.scheduled_at}`
+          : `Status changed from ${currentPost.status} to ${body.status}`,
+      metadata: { scheduledAt: body.scheduled_at || currentPost.scheduled_at },
+    });
   }
 
   return successResponse({ post });

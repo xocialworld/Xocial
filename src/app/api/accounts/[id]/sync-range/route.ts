@@ -302,7 +302,7 @@ async function syncTwitterRange(
     const startTime = fromDate.toISOString();
     const endTime = toDate.toISOString();
 
-    const tweetsUrl = `https://api.twitter.com/2/users/${userId}/tweets?` +
+    const tweetsUrl = `https://api.x.com/2/users/${userId}/tweets?` +
       `max_results=100&start_time=${startTime}&end_time=${endTime}` +
       `&tweet.fields=created_at,public_metrics,attachments` +
       `&expansions=attachments.media_keys&media.fields=url,preview_image_url,type,duration_ms`;
@@ -606,4 +606,3 @@ function parseYouTubeDuration(duration: string): number {
 
   return hours * 3600 + minutes * 60 + seconds;
 }
-

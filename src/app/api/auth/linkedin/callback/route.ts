@@ -140,6 +140,8 @@ export async function GET(request: NextRequest) {
                     metadata: {
                         email: profile.email,
                         type: 'personal',
+                        personUrn: `urn:li:person:${profile.sub}`,
+                        scopes: tokenResponse.scope,
                     },
                 },
                 {
@@ -184,6 +186,9 @@ export async function GET(request: NextRequest) {
                             is_active: true,
                             metadata: {
                                 type: 'organization',
+                                organizationUrn: `urn:li:organization:${org.id}`,
+                                role: org.role,
+                                scopes: tokenResponse.scope,
                             },
                         },
                         {

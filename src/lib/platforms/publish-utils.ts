@@ -1,7 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PublishResult, Platform, PlatformContent } from './publisher';
 
-const PLATFORM_NAMES: Platform[] = ['facebook', 'instagram', 'twitter', 'linkedin', 'youtube', 'tiktok'];
+const PLATFORM_NAMES: Platform[] = [
+  'facebook',
+  'instagram',
+  'twitter',
+  'linkedin',
+  'youtube',
+  'tiktok',
+];
 const VIDEO_EXTENSION_PATTERN = /\.(mp4|mov|m4v|webm|avi)(?:[?#]|$)/i;
 
 interface RecordArtifactsOptions {
@@ -9,6 +16,9 @@ interface RecordArtifactsOptions {
   postId: string;
   publishResults: PublishResult[];
   publishedAt?: string;
+  workspaceId?: string;
+  jobRunId?: string | null;
+  attemptNo?: number;
 }
 
 export async function recordPlatformPosts({
@@ -16,24 +26,38 @@ export async function recordPlatformPosts({
   postId,
   publishResults,
   publishedAt = new Date().toISOString(),
+  workspaceId,
+  jobRunId,
+  attemptNo,
 }: RecordArtifactsOptions) {
-  const rows = publishResults
-    .filter((result) => result.success && result.platformPostId)
-    .map((result) => ({
-      post_id: postId,
-      platform: result.platform,
-      social_account_id: result.accountId ?? null,
-      external_id: result.platformPostId!,
-      platform_post_id: result.platformPostId!,
-      permalink: result.permalink ?? null,
-      published_at: publishedAt,
-      status: 'published',
-      metadata: {},
-    }));
+  const rows = publishResults.map((result) => ({
+    post_id: postId,
+    workspace_id: workspaceId ?? null,
+    platform: result.platform,
+    social_account_id: result.accountId ?? null,
+    external_id: result.platformPostId ?? null,
+    platform_post_id: result.platformPostId ?? null,
+    permalink: result.permalink ?? null,
+    published_at: result.success ? publishedAt : null,
+    status: result.success ? 'published' : 'failed',
+    error_message: result.success ? null : result.error || 'Publish failed',
+    last_attempt_at: new Date().toISOString(),
+    attempt_count: attemptNo ?? 1,
+    metadata: {
+      jobRunId: jobRunId ?? undefined,
+      attemptNo: attemptNo ?? undefined,
+    },
+  }));
 
   if (!rows.length) return;
 
-  await supabase.from('platform_posts').insert(rows);
+  const { error } = await supabase
+    .from('platform_posts')
+    .upsert(rows, { onConflict: 'post_id,social_account_id,platform' });
+
+  if (error) {
+    throw new Error(`Failed to record platform publish evidence: ${error.message}`);
+  }
 }
 
 export async function createInitialAnalytics({
@@ -41,12 +65,14 @@ export async function createInitialAnalytics({
   postId,
   publishResults,
 }: RecordArtifactsOptions) {
+  const fetchedAt = new Date().toISOString();
   const rows = publishResults
     .filter((result) => result.success && result.platformPostId)
     .map((result) => ({
       post_id: postId,
       platform: result.platform,
       external_post_id: result.platformPostId!,
+      fetched_at: fetchedAt,
       impressions: 0,
       reach: 0,
       engagement: 0,
@@ -61,7 +87,13 @@ export async function createInitialAnalytics({
 
   if (!rows.length) return;
 
-  await supabase.from('post_analytics').insert(rows);
+  const { error } = await supabase
+    .from('post_analytics')
+    .upsert(rows, { onConflict: 'post_id,platform,fetched_at' });
+
+  if (error) {
+    throw new Error(`Failed to create initial analytics: ${error.message}`);
+  }
 }
 
 export function extractExternalIds(publishResults: PublishResult[]) {
@@ -91,9 +123,7 @@ function parseMetadataObject(metadata: unknown): Record<string, any> | null {
   return null;
 }
 
-export function parseAccountIdsFromMetadata(
-  metadata: unknown
-): Partial<Record<Platform, string>> {
+export function parseAccountIdsFromMetadata(metadata: unknown): Partial<Record<Platform, string>> {
   const resolved = parseMetadataObject(metadata);
   if (!resolved || typeof resolved.accountIds !== 'object' || resolved.accountIds === null) {
     return {};
@@ -149,9 +179,7 @@ export function extractMediaUrls(media: unknown): string[] {
     .filter((url: unknown): url is string => typeof url === 'string' && url.length > 0);
 }
 
-export function inferMediaTypeFromMedia(
-  media: unknown
-): PlatformContent['mediaType'] | undefined {
+export function inferMediaTypeFromMedia(media: unknown): PlatformContent['mediaType'] | undefined {
   if (!Array.isArray(media) || media.length === 0) return undefined;
 
   if (media.length > 1) return 'CAROUSEL_ALBUM';
@@ -169,10 +197,9 @@ export function buildPlatformContentPayload(
   defaultMediaUrls: string[] = [],
   defaultMediaType?: PlatformContent['mediaType']
 ): { fallback: PlatformContent; perPlatform: Partial<Record<Platform, PlatformContent>> } {
-  const content = (typeof rawContent === 'object' && rawContent !== null ? rawContent : {}) as Record<
-    string,
-    PlatformContent
-  >;
+  const content = (
+    typeof rawContent === 'object' && rawContent !== null ? rawContent : {}
+  ) as Record<string, PlatformContent>;
 
   const defaultEntry = content.default || {};
 
@@ -212,20 +239,23 @@ export function buildPlatformContentPayload(
     fallback.mediaType = fallbackMediaType;
   }
 
-  const perPlatform = platforms.reduce((acc, platform) => {
-    const entry = content[platform] || {};
-    const platformContent: PlatformContent = {
-      text: entry.text || fallback.text,
-      mediaUrls: entry.mediaUrls || fallback.mediaUrls,
-      link: entry.link || fallback.link,
-    };
-    const mediaType = entry.mediaType || fallback.mediaType;
-    if (mediaType) {
-      platformContent.mediaType = mediaType;
-    }
-    acc[platform] = platformContent;
-    return acc;
-  }, {} as Partial<Record<Platform, PlatformContent>>);
+  const perPlatform = platforms.reduce(
+    (acc, platform) => {
+      const entry = content[platform] || {};
+      const platformContent: PlatformContent = {
+        text: entry.text || fallback.text,
+        mediaUrls: entry.mediaUrls || fallback.mediaUrls,
+        link: entry.link || fallback.link,
+      };
+      const mediaType = entry.mediaType || fallback.mediaType;
+      if (mediaType) {
+        platformContent.mediaType = mediaType;
+      }
+      acc[platform] = platformContent;
+      return acc;
+    },
+    {} as Partial<Record<Platform, PlatformContent>>
+  );
 
   return { fallback, perPlatform };
 }

@@ -26,6 +26,20 @@ export interface InstagramPost {
   };
 }
 
+export class InstagramContainerProcessingError extends Error {
+  code = 'INSTAGRAM_CONTAINER_PROCESSING';
+  retryable = true;
+
+  constructor(
+    message: string,
+    public containerId: string,
+    public statusCode?: string | null
+  ) {
+    super(message);
+    this.name = 'InstagramContainerProcessingError';
+  }
+}
+
 export class InstagramClient {
   private baseUrl = 'https://graph.facebook.com/v24.0';
   private accessToken: string;
@@ -65,6 +79,14 @@ export class InstagramClient {
     await this.waitForContainerReady(containerId);
 
     // Step 2: Publish the container
+    return await this.publishContainer(containerId);
+  }
+
+  async resumeContainerPublish(containerId: string): Promise<{ id: string }> {
+    await this.waitForContainerReady(containerId, {
+      maxAttempts: 6,
+      intervalMs: 5000,
+    });
     return await this.publishContainer(containerId);
   }
 
@@ -152,13 +174,19 @@ export class InstagramClient {
     return data.id;
   }
 
-  private async waitForContainerReady(containerId: string): Promise<void> {
+  private async waitForContainerReady(
+    containerId: string,
+    options: { maxAttempts?: number; intervalMs?: number } = {}
+  ): Promise<void> {
     const params = new URLSearchParams({
       fields: 'status_code',
       access_token: this.accessToken,
     });
+    const maxAttempts = options.maxAttempts ?? 12;
+    const intervalMs = options.intervalMs ?? 2000;
+    let lastStatus: string | null = null;
 
-    for (let attempt = 0; attempt < 12; attempt++) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const response = await fetch(`${this.baseUrl}/${containerId}?${params.toString()}`);
 
       if (!response.ok) {
@@ -170,6 +198,7 @@ export class InstagramClient {
 
       const data = await response.json();
       const status = data.status_code;
+      lastStatus = status || null;
 
       if (!status || status === 'FINISHED') {
         return;
@@ -179,10 +208,16 @@ export class InstagramClient {
         throw new Error(`Instagram media container is not publishable: ${status}`);
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (attempt < maxAttempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      }
     }
 
-    throw new Error('Instagram media container was not ready before the publish timeout');
+    throw new InstagramContainerProcessingError(
+      'Instagram media container was not ready before the publish timeout',
+      containerId,
+      lastStatus
+    );
   }
 
   /**

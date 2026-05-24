@@ -4,12 +4,11 @@
  */
 
 import { createFacebookClient } from './facebook';
-import { createInstagramClient } from './instagram';
+import { createInstagramClient, InstagramContainerProcessingError } from './instagram';
 import { createTwitterClient, refreshTwitterToken } from '@/lib/platforms/twitter';
 import { createLinkedInClient } from './linkedin';
 import { publishToYouTube } from './youtube';
 import { createTikTokClient } from './tiktok';
-import { retryWithBackoff } from '@/lib/errors';
 import { refreshMetaToken } from '@/lib/oauth/token-refresh';
 import { refreshYouTubeToken } from '@/lib/oauth/youtube';
 import { refreshLinkedInToken } from '@/lib/oauth/linkedin';
@@ -32,6 +31,7 @@ export interface PublishRequest {
   platforms: Platform[];
   content: PlatformContent;
   platformContent?: Partial<Record<Platform, PlatformContent>>;
+  platformStates?: Partial<Record<Platform, Record<string, any>>>;
   accountIds: Partial<Record<Platform, string>>; // Map of platform to account ID
   scheduledFor?: Date;
 }
@@ -43,6 +43,9 @@ export interface PublishResult {
   platformPostId?: string;
   error?: string;
   permalink?: string;
+  retryable?: boolean;
+  errorCode?: string;
+  providerState?: Record<string, unknown>;
 }
 
 export class PlatformPublisher {
@@ -81,14 +84,12 @@ export class PlatformPublisher {
           mediaType: platformSpecific.mediaType ?? request.content.mediaType,
         };
 
-        const result = await retryWithBackoff(
-          () => this.publishToPlatform(platform, accountId, contentPayload, request.scheduledFor),
-          {
-            maxRetries: 3,
-            initialDelay: 750,
-            maxDelay: 5000,
-            backoffMultiplier: 2,
-          }
+        const result = await this.publishToPlatformWithRetry(
+          platform,
+          accountId,
+          contentPayload,
+          request.scheduledFor,
+          request.platformStates?.[platform]
         );
 
         results.push({
@@ -99,11 +100,22 @@ export class PlatformPublisher {
           permalink: result.permalink,
         });
       } catch (error: any) {
+        const platformSpecific = request.platformContent?.[platform] ?? request.content;
+        const contentPayload: PlatformContent = {
+          text: platformSpecific.text ?? request.content.text,
+          mediaUrls: platformSpecific.mediaUrls ?? request.content.mediaUrls,
+          link: platformSpecific.link ?? request.content.link,
+          mediaType: platformSpecific.mediaType ?? request.content.mediaType,
+        };
+
         results.push({
           platform,
           accountId: request.accountIds[platform],
           success: false,
           error: error.message || 'Unknown error',
+          retryable: this.isRetryablePublishError(error),
+          errorCode: error.code,
+          providerState: this.getProviderStateFromError(error, contentPayload),
         });
       }
     });
@@ -119,10 +131,11 @@ export class PlatformPublisher {
     platform: Platform,
     accountId: string,
     content: PlatformContent,
-    scheduledFor?: Date
+    scheduledFor?: Date,
+    platformState?: Record<string, any>
   ): Promise<{ id: string; permalink?: string }> {
     try {
-      return await this._executePublish(platform, accountId, content, scheduledFor);
+      return await this._executePublish(platform, accountId, content, scheduledFor, platformState);
     } catch (error: any) {
       // Attempt token refresh on auth errors
       if (this.shouldRefreshToken(error)) {
@@ -134,25 +147,65 @@ export class PlatformPublisher {
         if (refreshed) {
           logger.info(`[Publisher] Token refreshed, retrying publish...`);
           // Retry once
-          return await this._executePublish(platform, accountId, content, scheduledFor);
+          return await this._executePublish(
+            platform,
+            accountId,
+            content,
+            scheduledFor,
+            platformState
+          );
         }
       }
       throw error;
     }
   }
 
+  private async publishToPlatformWithRetry(
+    platform: Platform,
+    accountId: string,
+    content: PlatformContent,
+    scheduledFor?: Date,
+    platformState?: Record<string, any>
+  ): Promise<{ id: string; permalink?: string }> {
+    let lastError: any;
+
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      try {
+        return await this.publishToPlatform(
+          platform,
+          accountId,
+          content,
+          scheduledFor,
+          platformState
+        );
+      } catch (error: any) {
+        lastError = error;
+
+        if (this.isDeferredProcessingError(error) || attempt === 3) {
+          break;
+        }
+
+        const delay = Math.min(750 * Math.pow(2, attempt), 5000);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    throw lastError;
+  }
+
   private async _executePublish(
     platform: Platform,
     accountId: string,
     content: PlatformContent,
-    scheduledFor?: Date
+    scheduledFor?: Date,
+    platformState?: Record<string, any>
   ): Promise<{ id: string; permalink?: string }> {
     switch (platform) {
       case 'facebook':
         return await this.publishToFacebook(accountId, content, scheduledFor);
 
       case 'instagram':
-        return await this.publishToInstagram(accountId, content);
+        return await this.publishToInstagram(accountId, content, platformState);
 
       case 'twitter':
         return await this.publishToTwitter(accountId, content);
@@ -169,6 +222,42 @@ export class PlatformPublisher {
       default:
         throw new Error(`Unsupported platform: ${platform}`);
     }
+  }
+
+  private isDeferredProcessingError(error: any): boolean {
+    return error instanceof InstagramContainerProcessingError;
+  }
+
+  private isRetryablePublishError(error: any): boolean {
+    if (this.isDeferredProcessingError(error)) return true;
+    if (error?.retryable === true) return true;
+
+    const message = String(error?.message || '').toLowerCase();
+    return (
+      message.includes('container was not ready') ||
+      message.includes('in_progress') ||
+      message.includes('media id is not available') ||
+      message.includes('temporarily unavailable') ||
+      message.includes('rate limit') ||
+      message.includes('too many requests')
+    );
+  }
+
+  private getProviderStateFromError(
+    error: any,
+    content: PlatformContent
+  ): Record<string, unknown> | undefined {
+    if (error instanceof InstagramContainerProcessingError) {
+      return {
+        containerId: error.containerId,
+        statusCode: error.statusCode || 'IN_PROGRESS',
+        mediaUrl: content.mediaUrls?.[0],
+        mediaType: content.mediaType,
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    return undefined;
   }
 
   private shouldRefreshToken(error: any): boolean {
@@ -369,7 +458,11 @@ export class PlatformPublisher {
     }
   }
 
-  private async publishToInstagram(accountId: string, content: any): Promise<{ id: string }> {
+  private async publishToInstagram(
+    accountId: string,
+    content: any,
+    platformState?: Record<string, any>
+  ): Promise<{ id: string }> {
     const client = await createInstagramClient(accountId);
 
     if (!content.mediaUrls || content.mediaUrls.length === 0) {
@@ -390,6 +483,14 @@ export class PlatformPublisher {
       mediaUrlLooksLikeVideo(content.mediaUrls[0]);
 
     if (isVideo) {
+      if (
+        platformState?.containerId &&
+        (!platformState.accountId || platformState.accountId === accountId) &&
+        (!platformState.mediaUrl || platformState.mediaUrl === content.mediaUrls[0])
+      ) {
+        return await client.resumeContainerPublish(String(platformState.containerId));
+      }
+
       return await client.publishVideo({
         caption: content.text,
         videoUrl: content.mediaUrls[0],

@@ -40,11 +40,12 @@ import {
   startJobRun,
 } from '@/lib/observability/job-runs';
 
-// Maximum retry attempts before permanent failure
-const MAX_RETRY_ATTEMPTS = 3;
+// Maximum retry attempts before permanent failure. Instagram video/Reels
+// containers can remain in Meta processing for several minutes.
+const MAX_RETRY_ATTEMPTS = 6;
 
 // Backoff intervals (minutes) for each retry
-const RETRY_BACKOFF_MINUTES = [5, 15, 60];
+const RETRY_BACKOFF_MINUTES = [1, 2, 5, 10, 15, 30];
 const PUBLISHING_LOCK_TTL_MINUTES = 10;
 const PUBLISH_POST_SELECT = `
   *,
@@ -99,11 +100,13 @@ function hasFreshPublishingLock(metadata: unknown, now: Date): boolean {
  * Determine if an error is retryable
  */
 function isRetryableError(error: any): boolean {
+  if (error?.retryable === true) return true;
+
   // Server errors (5xx) are retryable
-  if (error.originalStatus >= 500) return true;
+  if (error?.originalStatus >= 500) return true;
 
   // Rate limit errors are retryable
-  if (error.type === 'RATE_LIMIT' || error.type === 'SERVER_ERROR') return true;
+  if (error?.type === 'RATE_LIMIT' || error?.type === 'SERVER_ERROR') return true;
 
   // Specific retryable error messages
   const retryableMessages = [
@@ -115,10 +118,57 @@ function isRetryableError(error: any): boolean {
     'temporarily unavailable',
     'service unavailable',
     'internal server error',
+    'container was not ready',
+    'in_progress',
+    'media id is not available',
   ];
 
-  const errorMessage = (error.message || '').toLowerCase();
+  const errorMessage = (error?.message || error?.error || '').toLowerCase();
   return retryableMessages.some((msg) => errorMessage.includes(msg));
+}
+
+function buildPendingPlatformPublishes(
+  metadata: Record<string, any>,
+  publishResults: PublishResult[]
+) {
+  const existing =
+    metadata.pendingPlatformPublishes &&
+    typeof metadata.pendingPlatformPublishes === 'object' &&
+    !Array.isArray(metadata.pendingPlatformPublishes)
+      ? metadata.pendingPlatformPublishes
+      : {};
+  const next: Record<string, any> = { ...existing };
+  const now = new Date().toISOString();
+
+  publishResults.forEach((result) => {
+    if (!isPlatform(result.platform)) return;
+
+    if (result.success) {
+      delete next[result.platform];
+      return;
+    }
+
+    if (result.retryable) {
+      next[result.platform] = {
+        ...(result.providerState || {}),
+        platform: result.platform,
+        accountId: result.accountId,
+        retryable: true,
+        error: result.error,
+        errorCode: result.errorCode,
+        updatedAt: now,
+      };
+      return;
+    }
+
+    delete next[result.platform];
+  });
+
+  return next;
+}
+
+function hasPendingPlatformPublishes(pending: Record<string, any>) {
+  return Object.keys(pending).length > 0;
 }
 
 /**
@@ -332,11 +382,17 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                 platforms: pendingPlatforms,
                 content: fallback,
                 platformContent: perPlatform,
+                platformStates: metadata.pendingPlatformPublishes,
                 accountIds,
               })
             : [];
 
         const allPublishResults = [...publishResults, ...carriedSuccesses.values()];
+        const nextPendingPlatformPublishes = buildPendingPlatformPublishes(
+          metadata,
+          publishResults
+        );
+        const hasPendingRetries = hasPendingPlatformPublishes(nextPendingPlatformPublishes);
         const attemptNo = retryCount + 1;
         const mergedAccountIds = {
           ...(typeof metadata.accountIds === 'object' && metadata.accountIds
@@ -387,11 +443,14 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                 platform: result.platform,
                 socialAccountId: result.accountId || mergedAccountIds[result.platform] || null,
                 attemptNo,
-                status: result.success ? 'published' : 'failed',
+                status: result.success ? 'published' : result.retryable ? 'pending' : 'failed',
                 platformPostId: result.platformPostId || null,
                 permalink: result.permalink || null,
                 errorMessage: result.success ? null : result.error || 'Publish failed',
+                retryable: result.retryable,
+                errorCode: result.errorCode || null,
                 jobRunId: jobRun?.id,
+                responseMetadata: result.providerState || {},
               })
             )
           );
@@ -418,6 +477,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                 publishAttempts: attemptNo,
                 lastPublishJobRunId: jobRun?.id,
                 publishingLock: undefined,
+                pendingPlatformPublishes: undefined,
               },
             })
             .eq('id', post.id);
@@ -443,7 +503,9 @@ export const GET = withCronVerification(async (request: NextRequest) => {
             duration: Date.now() - postStartTime,
           });
         } else if (someSucceeded) {
-          // Partial success - record what worked, but mark as partially failed
+          // Partial success. If the remaining platform failures are retryable,
+          // keep the post scheduled so the next cron ticks continue only the
+          // failed platforms while carried successes prevent duplicates.
           const publishedAt = new Date().toISOString();
           const successfulPlatforms = allPublishResults
             .filter((r) => r.success)
@@ -451,52 +513,112 @@ export const GET = withCronVerification(async (request: NextRequest) => {
           const failedPlatforms = allPublishResults
             .filter((r) => !r.success)
             .map((r) => r.platform);
+          const shouldRetryPartial = hasRetryableError && retryCount < MAX_RETRY_ATTEMPTS;
 
-          await supabase
-            .from('posts')
-            .update({
-              status: 'partial',
-              published_at: publishedAt,
-              error_message: `Published to ${successfulPlatforms.join(', ')}. Failed: ${errors.join('; ')}`,
-              external_post_id: JSON.stringify(externalIds),
+          if (shouldRetryPartial) {
+            const nextRetryTime = calculateNextRetryTime(retryCount);
+
+            await supabase
+              .from('posts')
+              .update({
+                status: 'scheduled',
+                scheduled_at: nextRetryTime.toISOString(),
+                published_at: publishedAt,
+                error_message: `Published to ${successfulPlatforms.join(', ')}. Retrying: ${errors.join('; ')}`,
+                external_post_id: JSON.stringify(externalIds),
+                metadata: {
+                  ...metadata,
+                  accountIds: mergedAccountIds,
+                  publishResults: allPublishResults,
+                  publishedAt,
+                  successfulPlatforms,
+                  failedPlatforms,
+                  retryCount: retryCount + 1,
+                  publishAttempts: attemptNo,
+                  lastFailedAt: new Date().toISOString(),
+                  nextRetryAt: nextRetryTime.toISOString(),
+                  lastPublishJobRunId: jobRun?.id,
+                  pendingPlatformPublishes: nextPendingPlatformPublishes,
+                  publishingLock: undefined,
+                },
+              })
+              .eq('id', post.id);
+
+            await recordPostActivity(supabase, {
+              workspaceId: post.workspace_id,
+              postId: post.id,
+              source: 'cron',
+              eventType: 'publish_retry_scheduled',
+              statusBefore: post.status,
+              statusAfter: 'scheduled',
+              jobRunId: jobRun?.id,
+              message: `Published to ${successfulPlatforms.join(', ')}; retry scheduled for ${failedPlatforms.join(', ')}`,
+              errorMessage: errors.join('; '),
               metadata: {
-                ...metadata,
-                accountIds: mergedAccountIds,
-                publishResults: allPublishResults,
-                publishedAt,
-                successfulPlatforms,
-                failedPlatforms,
-                publishAttempts: attemptNo,
-                lastPublishJobRunId: jobRun?.id,
-                publishingLock: undefined,
+                results: allPublishResults,
+                nextRetryAt: nextRetryTime.toISOString(),
+                pendingPlatformPublishes: nextPendingPlatformPublishes,
               },
-            })
-            .eq('id', post.id);
+            });
 
-          await recordPostActivity(supabase, {
-            workspaceId: post.workspace_id,
-            postId: post.id,
-            source: 'cron',
-            eventType: 'publish_partial',
-            statusBefore: post.status,
-            statusAfter: 'partial',
-            jobRunId: jobRun?.id,
-            message: 'Scheduled post published to some platforms with errors',
-            errorMessage: errors.join('; '),
-            metadata: { results: allPublishResults },
-          });
+            results.push({
+              postId: post.id,
+              success: false,
+              platforms: post.platforms,
+              errors,
+              duration: Date.now() - postStartTime,
+              retryScheduled: true,
+            });
+          } else {
+            await supabase
+              .from('posts')
+              .update({
+                status: 'partial',
+                published_at: publishedAt,
+                error_message: `Published to ${successfulPlatforms.join(', ')}. Failed: ${errors.join('; ')}`,
+                external_post_id: JSON.stringify(externalIds),
+                metadata: {
+                  ...metadata,
+                  accountIds: mergedAccountIds,
+                  publishResults: allPublishResults,
+                  publishedAt,
+                  successfulPlatforms,
+                  failedPlatforms,
+                  publishAttempts: attemptNo,
+                  lastPublishJobRunId: jobRun?.id,
+                  pendingPlatformPublishes: hasPendingRetries
+                    ? nextPendingPlatformPublishes
+                    : undefined,
+                  publishingLock: undefined,
+                },
+              })
+              .eq('id', post.id);
 
-          console.log(
-            `[Cron: Publish] Partial success for post ${post.id}: ${successfulPlatforms.join(', ')}`
-          );
+            await recordPostActivity(supabase, {
+              workspaceId: post.workspace_id,
+              postId: post.id,
+              source: 'cron',
+              eventType: 'publish_partial',
+              statusBefore: post.status,
+              statusAfter: 'partial',
+              jobRunId: jobRun?.id,
+              message: 'Scheduled post published to some platforms with errors',
+              errorMessage: errors.join('; '),
+              metadata: { results: allPublishResults },
+            });
 
-          results.push({
-            postId: post.id,
-            success: false,
-            platforms: post.platforms,
-            errors,
-            duration: Date.now() - postStartTime,
-          });
+            console.log(
+              `[Cron: Publish] Partial success for post ${post.id}: ${successfulPlatforms.join(', ')}`
+            );
+
+            results.push({
+              postId: post.id,
+              success: false,
+              platforms: post.platforms,
+              errors,
+              duration: Date.now() - postStartTime,
+            });
+          }
         } else {
           // Complete failure - determine if we should retry
           const shouldRetry = hasRetryableError && retryCount < MAX_RETRY_ATTEMPTS;
@@ -519,6 +641,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                   publishAttempts: attemptNo,
                   lastFailedAt: new Date().toISOString(),
                   nextRetryAt: nextRetryTime.toISOString(),
+                  pendingPlatformPublishes: nextPendingPlatformPublishes,
                   publishingLock: undefined,
                 },
               })
@@ -537,7 +660,11 @@ export const GET = withCronVerification(async (request: NextRequest) => {
               jobRunId: jobRun?.id,
               message: `Scheduled retry for ${nextRetryTime.toISOString()}`,
               errorMessage: errors.join('; '),
-              metadata: { results: allPublishResults, nextRetryAt: nextRetryTime.toISOString() },
+              metadata: {
+                results: allPublishResults,
+                nextRetryAt: nextRetryTime.toISOString(),
+                pendingPlatformPublishes: nextPendingPlatformPublishes,
+              },
             });
 
             results.push({
@@ -565,6 +692,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                   publishAttempts: attemptNo,
                   failedAt: new Date().toISOString(),
                   finalRetryCount: retryCount,
+                  pendingPlatformPublishes: undefined,
                   publishingLock: undefined,
                 },
               })

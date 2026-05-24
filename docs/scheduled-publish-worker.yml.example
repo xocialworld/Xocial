@@ -1,0 +1,47 @@
+name: Scheduled Publish Worker
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  publish-due-posts:
+    name: Publish due scheduled posts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Trigger publish worker
+        env:
+          APP_URL: ${{ vars.APP_URL || 'https://www.xocial.world' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "CRON_SECRET repository secret is missing."
+            exit 1
+          fi
+
+          endpoint="${APP_URL%/}/api/cron/publish"
+          response_file="$(mktemp)"
+          status_code="$(
+            curl \
+              --silent \
+              --show-error \
+              --location \
+              --max-time 540 \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              --header "Authorization: Bearer ${CRON_SECRET}" \
+              "$endpoint"
+          )"
+
+          cat "$response_file"
+          echo
+          echo "HTTP status: $status_code"
+
+          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
+            exit 1
+          fi

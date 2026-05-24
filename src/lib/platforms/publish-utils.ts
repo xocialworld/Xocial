@@ -71,8 +71,12 @@ export async function createInitialAnalytics({
     .map((result) => ({
       post_id: postId,
       platform: result.platform,
+      social_account_id: result.accountId ?? null,
       external_post_id: result.platformPostId!,
       fetched_at: fetchedAt,
+      recorded_at: fetchedAt,
+      synced_at: fetchedAt,
+      last_synced_at: fetchedAt,
       impressions: 0,
       reach: 0,
       engagement: 0,
@@ -82,6 +86,7 @@ export async function createInitialAnalytics({
       saves: 0,
       clicks: 0,
       video_views: 0,
+      views: 0,
       engagement_rate: 0,
     }));
 
@@ -92,7 +97,12 @@ export async function createInitialAnalytics({
     .upsert(rows, { onConflict: 'post_id,platform,fetched_at' });
 
   if (error) {
-    throw new Error(`Failed to create initial analytics: ${error.message}`);
+    // Publishing already happened before this helper is called. Analytics seeding
+    // must not turn a successful external publish into a failed post.
+    console.warn('[createInitialAnalytics] Failed to seed analytics', {
+      postId,
+      error: error.message,
+    });
   }
 }
 

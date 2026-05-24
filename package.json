@@ -16,6 +16,8 @@
     "setup-env": "node scripts/setup-env.js",
     "db:seed": "tsx scripts/seed-database.ts",
     "db:migrate": "tsx scripts/apply-migration.ts",
+    "scheduler:once": "tsx scripts/run-scheduler.ts",
+    "scheduler:dev": "tsx scripts/run-scheduler.ts --watch --interval=60",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",

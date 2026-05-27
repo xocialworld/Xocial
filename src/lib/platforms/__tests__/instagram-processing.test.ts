@@ -15,7 +15,21 @@ describe('InstagramClient video processing', () => {
     const fetchMock = jest.fn();
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ id: 'ig-container-1' }),
+      json: async () => ({
+        id: 'ig-container-1',
+        uri: 'https://rupload.facebook.com/ig-api-upload/v24.0/ig-container-1',
+      }),
+    });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: {
+        get: () => 'video/mp4',
+      },
+      arrayBuffer: async () => new ArrayBuffer(8),
+    });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true }),
     });
 
     for (let i = 0; i < 12; i++) {

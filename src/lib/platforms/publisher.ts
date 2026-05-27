@@ -17,14 +17,18 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { logger } from '@/lib/logger';
 import { mediaUrlLooksLikeVideo } from './publish-utils';
 import { assertDemoPublishAllowed } from '@/lib/demo-guards';
+import type { InstagramPostType, InstagramPublishOptions } from '@/lib/instagram-publishing';
 
 export type Platform = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'youtube' | 'tiktok';
 
 export type PlatformContent = {
   text: string;
   mediaUrls?: string[];
+  assetIds?: string[];
   link?: string;
-  mediaType?: 'IMAGE' | 'VIDEO' | 'REELS' | 'CAROUSEL_ALBUM';
+  mediaType?: 'IMAGE' | 'VIDEO' | 'REELS' | 'CAROUSEL_ALBUM' | 'STORIES';
+  postType?: InstagramPostType;
+  instagramOptions?: InstagramPublishOptions;
 };
 
 export interface PublishRequest {
@@ -80,8 +84,11 @@ export class PlatformPublisher {
         const contentPayload: PlatformContent = {
           text: platformSpecific.text ?? request.content.text,
           mediaUrls: platformSpecific.mediaUrls ?? request.content.mediaUrls,
+          assetIds: platformSpecific.assetIds ?? request.content.assetIds,
           link: platformSpecific.link ?? request.content.link,
           mediaType: platformSpecific.mediaType ?? request.content.mediaType,
+          postType: platformSpecific.postType ?? request.content.postType,
+          instagramOptions: platformSpecific.instagramOptions ?? request.content.instagramOptions,
         };
 
         const result = await this.publishToPlatformWithRetry(
@@ -104,8 +111,11 @@ export class PlatformPublisher {
         const contentPayload: PlatformContent = {
           text: platformSpecific.text ?? request.content.text,
           mediaUrls: platformSpecific.mediaUrls ?? request.content.mediaUrls,
+          assetIds: platformSpecific.assetIds ?? request.content.assetIds,
           link: platformSpecific.link ?? request.content.link,
           mediaType: platformSpecific.mediaType ?? request.content.mediaType,
+          postType: platformSpecific.postType ?? request.content.postType,
+          instagramOptions: platformSpecific.instagramOptions ?? request.content.instagramOptions,
         };
 
         results.push({
@@ -211,7 +221,7 @@ export class PlatformPublisher {
         return await this.publishToTwitter(accountId, content);
 
       case 'linkedin':
-        return await this.publishToLinkedIn(accountId, content);
+        return await this.publishToLinkedIn(accountId, content, platformState);
 
       case 'youtube':
         return await this.publishToYouTube(accountId, content, scheduledFor);
@@ -469,17 +479,47 @@ export class PlatformPublisher {
       throw new Error('Instagram requires at least one image or video');
     }
 
-    if (content.mediaUrls.length > 1) {
+    const postType: InstagramPostType =
+      content.postType ||
+      (content.mediaType === 'REELS'
+        ? 'reel'
+        : content.mediaType === 'STORIES'
+          ? 'story'
+          : content.mediaUrls.length > 1
+            ? 'carousel'
+            : 'feed');
+    const options = content.instagramOptions || {};
+
+    if (postType === 'story') {
+      const sourceUrl = content.mediaUrls[0];
+      const isVideo =
+        content.mediaType === 'VIDEO' ||
+        content.mediaType === 'REELS' ||
+        mediaUrlLooksLikeVideo(sourceUrl);
+
+      return await client.publishStory({
+        caption: '',
+        mediaUrls: [sourceUrl],
+        imageUrl: isVideo ? undefined : sourceUrl,
+        videoUrl: isVideo ? sourceUrl : undefined,
+        mediaType: 'STORIES',
+        options,
+      });
+    }
+
+    if (postType === 'carousel' || content.mediaUrls.length > 1) {
       return await client.publishCarousel({
         caption: content.text,
         mediaUrls: content.mediaUrls,
         mediaType: 'CAROUSEL_ALBUM',
+        options,
       });
     }
 
     const isVideo =
       content.mediaType === 'VIDEO' ||
       content.mediaType === 'REELS' ||
+      postType === 'reel' ||
       mediaUrlLooksLikeVideo(content.mediaUrls[0]);
 
     if (isVideo) {
@@ -495,12 +535,14 @@ export class PlatformPublisher {
         caption: content.text,
         videoUrl: content.mediaUrls[0],
         mediaType: 'REELS',
+        options,
       });
     } else {
       return await client.publishImage({
         caption: content.text,
         imageUrl: content.mediaUrls[0],
         mediaType: 'IMAGE',
+        options,
       });
     }
   }
@@ -559,14 +601,18 @@ export class PlatformPublisher {
 
   private async publishToLinkedIn(
     accountId: string,
-    content: any
+    content: any,
+    platformState?: Record<string, any>
   ): Promise<{ id: string; permalink?: string }> {
     const client = await createLinkedInClient(accountId);
+    const visibility =
+      platformState?.visibility === 'CONNECTIONS' ? 'CONNECTIONS' : 'PUBLIC';
 
     const result = await client.createPost({
       text: content.text,
       mediaUrls: content.mediaUrls,
-      visibility: 'PUBLIC',
+      mediaType: content.mediaType,
+      visibility,
       article: content.link
         ? {
             source: content.link,

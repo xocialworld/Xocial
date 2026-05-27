@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { decryptToken } from '@/lib/encryption';
 import { getInstagramGraphBaseUrl } from '@/lib/oauth/instagram';
 import { mediaUrlLooksLikeVideo } from './publish-utils';
+import type { InstagramPublishOptions } from '@/lib/instagram-publishing';
 
 export interface InstagramConfig {
   accessToken: string;
@@ -19,7 +20,8 @@ export interface InstagramPost {
   imageUrl?: string;
   videoUrl?: string;
   mediaUrls?: string[];
-  mediaType?: 'IMAGE' | 'VIDEO' | 'REELS' | 'CAROUSEL_ALBUM';
+  mediaType?: 'IMAGE' | 'VIDEO' | 'REELS' | 'CAROUSEL_ALBUM' | 'STORIES';
+  options?: InstagramPublishOptions;
   location?: {
     id: string;
     name: string;
@@ -60,6 +62,11 @@ export class InstagramClient {
     const containerId = await this.createMediaContainer({
       image_url: post.imageUrl!,
       caption: post.caption,
+      alt_text: post.options?.altText,
+      collaborators: post.options?.collaborators,
+      location_id: post.options?.locationId,
+      user_tags: post.options?.userTags,
+      product_tags: post.options?.productTags,
     });
 
     // Step 2: Publish the container
@@ -70,11 +77,15 @@ export class InstagramClient {
    * Publish a video post to Instagram
    */
   async publishVideo(post: InstagramPost): Promise<{ id: string }> {
+    if (post.mediaType === 'REELS') {
+      return await this.publishReelWithResumableUpload(post);
+    }
+
     // Step 1: Create video container
     const containerId = await this.createMediaContainer({
       video_url: post.videoUrl!,
       caption: post.caption,
-      media_type: post.mediaType === 'REELS' ? 'REELS' : 'VIDEO',
+      media_type: 'VIDEO',
     });
     await this.waitForContainerReady(containerId);
 
@@ -114,10 +125,64 @@ export class InstagramClient {
       caption: post.caption,
       media_type: 'CAROUSEL',
       children,
+      collaborators: post.options?.collaborators,
+      location_id: post.options?.locationId,
+      product_tags: post.options?.productTags,
     });
     await this.waitForContainerReady(containerId);
 
     return await this.publishContainer(containerId);
+  }
+
+  async publishStory(post: InstagramPost): Promise<{ id: string }> {
+    const sourceUrl = post.videoUrl || post.imageUrl || post.mediaUrls?.[0];
+    if (!sourceUrl) {
+      throw new Error('Instagram Story publishing requires one image or video');
+    }
+
+    const isVideo = post.videoUrl || mediaUrlLooksLikeVideo(sourceUrl);
+
+    if (isVideo) {
+      const container = await this.createResumableContainer({
+        media_type: 'STORIES',
+        user_tags: post.options?.userTags,
+      });
+      await this.uploadVideoToContainer(container.uri, sourceUrl);
+      await this.waitForContainerReady(container.id);
+      return await this.publishContainer(container.id);
+    }
+
+    const containerId = await this.createMediaContainer({
+      image_url: sourceUrl,
+      media_type: 'STORIES',
+      caption: '',
+      user_tags: post.options?.userTags,
+    });
+
+    return await this.publishContainer(containerId);
+  }
+
+  async publishReelWithResumableUpload(post: InstagramPost): Promise<{ id: string }> {
+    if (!post.videoUrl) {
+      throw new Error('Instagram Reel publishing requires a video');
+    }
+
+    const container = await this.createResumableContainer({
+      media_type: 'REELS',
+      caption: post.caption,
+      share_to_feed: post.options?.shareToFeed,
+      collaborators: post.options?.collaborators,
+      cover_url: post.options?.coverUrl,
+      audio_name: post.options?.audioName,
+      user_tags: post.options?.userTags,
+      location_id: post.options?.locationId,
+      thumb_offset: post.options?.thumbOffset,
+      trial_params: post.options?.trialParams,
+    });
+
+    await this.uploadVideoToContainer(container.uri, post.videoUrl);
+    await this.waitForContainerReady(container.id);
+    return await this.publishContainer(container.id);
   }
 
   /**
@@ -130,13 +195,26 @@ export class InstagramClient {
     media_type?: string;
     is_carousel_item?: boolean;
     children?: string[];
+    alt_text?: string;
+    share_to_feed?: boolean;
+    collaborators?: string[];
+    cover_url?: string;
+    audio_name?: string;
+    user_tags?: unknown[];
+    location_id?: string;
+    product_tags?: unknown[];
+    thumb_offset?: number;
+    trial_params?: unknown;
   }): Promise<string> {
     const url = `${this.baseUrl}/${this.instagramAccountId}/media`;
 
     const body: any = {
-      caption: params.caption,
       access_token: this.accessToken,
     };
+
+    if (params.caption && params.media_type !== 'STORIES') {
+      body.caption = params.caption;
+    }
 
     if (params.image_url) {
       body.image_url = params.image_url;
@@ -159,6 +237,8 @@ export class InstagramClient {
       body.children = params.children.join(',');
     }
 
+    this.applyOptionalContainerParams(body, params);
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -172,6 +252,102 @@ export class InstagramClient {
 
     const data = await response.json();
     return data.id;
+  }
+
+  private async createResumableContainer(params: {
+    media_type: 'REELS' | 'STORIES' | 'VIDEO';
+    caption?: string;
+    is_carousel_item?: boolean;
+    share_to_feed?: boolean;
+    collaborators?: string[];
+    cover_url?: string;
+    audio_name?: string;
+    user_tags?: unknown[];
+    location_id?: string;
+    thumb_offset?: number;
+    trial_params?: unknown;
+  }): Promise<{ id: string; uri: string }> {
+    const url = `${this.baseUrl}/${this.instagramAccountId}/media`;
+    const body: Record<string, unknown> = {
+      media_type: params.media_type,
+      upload_type: 'resumable',
+      access_token: this.accessToken,
+    };
+
+    if (params.caption) body.caption = params.caption;
+    if (params.is_carousel_item) body.is_carousel_item = true;
+    this.applyOptionalContainerParams(body, params);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      throw new Error(error?.error?.message || 'Failed to create Instagram resumable container');
+    }
+
+    const data = await response.json();
+    if (!data.id || !data.uri) {
+      throw new Error('Instagram did not return a resumable upload URI');
+    }
+
+    return { id: data.id, uri: data.uri };
+  }
+
+  private applyOptionalContainerParams(
+    body: Record<string, unknown>,
+    params: {
+      alt_text?: string;
+      share_to_feed?: boolean;
+      collaborators?: string[];
+      cover_url?: string;
+      audio_name?: string;
+      user_tags?: unknown[];
+      location_id?: string;
+      product_tags?: unknown[];
+      thumb_offset?: number;
+      trial_params?: unknown;
+    }
+  ) {
+    if (params.alt_text) body.alt_text = params.alt_text;
+    if (typeof params.share_to_feed === 'boolean') body.share_to_feed = params.share_to_feed;
+    if (params.collaborators?.length) body.collaborators = params.collaborators.join(',');
+    if (params.cover_url) body.cover_url = params.cover_url;
+    if (params.audio_name) body.audio_name = params.audio_name;
+    if (params.user_tags?.length) body.user_tags = JSON.stringify(params.user_tags);
+    if (params.location_id) body.location_id = params.location_id;
+    if (params.product_tags?.length) body.product_tags = JSON.stringify(params.product_tags);
+    if (typeof params.thumb_offset === 'number') body.thumb_offset = params.thumb_offset;
+    if (params.trial_params) body.trial_params = JSON.stringify(params.trial_params);
+  }
+
+  private async uploadVideoToContainer(uploadUri: string, videoUrl: string): Promise<void> {
+    const videoResponse = await fetch(videoUrl);
+    if (!videoResponse.ok) {
+      throw new Error('Failed to fetch video asset for Instagram upload');
+    }
+
+    const videoBuffer = await videoResponse.arrayBuffer();
+    const uploadResponse = await fetch(uploadUri, {
+      method: 'POST',
+      headers: {
+        Authorization: `OAuth ${this.accessToken}`,
+        offset: '0',
+        file_size: String(videoBuffer.byteLength),
+        'Content-Type': videoResponse.headers.get('content-type') || 'video/mp4',
+      },
+      body: videoBuffer,
+    });
+
+    if (!uploadResponse.ok) {
+      const error = await uploadResponse.json().catch(() => null);
+      throw new Error(
+        error?.error?.message || error?.debug_info?.message || 'Failed to upload video to Instagram'
+      );
+    }
   }
 
   private async waitForContainerReady(

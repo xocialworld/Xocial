@@ -66,7 +66,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
+    const { user, userClient: supabase, serviceClient, workspace } =
+      await requireWorkspaceContext(request);
 
     const body = await request.json();
     const { accountId, commentId, message } = body;

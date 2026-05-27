@@ -59,7 +59,8 @@ export const POST = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
-  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
+  const { user, userClient: supabase, serviceClient, workspace } =
+    await requireWorkspaceContext(request);
   const body = await request.json();
   const { action, commentId, message } = body;
   

@@ -94,7 +94,8 @@ const replySchema = z.object({
 });
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
+  const { user, userClient: supabase, serviceClient, workspace } =
+    await requireWorkspaceContext(request);
   
   // Parse and validate request body
   const body = await request.json();

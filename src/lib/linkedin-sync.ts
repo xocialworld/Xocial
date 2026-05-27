@@ -4,6 +4,7 @@ import {
     getLinkedInAuthorPosts,
     getLinkedInPostStats,
     getLinkedInProfile,
+    hasLinkedInScope,
 } from '@/lib/oauth/linkedin';
 import { logger } from '@/lib/logger';
 import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
@@ -12,6 +13,34 @@ interface SyncResult {
     synced: number;
     errors: number;
     details?: string[];
+}
+
+function getLinkedInAccountType(account: any): 'personal' | 'organization' {
+    return account.metadata?.type === 'organization' ? 'organization' : 'personal';
+}
+
+function hasLinkedInPostReadScope(account: any): boolean {
+    const scopes = account.metadata?.scopes;
+    return getLinkedInAccountType(account) === 'organization'
+        ? hasLinkedInScope(scopes, 'r_organization_social')
+        : hasLinkedInScope(scopes, 'r_member_social');
+}
+
+function hasLinkedInAnalyticsScope(account: any): boolean {
+    const scopes = account.metadata?.scopes;
+    return getLinkedInAccountType(account) === 'organization'
+        ? hasLinkedInScope(scopes, 'r_organization_social')
+        : hasLinkedInScope(scopes, 'r_member_social') ||
+            hasLinkedInScope(scopes, 'r_member_postAnalytics');
+}
+
+function missingScopeMessage(account: any, feature: string): string {
+    const type = getLinkedInAccountType(account);
+    if (type === 'organization') {
+        return `LinkedIn ${feature} requires approved organization read access (r_organization_social).`;
+    }
+
+    return `LinkedIn ${feature} requires approved member read/analytics access (r_member_social or r_member_postAnalytics).`;
 }
 
 export async function syncLinkedInPosts(
@@ -30,6 +59,16 @@ export async function syncLinkedInPosts(
             .single();
 
         if (!account) throw new Error('LinkedIn account not found');
+
+        if (!hasLinkedInPostReadScope(account)) {
+            const detail = missingScopeMessage(account, 'post sync');
+            logger.info('[LinkedIn Sync] Skipping post sync because read scope is unavailable', {
+                accountId,
+                accountType: getLinkedInAccountType(account),
+            });
+            result.details?.push(detail);
+            return result;
+        }
 
         const accessToken = decryptToken(account.access_token);
         const authorUrn =
@@ -128,6 +167,15 @@ export async function syncLinkedInAnalytics(accountId: string): Promise<SyncResu
 
         if (!account) throw new Error('LinkedIn account not found');
 
+        if (!hasLinkedInAnalyticsScope(account)) {
+            const detail = missingScopeMessage(account, 'analytics sync');
+            logger.info('[LinkedIn Analytics Sync] Skipping analytics sync because read scope is unavailable', {
+                accountId,
+                accountType: getLinkedInAccountType(account),
+            });
+            return { ...result, details: [detail] };
+        }
+
         const accessToken = decryptToken(account.access_token);
 
         const { data: posts } = await supabase
@@ -196,6 +244,7 @@ export async function syncLinkedInProfile(accountId: string): Promise<any> {
         if (profile) {
             updates.follower_count = profile.followersCount || account.follower_count;
             updates.metadata = {
+                ...(account.metadata || {}),
                 connections_count: profile.connectionsCount || 0,
             };
         }

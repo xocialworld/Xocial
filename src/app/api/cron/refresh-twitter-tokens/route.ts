@@ -3,7 +3,9 @@ import { createClient } from '@/lib/supabase/server';
 import { refreshTwitterToken } from '@/lib/platforms/twitter';
 import { encryptToken, decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
-import { OAUTH_CONFIG } from '@/lib/oauth/oauth-config';
+import { isTwitterNoSpendMode } from '@/lib/twitter-api-mode';
+
+export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/cron/refresh-twitter-tokens
@@ -18,6 +20,15 @@ export async function GET(request: NextRequest) {
 
         if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        if (isTwitterNoSpendMode()) {
+            logger.info('Twitter token refresh skipped because TWITTER_API_MODE is no-spend');
+            return NextResponse.json({
+                message: 'Twitter token refresh skipped because TWITTER_API_MODE is no-spend',
+                skipped: true,
+                refreshed: 0,
+            });
         }
 
         const supabase = await createClient();

@@ -53,7 +53,7 @@ export class LinkedInClient {
   private headers(contentType = true): HeadersInit {
     return {
       Authorization: `Bearer ${this.accessToken}`,
-      'LinkedIn-Version': LINKEDIN_API_VERSION,
+      'Linkedin-Version': LINKEDIN_API_VERSION,
       'X-Restli-Protocol-Version': '2.0.0',
       ...(contentType ? { 'Content-Type': 'application/json' } : {}),
     };

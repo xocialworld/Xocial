@@ -19,6 +19,7 @@ import {
   Image,
   CheckSquare,
   Settings,
+  Lightbulb,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,6 +47,16 @@ const navigation = [
     description: 'Compose new posts',
     color: 'text-purple-500',
     bgColor: 'bg-purple-500/10',
+  },
+  {
+    name: 'Leverage',
+    shortName: 'L',
+    href: '/l',
+    icon: Lightbulb,
+    shortcut: '⌥L',
+    description: 'Xocial AI strategy',
+    color: 'text-yellow-500',
+    bgColor: 'bg-yellow-500/10',
   },
   {
     name: 'Calendar',

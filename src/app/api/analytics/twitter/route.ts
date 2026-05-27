@@ -9,6 +9,8 @@ import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 import { getTwitterUser } from '@/lib/platforms/twitter';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/analytics/twitter?accountId=xxx&startDate=xxx&endDate=xxx
  * Fetch Twitter analytics data

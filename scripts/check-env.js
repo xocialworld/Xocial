@@ -79,6 +79,21 @@ const OPTIONAL_VARS = [
     description: 'Application URL (defaults to http://localhost:3000)',
     example: 'http://localhost:3000',
   },
+  {
+    name: 'XOCIAL_DEV_ADMIN_EMAILS',
+    description: 'Comma-separated internal dev/admin users who receive plan override access',
+    example: 's.etup.xocial@gmail.com',
+  },
+  {
+    name: 'XOCIAL_DEV_ADMIN_USER_IDS',
+    description: 'Comma-separated internal dev/admin Supabase user IDs who receive plan override access',
+    example: 'e45bfad9-d919-4b82-a7b9-eeac8d02f705',
+  },
+  {
+    name: 'XOCIAL_DEV_ADMIN_PLAN',
+    description: 'Plan applied to configured dev/admin users for plan-gated checks',
+    example: 'enterprise',
+  },
   // OAuth credentials per platform
   { name: 'FACEBOOK_APP_ID', description: 'Meta App ID', example: '123456789012345' },
   { name: 'FACEBOOK_APP_SECRET', description: 'Meta App Secret', example: 'a1b2c3...' },
@@ -119,8 +134,33 @@ const OPTIONAL_VARS = [
   },
   { name: 'TWITTER_CLIENT_ID', description: 'Twitter Client ID', example: 'xxx' },
   { name: 'TWITTER_CLIENT_SECRET', description: 'Twitter Client Secret', example: 'xxx' },
+  {
+    name: 'TWITTER_API_MODE',
+    description: 'Twitter/X API mode: no-spend for setup checks, live after adding X API credits',
+    example: 'no-spend',
+  },
   { name: 'LINKEDIN_CLIENT_ID', description: 'LinkedIn Client ID', example: 'xxx' },
   { name: 'LINKEDIN_CLIENT_SECRET', description: 'LinkedIn Client Secret', example: 'xxx' },
+  {
+    name: 'LINKEDIN_API_VERSION',
+    description: 'LinkedIn Marketing API version header for /rest APIs',
+    example: '202605',
+  },
+  {
+    name: 'LINKEDIN_ENABLE_ORGANIZATION_ACCESS',
+    description: 'Set true only after LinkedIn approves organization/community-management scopes',
+    example: 'false',
+  },
+  {
+    name: 'LINKEDIN_ENABLE_MEMBER_ANALYTICS',
+    description: 'Set true only after LinkedIn approves member read/analytics scopes',
+    example: 'false',
+  },
+  {
+    name: 'LINKEDIN_EXTRA_SCOPES',
+    description: 'Optional space/comma-separated LinkedIn scopes for approved products',
+    example: 'r_member_postAnalytics',
+  },
   { name: 'YOUTUBE_CLIENT_ID', description: 'YouTube Client ID', example: 'xxx' },
   { name: 'YOUTUBE_CLIENT_SECRET', description: 'YouTube Client Secret', example: 'xxx' },
   { name: 'TIKTOK_CLIENT_KEY', description: 'TikTok Client Key', example: 'xxx' },

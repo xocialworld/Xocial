@@ -8,6 +8,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { handleAPIError } from '@/lib/api-middleware';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
+import {
+    isTwitterLiveApiEnabled,
+    TWITTER_CREDITS_REQUIRED_CODE,
+} from '@/lib/twitter-api-mode';
 
 export async function POST(request: NextRequest) {
     try {
@@ -73,7 +77,7 @@ export async function POST(request: NextRequest) {
         if (!replyResult.success) {
             return NextResponse.json(
                 { error: replyResult.error || 'Failed to send reply' },
-                { status: 500 }
+                { status: replyResult.error?.includes(TWITTER_CREDITS_REQUIRED_CODE) ? 402 : 500 }
             );
         }
 
@@ -191,6 +195,13 @@ async function replyToTwitter(
     replyText: string
 ): Promise<{ success: boolean; id?: string; error?: string }> {
     try {
+        if (!isTwitterLiveApiEnabled()) {
+            return {
+                success: false,
+                error: `${TWITTER_CREDITS_REQUIRED_CODE}: X replies require live X API credits. Set TWITTER_API_MODE=live after adding credits.`,
+            };
+        }
+
         const accessToken = account.access_token;
 
         if (!accessToken) {

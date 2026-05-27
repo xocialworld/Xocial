@@ -6,6 +6,8 @@ import {
 } from '@/lib/api-middleware';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
 
+export const dynamic = 'force-dynamic';
+
 export const GET = withErrorHandler(async (request: NextRequest) => {
   const { userClient: supabase, workspace } = await requireWorkspaceContext(request, {
     roles: ['owner', 'admin', 'manager', 'creator', 'analyst'],

@@ -39,20 +39,26 @@ export function useCalendarPosts(start: Date, end: Date) {
   
   // Track subscription to prevent duplicate subscriptions
   const subscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const startYear = start.getFullYear();
+  const startMonth = start.getMonth();
+  const startDay = start.getDate();
+  const endYear = end.getFullYear();
+  const endMonth = end.getMonth();
+  const endDay = end.getDate();
 
   // Memoize date strings to prevent unnecessary re-renders
   // Use date-only comparison for cache keys to improve cache hits
   const startIso = useMemo(() => {
-    const d = new Date(start);
+    const d = new Date(startYear, startMonth, startDay);
     d.setHours(0, 0, 0, 0);
     return d.toISOString();
-  }, [start.getFullYear(), start.getMonth(), start.getDate()]);
+  }, [startDay, startMonth, startYear]);
   
   const endIso = useMemo(() => {
-    const d = new Date(end);
+    const d = new Date(endYear, endMonth, endDay);
     d.setHours(23, 59, 59, 999);
     return d.toISOString();
-  }, [end.getFullYear(), end.getMonth(), end.getDate()]);
+  }, [endDay, endMonth, endYear]);
 
   // Use calendar-specific query key from centralized key factory
   const queryKey = useMemo(() => 

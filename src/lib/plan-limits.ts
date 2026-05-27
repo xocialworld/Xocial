@@ -6,6 +6,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { applyDevAdminPlanOverride } from '@/lib/dev-admin-entitlements';
 
 export interface PlanLimits {
     plan: string;
@@ -104,9 +105,37 @@ export async function getWorkspaceLimits(workspaceId: string): Promise<{
         custom_branding: false,
     };
 
+    const baseLimits = subscription?.plan_limits || defaultLimits;
+    const effectivePlan = applyDevAdminPlanOverride(baseLimits.plan, user || undefined);
+    let effectiveLimits = baseLimits;
+
+    if (effectivePlan !== baseLimits.plan) {
+        const { data: overrideLimits } = await supabase
+            .from('plan_limits')
+            .select('*')
+            .eq('plan', effectivePlan)
+            .maybeSingle();
+
+        effectiveLimits = overrideLimits || {
+            ...defaultLimits,
+            plan: effectivePlan,
+            max_users: effectivePlan === 'enterprise' ? 999 : defaultLimits.max_users,
+            max_workspaces: effectivePlan === 'enterprise' ? 999 : defaultLimits.max_workspaces,
+            max_social_profiles:
+                effectivePlan === 'enterprise' ? 999 : defaultLimits.max_social_profiles,
+            max_scheduled_posts:
+                effectivePlan === 'enterprise' ? null : defaultLimits.max_scheduled_posts,
+            ai_enabled: effectivePlan === 'enterprise' || defaultLimits.ai_enabled,
+            advanced_analytics: effectivePlan === 'enterprise' || defaultLimits.advanced_analytics,
+            approval_workflows: effectivePlan === 'enterprise' || defaultLimits.approval_workflows,
+            engagement_inbox: effectivePlan === 'enterprise' || defaultLimits.engagement_inbox,
+            custom_branding: effectivePlan === 'enterprise' || defaultLimits.custom_branding,
+        };
+    }
+
     return {
         subscription,
-        limits: subscription?.plan_limits || defaultLimits,
+        limits: effectiveLimits,
         usage,
     };
 }

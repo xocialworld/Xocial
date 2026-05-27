@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { withErrorHandler, successResponse, APIError } from '@/lib/api-middleware';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { createFacebookClient } from '@/lib/platforms/facebook';
+import { recordLearningEvent } from '@/lib/intelligence/learning';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +13,8 @@ export const GET = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
-  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
+  const { user, userClient: supabase, serviceClient, workspace } =
+    await requireWorkspaceContext(request);
   const { id: postId } = await params;
   
   // Get post and verify access
@@ -89,6 +91,23 @@ export const POST = withErrorHandler(async (
     case 'reply':
       if (!message) throw new APIError(400, 'Message required for reply');
       result = await client.replyToComment(commentId, message);
+      await recordLearningEvent(serviceClient, {
+        workspaceId: workspace.id,
+        actorUserId: user.id,
+        source: 'user',
+        eventType: 'comment_replied',
+        entityType: 'post',
+        entityId: postId,
+        platform: 'facebook',
+        signalStrength: 0.45,
+        metadata: {
+          postId,
+          accountId: account.id,
+          commentId,
+          action,
+          replyLength: message.length,
+        },
+      });
       break;
       
     case 'hide':

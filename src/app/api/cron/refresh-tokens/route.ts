@@ -17,6 +17,7 @@ import { refreshTwitterToken } from '@/lib/platforms/twitter';
 import { refreshLinkedInToken } from '@/lib/oauth/linkedin';
 import { encryptToken, decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
+import { isTwitterNoSpendMode } from '@/lib/twitter-api-mode';
 
 /**
  * GET /api/cron/refresh-tokens
@@ -118,32 +119,41 @@ export const GET = withCronVerification(async (request: NextRequest) => {
 
           result = { success: true, platform: 'youtube' };
         } else if (account.platform === 'twitter') {
-          const tokenResponse = await refreshTwitterToken(
-            {
-              clientId: process.env.TWITTER_CLIENT_ID!,
-              clientSecret: process.env.TWITTER_CLIENT_SECRET!,
-              redirectUri: '',
-            },
-            decryptToken(account.refresh_token)
-          );
+          if (isTwitterNoSpendMode()) {
+            result = {
+              success: true,
+              platform: 'twitter',
+              skipped: true,
+              reason: 'TWITTER_API_MODE is no-spend',
+            };
+          } else {
+            const tokenResponse = await refreshTwitterToken(
+              {
+                clientId: process.env.TWITTER_CLIENT_ID!,
+                clientSecret: process.env.TWITTER_CLIENT_SECRET!,
+                redirectUri: '',
+              },
+              decryptToken(account.refresh_token)
+            );
 
-          const { error: updateError } = await supabase
-            .from('social_accounts')
-            .update({
-              access_token: encryptToken(tokenResponse.access_token),
-              refresh_token: tokenResponse.refresh_token
-                ? encryptToken(tokenResponse.refresh_token)
-                : account.refresh_token,
-              token_expires_at: new Date(
-                Date.now() + tokenResponse.expires_in * 1000
-              ).toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', account.id);
+            const { error: updateError } = await supabase
+              .from('social_accounts')
+              .update({
+                access_token: encryptToken(tokenResponse.access_token),
+                refresh_token: tokenResponse.refresh_token
+                  ? encryptToken(tokenResponse.refresh_token)
+                  : account.refresh_token,
+                token_expires_at: new Date(
+                  Date.now() + tokenResponse.expires_in * 1000
+                ).toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', account.id);
 
-          if (updateError) throw updateError;
+            if (updateError) throw updateError;
 
-          result = { success: true, platform: 'twitter' };
+            result = { success: true, platform: 'twitter' };
+          }
         } else if (account.platform === 'linkedin') {
           const tokenResponse = await refreshLinkedInToken(
             {

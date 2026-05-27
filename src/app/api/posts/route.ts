@@ -24,6 +24,8 @@ import {
   recordPublishAttempt,
   startJobRun,
 } from '@/lib/observability/job-runs';
+import { recordLearningEvent, recordLearningEvents } from '@/lib/intelligence/learning';
+import { enqueueAgentTask, queuePostIntelligenceTasks } from '@/lib/intelligence/tasks';
 
 /**
  * Validation schemas
@@ -285,6 +287,65 @@ function buildPlatformContentMap(content: ValidatedPostInput['content'], platfor
   );
 }
 
+function stableSerialize(value: unknown) {
+  if (value === undefined) return '';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function valuesDiffer(before: unknown, after: unknown) {
+  return stableSerialize(before ?? null) !== stableSerialize(after ?? null);
+}
+
+function getContentTextMap(content: unknown) {
+  if (!content || typeof content !== 'object') {
+    return {};
+  }
+
+  return Object.entries(content as Record<string, any>).reduce(
+    (acc, [key, value]) => {
+      if (typeof value === 'string') {
+        acc[key] = value;
+      } else if (value && typeof value.text === 'string') {
+        acc[key] = value.text;
+      }
+      return acc;
+    },
+    {} as Record<string, string>
+  );
+}
+
+function getChangedFields(before: Record<string, any>, after: Record<string, any>, patch: Record<string, any>) {
+  const trackedFields = [
+    'content',
+    'platforms',
+    'media',
+    'mediaIds',
+    'tags',
+    'scheduled_at',
+    'campaign_id',
+    'metadata',
+    'status',
+  ];
+
+  return trackedFields.filter((field) =>
+    Object.prototype.hasOwnProperty.call(patch, field) && valuesDiffer(before[field], after[field])
+  );
+}
+
+function getChangedPlatformContent(beforeContent: unknown, afterContent: unknown, platforms: Platform[]) {
+  const before = getContentTextMap(beforeContent);
+  const after = getContentTextMap(afterContent);
+  const candidatePlatforms = Array.from(
+    new Set([...platforms, ...Object.keys(before), ...Object.keys(after)])
+  );
+
+  return candidatePlatforms.filter((platform) => valuesDiffer(before[platform], after[platform]));
+}
+
 function shouldPublishImmediately(input: ValidatedPostInput) {
   return input.status === 'published' && !input.scheduled_at;
 }
@@ -321,12 +382,14 @@ function validateContentForPlatforms(platforms: Platform[], input: ValidatedPost
 
 async function publishImmediately({
   supabase,
+  serviceClient,
   post,
   input,
   platformAccounts,
   userId,
 }: {
   supabase: SupabaseClient;
+  serviceClient: SupabaseClient;
   post: any;
   input: ValidatedPostInput;
   platformAccounts: Partial<Record<Platform, string>>;
@@ -372,6 +435,21 @@ async function publishImmediately({
     jobRunId: jobRun?.id,
     message: 'Publishing started',
     metadata: { platforms },
+  });
+
+  await recordLearningEvent(serviceClient, {
+    workspaceId: post.workspace_id,
+    actorUserId: userId,
+    source: 'publisher',
+    eventType: 'publish_started',
+    entityType: 'post',
+    entityId: post.id,
+    signalStrength: 0.5,
+    metadata: {
+      platforms,
+      jobRunId: jobRun?.id,
+      attemptNo,
+    },
   });
 
   const publishResults = await platformPublisher.publishToAll({
@@ -477,6 +555,57 @@ async function publishImmediately({
       metadata: { results: publishResults },
     });
 
+    await recordLearningEvents(serviceClient, [
+      {
+        workspaceId: post.workspace_id,
+        actorUserId: userId,
+        source: 'publisher',
+        eventType: allSucceeded ? 'publish_succeeded' : 'publish_partial',
+        entityType: 'post',
+        entityId: post.id,
+        signalStrength: allSucceeded ? 1 : 0.65,
+        metadata: {
+          platforms,
+          results: publishResults,
+          status: allSucceeded ? 'published' : 'partial',
+          jobRunId: jobRun?.id,
+          attemptNo,
+        },
+      },
+      {
+        workspaceId: post.workspace_id,
+        actorUserId: userId,
+        source: 'publisher',
+        eventType: 'post_published',
+        entityType: 'post',
+        entityId: post.id,
+        signalStrength: allSucceeded ? 1 : 0.75,
+        metadata: {
+          platforms: publishResults.filter((result) => result.success).map((result) => result.platform),
+          results: publishResults,
+          status: allSucceeded ? 'published' : 'partial',
+          jobRunId: jobRun?.id,
+          attemptNo,
+        },
+      },
+    ]);
+
+    await queuePostIntelligenceTasks(serviceClient, {
+      workspaceId: post.workspace_id,
+      postId: post.id,
+      platforms,
+      reason: allSucceeded ? 'publish_succeeded' : 'publish_partial',
+      priority: 7,
+    });
+    await enqueueAgentTask(serviceClient, {
+      workspaceId: post.workspace_id,
+      agentType: 'performance_analyst',
+      entityType: 'post',
+      entityId: post.id,
+      priority: 4,
+      inputPayload: { trigger: allSucceeded ? 'publish_succeeded' : 'publish_partial', platforms },
+    });
+
     await finishJobRun(supabase, jobRun?.id, {
       status: allSucceeded ? 'succeeded' : 'partial',
       processedCount: publishResults.length,
@@ -546,6 +675,29 @@ async function publishImmediately({
     message: 'Failed to publish to selected platforms',
     errorMessage: errors || 'Failed to publish to selected platforms',
     metadata: { results: publishResults },
+  });
+
+  await recordLearningEvent(serviceClient, {
+    workspaceId: post.workspace_id,
+    actorUserId: userId,
+    source: 'publisher',
+    eventType: 'publish_failed',
+    entityType: 'post',
+    entityId: post.id,
+    signalStrength: 0.2,
+    metadata: {
+      platforms,
+      results: publishResults,
+      errorMessage: errors || 'Failed to publish to selected platforms',
+    },
+  });
+
+  await queuePostIntelligenceTasks(serviceClient, {
+    workspaceId: post.workspace_id,
+    postId: post.id,
+    platforms,
+    reason: 'publish_failed',
+    priority: 5,
   });
 
   await finishJobRun(supabase, jobRun?.id, {
@@ -671,6 +823,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   const {
     user,
     userClient: supabase,
+    serviceClient,
     workspace,
     role,
     limits,
@@ -786,6 +939,63 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     },
   });
 
+  await recordLearningEvent(serviceClient, {
+    workspaceId: workspace.id,
+    actorUserId: user.id,
+    source: 'user',
+    eventType: normalizedData.status === 'scheduled' ? 'post_scheduled' : 'post_created',
+    entityType: 'post',
+    entityId: post.id,
+    signalStrength: normalizedData.status === 'draft' ? 0.5 : 0.8,
+    metadata: {
+      platforms: normalizedData.platforms,
+      scheduledAt: normalizedData.scheduled_at,
+      ai: post.metadata?.ai,
+      mediaCount: normalizedData.media?.length || 0,
+    },
+  });
+
+  await recordLearningEvents(serviceClient, [
+    ...normalizedData.platforms.map((platform) => ({
+      workspaceId: workspace.id,
+      actorUserId: user.id,
+      source: 'user',
+      eventType: 'platform_variant_created' as const,
+      entityType: 'post',
+      entityId: post.id,
+      platform,
+      signalStrength: normalizedData.status === 'draft' ? 0.45 : 0.7,
+      metadata: {
+        platforms: normalizedData.platforms,
+        textLength: normalizedData.content[platform]?.text?.length || 0,
+        ai: post.metadata?.ai,
+      },
+    })),
+    normalizedData.status === 'pending_approval'
+      ? {
+          workspaceId: workspace.id,
+          actorUserId: user.id,
+          source: 'approval',
+          eventType: 'approval_requested' as const,
+          entityType: 'post',
+          entityId: post.id,
+          signalStrength: 0.75,
+          metadata: {
+            platforms: normalizedData.platforms,
+            scheduledAt: normalizedData.scheduled_at,
+          },
+        }
+      : null,
+  ]);
+
+  await queuePostIntelligenceTasks(serviceClient, {
+    workspaceId: workspace.id,
+    postId: post.id,
+    platforms: normalizedData.platforms,
+    reason: normalizedData.status === 'scheduled' ? 'post_scheduled' : 'post_created',
+    priority: normalizedData.status === 'draft' ? 4 : 6,
+  });
+
   // NOTE: Dual-write to content_items/content_variants removed for performance
   // and to maintain single source of truth. The `posts` table is the canonical store.
   // SRS migration can be done as a separate future initiative.
@@ -793,6 +1003,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   if (shouldPublishImmediately(normalizedData)) {
     const updatedPost = await publishImmediately({
       supabase,
+      serviceClient,
       post,
       input: normalizedData,
       platformAccounts: normalizedAccounts,
@@ -824,7 +1035,9 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
     request.headers.get('x-workspace-id');
 
   const {
+    user,
     userClient: workspaceSupabase,
+    serviceClient,
     workspace,
     role,
     limits,
@@ -911,10 +1124,98 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(404, 'Post not found', 'POST_NOT_FOUND');
   }
 
+  const changedFields = getChangedFields(currentPost, post, sanitizedBody);
+  const changedPlatformContent = changedFields.includes('content')
+    ? getChangedPlatformContent(
+        currentPost.content,
+        post.content,
+        ((post.platforms || currentPost.platforms || []) as Platform[])
+      )
+    : [];
+
+  if (changedFields.length > 0) {
+    await recordLearningEvents(serviceClient, [
+      {
+        workspaceId: workspace.id,
+        actorUserId: user.id,
+        source: 'user',
+        eventType: 'post_updated',
+        entityType: 'post',
+        entityId: postId,
+        signalStrength: changedFields.includes('content') ? 0.65 : 0.45,
+        metadata: {
+          changedFields,
+          platforms: post.platforms || currentPost.platforms || [],
+          statusBefore: currentPost.status,
+          statusAfter: post.status,
+        },
+      },
+      changedFields.includes('content')
+        ? {
+            workspaceId: workspace.id,
+            actorUserId: user.id,
+            source: 'user',
+            eventType: 'post_content_edited' as const,
+            entityType: 'post',
+            entityId: postId,
+            signalStrength: 0.7,
+            metadata: {
+              changedFields: ['content'],
+              changedPlatforms: changedPlatformContent,
+              platforms: post.platforms || currentPost.platforms || [],
+            },
+          }
+        : null,
+      ...changedPlatformContent.map((platform) => ({
+        workspaceId: workspace.id,
+        actorUserId: user.id,
+        source: 'user',
+        eventType: 'platform_variant_edited' as const,
+        entityType: 'post',
+        entityId: postId,
+        platform,
+        signalStrength: 0.75,
+        metadata: {
+          changedFields: ['content'],
+          textLength: getContentTextMap(post.content)[platform]?.length || 0,
+        },
+      })),
+      body.status === 'pending_approval' && body.status !== currentPost.status
+        ? {
+            workspaceId: workspace.id,
+            actorUserId: user.id,
+            source: 'approval',
+            eventType: 'approval_requested' as const,
+            entityType: 'post',
+            entityId: postId,
+            signalStrength: 0.75,
+            metadata: {
+              statusBefore: currentPost.status,
+              statusAfter: body.status,
+              platforms: post.platforms || currentPost.platforms || [],
+            },
+          }
+        : null,
+    ]);
+
+    if (
+      changedFields.some((field) => ['content', 'platforms', 'media', 'mediaIds'].includes(field))
+    ) {
+      await queuePostIntelligenceTasks(serviceClient, {
+        workspaceId: workspace.id,
+        postId,
+        platforms: (post.platforms || currentPost.platforms || []) as Platform[],
+        reason: changedFields.includes('content') ? 'post_content_edited' : 'post_updated',
+        priority: changedFields.includes('content') ? 6 : 4,
+      });
+    }
+  }
+
   if (body.status && body.status !== currentPost.status) {
     await recordPostActivity(workspaceSupabase, {
       workspaceId: workspace.id,
       postId,
+      actorUserId: user.id,
       source: 'user',
       eventType: body.status === 'scheduled' ? 'scheduled' : 'status_changed',
       statusBefore: currentPost.status,
@@ -924,6 +1225,34 @@ export const PATCH = withErrorHandler(async (request: NextRequest) => {
           ? `Post scheduled for ${body.scheduled_at || currentPost.scheduled_at}`
           : `Status changed from ${currentPost.status} to ${body.status}`,
       metadata: { scheduledAt: body.scheduled_at || currentPost.scheduled_at },
+    });
+
+    await recordLearningEvent(serviceClient, {
+      workspaceId: workspace.id,
+      actorUserId: user.id,
+      source: 'user',
+      eventType:
+        body.status === 'scheduled'
+          ? 'post_scheduled'
+          : body.status === 'published'
+            ? 'post_published'
+            : 'post_status_changed',
+      entityType: 'post',
+      entityId: postId,
+      signalStrength: body.status === 'scheduled' || body.status === 'published' ? 0.8 : 0.4,
+      metadata: {
+        statusBefore: currentPost.status,
+        statusAfter: body.status,
+        scheduledAt: body.scheduled_at || currentPost.scheduled_at,
+      },
+    });
+
+    await queuePostIntelligenceTasks(serviceClient, {
+      workspaceId: workspace.id,
+      postId,
+      platforms: (body.platforms || currentPost.platforms || []) as Platform[],
+      reason: body.status === 'scheduled' ? 'post_scheduled' : 'post_status_changed',
+      priority: body.status === 'scheduled' || body.status === 'published' ? 6 : 4,
     });
   }
 
@@ -945,10 +1274,22 @@ export const DELETE = withErrorHandler(async (request: NextRequest) => {
     request.nextUrl.searchParams.get('workspaceId') ||
     request.nextUrl.searchParams.get('workspace_id') ||
     request.headers.get('x-workspace-id');
-  const { userClient: workspaceSupabase, workspace } = await requireWorkspaceContext(request, {
+  const {
+    user,
+    userClient: workspaceSupabase,
+    serviceClient,
+    workspace,
+  } = await requireWorkspaceContext(request, {
     workspaceId,
     roles: ['owner', 'admin', 'manager'],
   });
+
+  const { data: currentPost } = await workspaceSupabase
+    .from('posts')
+    .select('id, status, platforms, scheduled_at')
+    .eq('id', postId)
+    .eq('workspace_id', workspace.id)
+    .maybeSingle();
 
   // Delete post
   const { error } = await workspaceSupabase
@@ -960,6 +1301,21 @@ export const DELETE = withErrorHandler(async (request: NextRequest) => {
   if (error) {
     throw new APIError(500, error.message, 'DATABASE_ERROR');
   }
+
+  await recordLearningEvent(serviceClient, {
+    workspaceId: workspace.id,
+    actorUserId: user.id,
+    source: 'user',
+    eventType: 'post_deleted',
+    entityType: 'post',
+    entityId: postId,
+    signalStrength: 0.3,
+    metadata: {
+      statusBefore: currentPost?.status,
+      platforms: currentPost?.platforms || [],
+      scheduledAt: currentPost?.scheduled_at,
+    },
+  });
 
   return successResponse({ message: 'Post deleted successfully' });
 });

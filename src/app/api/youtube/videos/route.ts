@@ -8,6 +8,8 @@ import { getYouTubeChannelVideos } from '@/lib/oauth/youtube';
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/youtube/videos
  * Fetch videos for a YouTube channel

@@ -8,6 +8,7 @@ import {
 import { refreshTwitterToken, type TwitterOAuthConfig } from '@/lib/platforms/twitter';
 import { logger } from '@/lib/logger';
 import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
+import { assertTwitterLiveApiEnabled } from '@/lib/twitter-api-mode';
 
 interface SyncResult {
     synced: number;
@@ -19,6 +20,8 @@ export async function syncTwitterTweets(
     accountId: string,
     options = { maxTweets: 50 }
 ): Promise<SyncResult> {
+    assertTwitterLiveApiEnabled('syncing X posts');
+
     const supabase = await createClient();
     const result: SyncResult = { synced: 0, errors: 0, details: [] };
 
@@ -182,6 +185,8 @@ export async function syncTwitterTweets(
 }
 
 export async function syncTwitterAnalytics(accountId: string): Promise<SyncResult> {
+    assertTwitterLiveApiEnabled('syncing X analytics');
+
     const supabase = await createClient();
     const result: SyncResult = { synced: 0, errors: 0 };
 
@@ -240,6 +245,8 @@ export async function syncTwitterAnalytics(accountId: string): Promise<SyncResul
 }
 
 export async function syncTwitterProfile(accountId: string): Promise<any> {
+    assertTwitterLiveApiEnabled('syncing X profile data');
+
     const supabase = await createClient();
 
     try {
@@ -284,6 +291,8 @@ export async function syncTwitterProfile(accountId: string): Promise<any> {
 }
 
 export async function performFullTwitterSync(accountId: string): Promise<any> {
+    assertTwitterLiveApiEnabled('running full X account sync');
+
     logger.info(`[Twitter Full Sync] Starting for account ${accountId}`);
 
     try {

@@ -4,6 +4,7 @@ import { withCronVerification, cronSuccessResponse, cronErrorResponse } from '@/
 import { getYouTubeVideoStats } from '@/lib/oauth/youtube';
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
+import { recordMetricSnapshotAndOutcome } from '@/lib/intelligence/metrics';
 
 /**
  * GET /api/cron/sync-youtube-analytics
@@ -31,7 +32,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
     // Get all active YouTube accounts
     const { data: accounts, error: fetchError } = await supabase
       .from('social_accounts')
-      .select('id, account_id, account_name, access_token, is_active')
+      .select('id, workspace_id, account_id, account_name, access_token, is_active')
       .eq('platform', 'youtube')
       .eq('is_active', true);
 
@@ -120,6 +121,21 @@ export const GET = withCronVerification(async (request: NextRequest) => {
               logger.error(`[Cron: Sync YouTube Analytics] Failed to upsert analytics for video ${post.external_post_id}`, upsertError);
               totalErrors++;
             } else {
+              await recordMetricSnapshotAndOutcome(supabase, {
+                workspaceId: account.workspace_id,
+                postId: post.id,
+                platformPostId: post.external_post_id,
+                socialAccountId: account.id,
+                platform: 'youtube',
+                metrics: {
+                  ...videoStats.statistics,
+                  views: parseInt(videoStats.statistics?.viewCount || '0'),
+                  likes: parseInt(videoStats.statistics?.likeCount || '0'),
+                  comments: parseInt(videoStats.statistics?.commentCount || '0'),
+                  saves: parseInt(favoriteCount || '0'),
+                },
+                raw: videoStats.statistics || {},
+              });
               totalVideosSynced++;
             }
 
@@ -159,4 +175,3 @@ export const GET = withCronVerification(async (request: NextRequest) => {
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5 minutes for large sync operations
-

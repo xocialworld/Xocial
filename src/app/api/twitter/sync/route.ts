@@ -11,6 +11,10 @@ import {
     syncTwitterProfile,
 } from '@/lib/twitter-sync';
 import { logger } from '@/lib/logger';
+import {
+    isTwitterApiCreditsRequiredError,
+    TWITTER_CREDITS_REQUIRED_CODE,
+} from '@/lib/twitter-api-mode';
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
     const { user } = await requireAuth(request);
@@ -51,6 +55,9 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
         });
     } catch (error: any) {
         logger.error(`[Twitter Sync API] Error:`, error);
+        if (isTwitterApiCreditsRequiredError(error)) {
+            throw new APIError(402, error.message, TWITTER_CREDITS_REQUIRED_CODE);
+        }
         throw new APIError(500, `Sync failed: ${error.message}`, 'SYNC_FAILED');
     }
 });

@@ -60,9 +60,14 @@ export default function PublishToLinkedInPage() {
         try {
             setPosting(true);
 
-            const response = await fetch('/api/linkedin/publish', {
+            if (!selectedWorkspace?.id) {
+                throw new Error('Select a workspace before publishing');
+            }
+
+            const response = await fetchWithWorkspace('/api/linkedin/publish', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                workspaceId: selectedWorkspace.id,
                 body: JSON.stringify({
                     accountId,
                     text: postText,
@@ -72,7 +77,7 @@ export default function PublishToLinkedInPage() {
 
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.error || 'Failed to publish post');
+                throw new Error(error.error?.message || error.error || 'Failed to publish post');
             }
 
             toast.success('Post published successfully!');

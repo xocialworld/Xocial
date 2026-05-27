@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { Button } from "@/components/ui/button";
@@ -350,10 +351,13 @@ export function GridView({
                 >
                   {/* Background / Thumbnail */}
                   {thumbnail ? (
-                    <img
+                    <Image
                       src={thumbnail}
                       alt=""
-                      className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                      fill
+                      sizes="(max-width: 768px) 50vw, 20vw"
+                      className="object-cover transition-transform group-hover:scale-105"
+                      unoptimized
                     />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-secondary-100 to-secondary-200 flex items-center justify-center">
@@ -440,4 +444,3 @@ export function GridView({
     </div>
   );
 }
-

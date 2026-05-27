@@ -7,6 +7,7 @@ import {
   replyToInstagramComment,
 } from '@/lib/oauth/instagram';
 import { decryptToken } from '@/lib/encryption';
+import { recordLearningEvent } from '@/lib/intelligence/learning';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,8 @@ function getConnectedVia(metadata: any): string | undefined {
 
 export async function GET(request: NextRequest) {
   try {
-    const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
+    const { user, userClient: supabase, serviceClient, workspace } =
+      await requireWorkspaceContext(request);
 
     const searchParams = request.nextUrl.searchParams;
     const accountId = searchParams.get('accountId');
@@ -96,6 +98,21 @@ export async function POST(request: NextRequest) {
       message,
       baseUrl
     );
+    await recordLearningEvent(serviceClient, {
+      workspaceId: workspace.id,
+      actorUserId: user.id,
+      source: 'user',
+      eventType: 'comment_replied',
+      entityType: 'comment',
+      entityId: commentId,
+      platform: 'instagram',
+      signalStrength: 0.45,
+      metadata: {
+        accountId,
+        commentId,
+        replyLength: message.length,
+      },
+    });
     return NextResponse.json({ success: true, response });
   } catch (error) {
     return handleAPIError(error);

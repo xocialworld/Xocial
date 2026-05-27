@@ -304,6 +304,82 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
   }
 
   try {
+    const dueAgentTaskCount = await countQuery(
+      serviceClient
+        .from('agent_tasks')
+        .select('id', { count: 'exact', head: true })
+        .eq('workspace_id', workspaceId)
+        .eq('status', 'queued')
+        .lte('scheduled_for', now.toISOString())
+    );
+
+    const staleRunningCutoff = new Date(Date.now() - RECENT_JOB_WINDOW_MS).toISOString();
+    const staleRunningAgentTasks = await countQuery(
+      serviceClient
+        .from('agent_tasks')
+        .select('id', { count: 'exact', head: true })
+        .eq('workspace_id', workspaceId)
+        .eq('status', 'running')
+        .lt('started_at', staleRunningCutoff)
+    );
+
+    const { data: lastAgentTask, error: lastAgentTaskError } = await serviceClient
+      .from('agent_tasks')
+      .select('id, agent_type, status, scheduled_for, started_at, finished_at, error_message')
+      .eq('workspace_id', workspaceId)
+      .in('status', ['succeeded', 'failed'])
+      .order('finished_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lastAgentTaskError && !isSchemaUnavailable(lastAgentTaskError)) {
+      throw lastAgentTaskError;
+    }
+
+    const lastAgentTaskAgeMs = lastAgentTask?.finished_at
+      ? Date.now() - new Date(lastAgentTask.finished_at).getTime()
+      : Number.POSITIVE_INFINITY;
+    const agentWorkerFresh = lastAgentTask && lastAgentTaskAgeMs <= RECENT_JOB_WINDOW_MS;
+    const agentWorkerStatus: ReadinessStatus =
+      staleRunningAgentTasks > 0
+        ? 'warn'
+        : dueAgentTaskCount > 0 && !agentWorkerFresh
+          ? 'fail'
+          : agentWorkerFresh
+            ? 'pass'
+            : 'warn';
+
+    addCheck(
+      checks,
+      'agent_worker',
+      'AI worker runner',
+      agentWorkerStatus,
+      agentWorkerStatus === 'pass'
+        ? `AI workers have run recently; last task ${lastAgentTask?.status || 'finished'}.`
+        : staleRunningAgentTasks > 0
+          ? `${staleRunningAgentTasks} AI worker task${staleRunningAgentTasks === 1 ? '' : 's'} appear stuck in running state.`
+          : dueAgentTaskCount > 0
+            ? `${dueAgentTaskCount} AI worker task${dueAgentTaskCount === 1 ? '' : 's'} are due, but no recent worker completion was recorded.`
+            : 'No recent AI worker completion was recorded. Queue a worker task or run the scheduler to verify.',
+      {
+        dueAgentTaskCount,
+        staleRunningAgentTasks,
+        lastAgentTask,
+      }
+    );
+  } catch (error: any) {
+    addCheck(
+      checks,
+      'agent_worker',
+      'AI worker runner',
+      isSchemaUnavailable(error) ? 'fail' : 'warn',
+      isSchemaUnavailable(error)
+        ? 'AI worker tables are missing. Apply the latest database migration.'
+        : error.message || 'Unable to verify AI worker scheduler health.'
+    );
+  }
+
+  try {
     const failedAttempts = await countQuery(
       serviceClient
         .from('post_publish_attempts')

@@ -8,6 +8,7 @@ import {
 } from './oauth/youtube';
 import { logger } from './logger';
 import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
+import { recordMetricSnapshotAndOutcome } from '@/lib/intelligence/metrics';
 
 export interface YouTubeChannelStats {
     subscriberCount: number;
@@ -340,6 +341,16 @@ export async function syncYouTubeVideos(
                         .upsert(analyticsData, {
                             onConflict: 'post_id,platform,fetched_at',
                         });
+
+                    await recordMetricSnapshotAndOutcome(supabase as any, {
+                        workspaceId: account.workspace_id,
+                        postId,
+                        platformPostId: videoId,
+                        socialAccountId: accountId,
+                        platform: 'youtube',
+                        metrics: analyticsData,
+                        raw: videoStats.statistics || {},
+                    });
                 }
 
                 synced++;
@@ -433,6 +444,16 @@ export async function syncYouTubeAnalytics(accountId: string): Promise<SyncResul
                         .upsert(analyticsData, {
                             onConflict: 'post_id,platform,fetched_at',
                         });
+
+                    await recordMetricSnapshotAndOutcome(supabase as any, {
+                        workspaceId: account.workspace_id,
+                        postId: post.id,
+                        platformPostId: videoId,
+                        socialAccountId: accountId,
+                        platform: 'youtube',
+                        metrics: analyticsData,
+                        raw: videoStats.statistics || {},
+                    });
 
                     synced++;
                 }

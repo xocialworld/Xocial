@@ -12,6 +12,11 @@ import {
 } from '@/lib/platforms/twitter';
 import { verifyOAuthState } from '@/lib/oauth/state-manager';
 import { encryptToken } from '@/lib/encryption';
+import {
+    assertTwitterLiveApiEnabled,
+    isTwitterApiCreditsRequiredError,
+    TWITTER_CREDITS_REQUIRED_CODE,
+} from '@/lib/twitter-api-mode';
 
 /**
  * GET /api/auth/twitter/callback
@@ -102,6 +107,8 @@ export async function GET(request: NextRequest) {
         if (!process.env.ENCRYPTION_KEY) {
             throw new APIError(500, 'Encryption key is not configured', 'CONFIGURATION_ERROR');
         }
+
+        assertTwitterLiveApiEnabled('completing live X OAuth connection');
 
         logger.info('[Twitter OAuth] Exchanging authorization code', {
             redirectUri,
@@ -256,6 +263,12 @@ export async function GET(request: NextRequest) {
 
         if (error instanceof APIError) {
             errorMessage = error.message;
+            if (error.code) {
+                errorUrl.searchParams.set('code', error.code);
+            }
+        } else if (isTwitterApiCreditsRequiredError(error)) {
+            errorMessage = error instanceof Error ? error.message : 'X API credits required';
+            errorUrl.searchParams.set('code', TWITTER_CREDITS_REQUIRED_CODE);
         } else if (error instanceof Error) {
             errorMessage = error.message;
         }

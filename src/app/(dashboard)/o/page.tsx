@@ -8,6 +8,7 @@ import { RescheduleModal } from "./components/reschedule-modal";
 import { EditPostModal } from "./components/edit-post-modal";
 import { GridView } from "./components/grid-view";
 import { WeekView } from "./components/week-view";
+import { CalendarAIPanel } from "./components/calendar-ai-panel";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useCalendarLogic } from "@/hooks/use-calendar-logic";
@@ -22,7 +23,7 @@ import {
   ContentCard,
 } from "@/components/shared/page-components";
 import { statusOptions } from "@/store/calendarFiltersStore";
-import { Calendar, Grid3X3, RefreshCw, Loader2, CalendarDays } from "lucide-react";
+import { Calendar, Grid3X3, RefreshCw, Loader2, CalendarDays, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type ViewMode = 'month' | 'week' | 'grid';
@@ -60,6 +61,7 @@ function OPage() {
   // View mode state (month, week, or grid)
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [gridPlatform, setGridPlatform] = useState<string>('instagram');
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
 
   // Custom hooks to manage logic
   const {
@@ -325,6 +327,15 @@ function OPage() {
           <div className="flex items-center gap-2">
             {/* Manual sync button */}
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAiPanelOpen(true)}
+              className="text-secondary-600 hover:text-secondary-900"
+            >
+              <Sparkles className="h-4 w-4 mr-1.5" />
+              AI Plan
+            </Button>
+            <Button
               variant="ghost"
               size="sm"
               onClick={() => syncMonthRange(currentMonth)}
@@ -418,6 +429,14 @@ function OPage() {
             await updateStatus({ id: postId, status });
             setEditingPost(null);
           }}
+        />
+
+        <CalendarAIPanel
+          open={aiPanelOpen}
+          onOpenChange={setAiPanelOpen}
+          workspaceId={workspaceId}
+          currentMonth={currentMonth}
+          onDraftCreated={refetch}
         />
       </div>
     </ErrorBoundary>

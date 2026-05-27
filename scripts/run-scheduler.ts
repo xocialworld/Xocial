@@ -52,52 +52,58 @@ async function runOnce() {
     throw new Error('CRON_SECRET is required to run the scheduler.');
   }
 
-  const endpoint = `${appUrl.replace(/\/$/, '')}/api/cron/publish`;
+  const baseUrl = appUrl.replace(/\/$/, '');
+  const endpoints = [
+    `${baseUrl}/api/cron/publish`,
+    `${baseUrl}/api/cron/agent-tasks?limit=10`,
+  ];
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 180_000);
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        authorization: `Bearer ${secret}`,
-      },
-      signal: controller.signal,
-    });
-
-    const body = (await response.json().catch(() => ({}))) as SchedulerResponse;
-    const data = body.data || {};
-
-    console.log(
-      JSON.stringify(
-        {
-          at: new Date().toISOString(),
-          endpoint,
-          status: response.status,
-          ok: response.ok,
-          message: data.message || body.error,
-          dueScheduled: data.dueScheduled,
-          processed: data.processed,
-          succeeded: data.succeeded,
-          failed: data.failed,
-          retryScheduled: data.retryScheduled,
-          duration: data.duration,
-          results: data.results?.map((result) => ({
-            postId: result.postId,
-            success: result.success,
-            platforms: result.platforms,
-            errors: result.errors,
-            error: result.error,
-            retryScheduled: result.retryScheduled,
-          })),
+    for (const endpoint of endpoints) {
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          authorization: `Bearer ${secret}`,
         },
-        null,
-        2
-      )
-    );
+        signal: controller.signal,
+      });
 
-    if (!response.ok || body.success === false) {
-      process.exitCode = 1;
+      const body = (await response.json().catch(() => ({}))) as SchedulerResponse;
+      const data = body.data || {};
+
+      console.log(
+        JSON.stringify(
+          {
+            at: new Date().toISOString(),
+            endpoint,
+            status: response.status,
+            ok: response.ok,
+            message: data.message || body.error,
+            dueScheduled: data.dueScheduled,
+            processed: data.processed,
+            succeeded: data.succeeded,
+            failed: data.failed,
+            retryScheduled: data.retryScheduled,
+            duration: data.duration,
+            results: data.results?.map((result) => ({
+              postId: result.postId,
+              success: result.success,
+              platforms: result.platforms,
+              errors: result.errors,
+              error: result.error,
+              retryScheduled: result.retryScheduled,
+            })),
+          },
+          null,
+          2
+        )
+      );
+
+      if (!response.ok || body.success === false) {
+        process.exitCode = 1;
+      }
     }
   } finally {
     clearTimeout(timeout);

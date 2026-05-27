@@ -7,13 +7,15 @@ import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { getYouTubeVideoComments, replyToYouTubeComment } from '@/lib/oauth/youtube';
 import { decryptToken } from '@/lib/encryption';
 import { z } from 'zod';
+import { recordLearningEvent } from '@/lib/intelligence/learning';
 
 /**
  * GET /api/youtube/comments?videoId=xxx&accountId=xxx
  * Fetch comments for a YouTube video
  */
 export const GET = withErrorHandler(async (request: NextRequest) => {
-  const { userClient: supabase, workspace } = await requireWorkspaceContext(request);
+  const { user, userClient: supabase, serviceClient, workspace } =
+    await requireWorkspaceContext(request);
   
   const searchParams = request.nextUrl.searchParams;
   const videoId = searchParams.get('videoId');
@@ -126,6 +128,22 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   try {
     // Reply to comment
     await replyToYouTubeComment(accessToken, commentId, replyText);
+
+    await recordLearningEvent(serviceClient, {
+      workspaceId: workspace.id,
+      actorUserId: user.id,
+      source: 'user',
+      eventType: 'comment_replied',
+      entityType: 'comment',
+      entityId: commentId,
+      platform: 'youtube',
+      signalStrength: 0.45,
+      metadata: {
+        accountId,
+        commentId,
+        replyLength: replyText.length,
+      },
+    });
     
     return NextResponse.json({
       success: true,

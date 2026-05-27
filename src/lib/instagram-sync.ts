@@ -8,6 +8,7 @@ import {
   getInstagramComments,
 } from '@/lib/oauth/instagram';
 import { logger } from '@/lib/logger';
+import { recordMetricSnapshotAndOutcome } from '@/lib/intelligence/metrics';
 import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
 import { upsertSocialComment } from '@/lib/sync/social-comments';
 
@@ -178,6 +179,16 @@ export async function syncInstagramPosts(
               await supabase.from('post_analytics').upsert(analyticsData, {
                 onConflict: 'post_id,platform',
               });
+
+              await recordMetricSnapshotAndOutcome(supabase as any, {
+                workspaceId: account.workspace_id,
+                postId,
+                platformPostId: item.id,
+                socialAccountId: accountId,
+                platform: 'instagram',
+                metrics: analyticsData,
+                raw: { insights, media: item },
+              });
             }
           } catch (insightsError: any) {
             logger.warn(`Failed to fetch insights for post ${item.id}`, { error: insightsError });
@@ -261,6 +272,16 @@ export async function syncInstagramAnalytics(accountId: string): Promise<SyncRes
 
         await supabase.from('post_analytics').upsert(analyticsData, {
           onConflict: 'post_id,platform',
+        });
+
+        await recordMetricSnapshotAndOutcome(supabase as any, {
+          workspaceId: account.workspace_id,
+          postId: post.id,
+          platformPostId: post.external_post_id,
+          socialAccountId: accountId,
+          platform: 'instagram',
+          metrics: analyticsData,
+          raw: { insights },
         });
 
         result.synced++;

@@ -41,6 +41,10 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+    getApprovalReasons,
+    type ApprovalDecision,
+} from "@/lib/intelligence/approval-reasons";
 
 // Types
 type ApprovalStatus = "pending" | "approved" | "rejected";
@@ -99,6 +103,7 @@ async function performApprovalAction(data: {
     step_id?: string;
     action: "approve" | "reject";
     comment?: string;
+    reasonIds?: string[];
 }) {
     const response = await fetch("/api/workflows/approvals", {
         method: "POST",
@@ -117,17 +122,63 @@ function ApprovalCard({
     isLoading,
 }: {
     approval: ApprovalItem;
-    onApprove: (id: string, stepId?: string, comment?: string) => void;
-    onReject: (id: string, stepId?: string, comment?: string) => void;
+    onApprove: (id: string, stepId?: string, comment?: string, reasonIds?: string[]) => void;
+    onReject: (id: string, stepId?: string, comment?: string, reasonIds?: string[]) => void;
     isLoading: boolean;
 }) {
     const [expanded, setExpanded] = useState(false);
     const [comment, setComment] = useState("");
+    const [approveReasonIds, setApproveReasonIds] = useState<string[]>([]);
+    const [rejectReasonIds, setRejectReasonIds] = useState<string[]>([]);
 
     const contentText =
         approval.post?.content?.text ||
         approval.post?.content?.default?.text ||
         "No content preview";
+
+    const toggleReason = (decision: ApprovalDecision, reasonId: string) => {
+        const setter = decision === "approve" ? setApproveReasonIds : setRejectReasonIds;
+        setter((current) =>
+            current.includes(reasonId)
+                ? current.filter((item) => item !== reasonId)
+                : [...current, reasonId]
+        );
+    };
+    const selectedReasonCount = approveReasonIds.length + rejectReasonIds.length;
+
+    const renderReasonGroup = (decision: ApprovalDecision) => {
+        const reasons = getApprovalReasons(decision);
+        const selected = decision === "approve" ? approveReasonIds : rejectReasonIds;
+        return (
+            <div>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-secondary-500">
+                    {decision === "approve" ? "Approval signals" : "Revision reasons"}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                    {reasons.map((reason) => {
+                        const active = selected.includes(reason.id);
+                        return (
+                            <button
+                                key={reason.id}
+                                type="button"
+                                onClick={() => toggleReason(decision, reason.id)}
+                                className={cn(
+                                    "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                                    active && decision === "approve"
+                                        ? "border-green-300 bg-green-50 text-green-700"
+                                        : active
+                                          ? "border-red-300 bg-red-50 text-red-700"
+                                          : "border-secondary-200 bg-white text-secondary-600 hover:border-secondary-300"
+                                )}
+                            >
+                                {reason.label}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    };
 
     return (
         <Card className="bg-white hover:shadow-md transition-shadow">
@@ -212,23 +263,35 @@ function ApprovalCard({
                     </div>
                 )}
 
-                {/* Expandable comment section */}
+                {/* Expandable learning feedback section */}
                 <button
                     onClick={() => setExpanded(!expanded)}
                     className="flex items-center gap-1 text-xs text-secondary-500 hover:text-secondary-700 mb-3"
                 >
                     <MessageSquare className="h-3 w-3" />
-                    Add comment
+                    Feedback for Xocial AI
+                    {selectedReasonCount > 0 && (
+                        <Badge variant="secondary" className="ml-1 text-[10px]">
+                            {selectedReasonCount}
+                        </Badge>
+                    )}
                     {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                 </button>
 
                 {expanded && (
-                    <Textarea
-                        placeholder="Add a comment (optional)..."
-                        value={comment}
-                        onChange={(e) => setComment(e.target.value)}
-                        className="mb-3 min-h-[60px] text-sm"
-                    />
+                    <div className="mb-3 space-y-4 rounded-lg border border-secondary-200 bg-secondary-50/70 p-3">
+                        <p className="text-xs leading-relaxed text-secondary-500">
+                            These tags teach Brand Brain why content was approved or rejected.
+                        </p>
+                        {renderReasonGroup("approve")}
+                        {renderReasonGroup("reject")}
+                        <Textarea
+                            placeholder="Add specific feedback for the creator or client preference notes..."
+                            value={comment}
+                            onChange={(e) => setComment(e.target.value)}
+                            className="min-h-[68px] bg-white text-sm"
+                        />
+                    </div>
                 )}
 
                 {/* Actions */}
@@ -237,7 +300,7 @@ function ApprovalCard({
                         variant="outline"
                         size="sm"
                         className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
-                        onClick={() => onReject(approval.id, approval.step?.id, comment)}
+                        onClick={() => onReject(approval.id, approval.step?.id, comment, rejectReasonIds)}
                         disabled={isLoading}
                     >
                         <X className="h-4 w-4 mr-1" />
@@ -246,7 +309,7 @@ function ApprovalCard({
                     <Button
                         size="sm"
                         className="flex-1 bg-green-600 hover:bg-green-700"
-                        onClick={() => onApprove(approval.id, approval.step?.id, comment)}
+                        onClick={() => onApprove(approval.id, approval.step?.id, comment, approveReasonIds)}
                         disabled={isLoading}
                     >
                         <Check className="h-4 w-4 mr-1" />
@@ -285,21 +348,23 @@ export function ApprovalsBoard() {
         },
     });
 
-    const handleApprove = (id: string, stepId?: string, comment?: string) => {
+    const handleApprove = (id: string, stepId?: string, comment?: string, reasonIds?: string[]) => {
         actionMutation.mutate({
             instance_id: id,
             step_id: stepId,
             action: "approve",
-            comment: comment || "Approved via dashboard",
+            comment: comment || "",
+            reasonIds,
         });
     };
 
-    const handleReject = (id: string, stepId?: string, comment?: string) => {
+    const handleReject = (id: string, stepId?: string, comment?: string, reasonIds?: string[]) => {
         actionMutation.mutate({
             instance_id: id,
             step_id: stepId,
             action: "reject",
-            comment: comment || "Rejected via dashboard",
+            comment: comment || "",
+            reasonIds,
         });
     };
 

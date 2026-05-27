@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { OAUTH_CONFIG } from '@/lib/oauth/oauth-config';
+import { getTwitterApiModeSummary } from '@/lib/twitter-api-mode';
 
 /**
  * GET /api/auth/twitter/debug
@@ -13,6 +14,7 @@ import { OAUTH_CONFIG } from '@/lib/oauth/oauth-config';
 export async function GET(request: NextRequest) {
     const origin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin || 'http://localhost:3000';
     const callbackUrl = `${origin}/api/auth/twitter/callback`;
+    const apiMode = getTwitterApiModeSummary(origin);
 
     const hasClientId = !!process.env.TWITTER_CLIENT_ID;
     const hasClientSecret = !!process.env.TWITTER_CLIENT_SECRET;
@@ -41,6 +43,16 @@ export async function GET(request: NextRequest) {
             userEndpoint: OAUTH_CONFIG.twitter.endpoints.user,
             scopes: OAUTH_CONFIG.twitter.scopes,
         },
+        xApiMode: {
+            ...apiMode,
+            developmentDefault:
+                'In development, Xocial defaults to no-spend mode unless TWITTER_API_MODE=live is set.',
+            noSpendBehavior: [
+                'OAuth URL generation stays enabled for setup checks.',
+                'Live connect, publish, sync, analytics, and token refresh calls are blocked.',
+                'Switch to TWITTER_API_MODE=live only after adding X API credits.',
+            ],
+        },
         callback: {
             url: callbackUrl,
             instructions: [
@@ -50,7 +62,8 @@ export async function GET(request: NextRequest) {
                 '3. Click "Settings" or "User authentication settings"',
                 '4. Under "Callback URI / Redirect URL", add: ' + callbackUrl,
                 '5. Make sure OAuth 2.0 is enabled',
-                '6. Required scopes: tweet.read, tweet.write, users.read, offline.access',
+                '6. For local development, prefer http://127.0.0.1:3000/api/auth/twitter/callback',
+                '7. Required scopes: tweet.read, tweet.write, users.read, offline.access, media.write',
             ],
         },
         troubleshooting: {

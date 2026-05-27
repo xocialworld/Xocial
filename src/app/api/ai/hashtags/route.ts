@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
   validateRequest,
   APIError,
@@ -10,6 +9,8 @@ import {
 import { generateHashtags } from '@/lib/openai';
 import { logger } from '@/lib/logger';
 import { z } from 'zod';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
+import { recordAIModelRun, recordLearningEvent } from '@/lib/intelligence/learning';
 
 /**
  * Validation schema for hashtag generation
@@ -25,7 +26,10 @@ const hashtagSchema = z.object({
  * Generate relevant hashtags for content
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user } = await requireAuth(request);
+  const { user, workspace, serviceClient } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager', 'creator'],
+    allowOnboardingFallback: true,
+  });
   const startTime = Date.now();
 
   // Validate request
@@ -44,12 +48,47 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     validatedData.count
   );
 
+  const totalDuration = Date.now() - startTime;
+  const modelRun = await recordAIModelRun(serviceClient, {
+    workspaceId: workspace.id,
+    userId: user.id,
+    feature: 'hashtag_generation',
+    promptVersion: 'create.hashtags.v1',
+    inputPayload: {
+      content: validatedData.content,
+      platform: validatedData.platform,
+      count: validatedData.count,
+    },
+    outputPayload: {
+      hashtags,
+    },
+    status: 'succeeded',
+    latencyMs: totalDuration,
+    entityType: 'hashtag_generation',
+  });
+
+  await recordLearningEvent(serviceClient, {
+    workspaceId: workspace.id,
+    actorUserId: user.id,
+    source: 'xocial_ai',
+    eventType: 'hashtag_generated',
+    entityType: 'hashtag_generation',
+    entityId: modelRun?.id ?? null,
+    platform: validatedData.platform,
+    signalStrength: 0.55,
+    metadata: {
+      modelRunId: modelRun?.id,
+      count: hashtags.length,
+      requestedCount: validatedData.count,
+      contentLength: validatedData.content.length,
+    },
+  });
+
   const response = successResponse({
     hashtags,
     count: hashtags.length,
   });
 
-  const totalDuration = Date.now() - startTime;
   logger.trackAPIRequest('POST', '/api/ai/hashtags', 200, totalDuration, {
     userId: user.id,
     metadata: { platform: validatedData.platform, count: validatedData.count },
@@ -57,4 +96,3 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 
   return response;
 });
-

@@ -15,7 +15,13 @@ import {
   successResponse,
   APIError,
 } from '@/lib/api-middleware';
-import { decryptToken, encryptToken } from '@/lib/encryption';
+import { decryptToken } from '@/lib/encryption';
+import {
+  assertTwitterLiveApiEnabled,
+  isTwitterApiCreditsRequiredError,
+  looksLikeTwitterBillingError,
+  TWITTER_CREDITS_REQUIRED_CODE,
+} from '@/lib/twitter-api-mode';
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
   const { user, supabase } = await requireAuth(request);
@@ -147,6 +153,9 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   } catch (error) {
     console.error('Range sync error:', error);
     const message = error instanceof Error ? error.message : String(error);
+    if (platform === 'twitter' && isTwitterApiCreditsRequiredError(error)) {
+      throw new APIError(402, message, TWITTER_CREDITS_REQUIRED_CODE);
+    }
     throw new APIError(500, 'Failed to sync posts: ' + message);
   }
 });
@@ -290,6 +299,8 @@ async function syncTwitterRange(
   fromDate: Date,
   toDate: Date
 ): Promise<RangeSyncResult> {
+  assertTwitterLiveApiEnabled('syncing X posts by date range');
+
   const result: RangeSyncResult = { synced: 0, errors: 0, details: [] };
 
   try {
@@ -312,7 +323,18 @@ async function syncTwitterRange(
     });
 
     if (!tweetsRes.ok) {
-      const errorData = await tweetsRes.json().catch(() => ({}));
+      const errorText = await tweetsRes.text();
+      let detail = errorText || `Twitter fetch failed: ${tweetsRes.status}`;
+
+      try {
+        const errorData = JSON.parse(errorText);
+        detail = errorData.detail || errorData.title || errorData.errors?.[0]?.message || detail;
+      } catch { }
+
+      if (looksLikeTwitterBillingError(detail, tweetsRes.status)) {
+        throw new APIError(402, `X API credits required: ${detail}`, TWITTER_CREDITS_REQUIRED_CODE);
+      }
+
       // Check for rate limit
       if (tweetsRes.status === 429) {
         result.details.push('[Twitter] Rate limited - try again later');

@@ -8,6 +8,8 @@ import { getYouTubeChannelStats, getYouTubeChannelVideos } from '@/lib/oauth/you
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/youtube/channel
  * Fetch YouTube channel information and recent videos

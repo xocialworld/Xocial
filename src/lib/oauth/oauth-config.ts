@@ -82,13 +82,6 @@ export const OAUTH_CONFIG: Record<
       'profile',
       'email',
       'w_member_social',
-      'r_member_postAnalytics',
-      'r_organization_social',
-      'w_organization_social',
-      'rw_organization_admin',
-      'r_organization_social_feed',
-      'w_member_social_feed',
-      'w_organization_social_feed',
     ],
     endpoints: {
       auth: 'https://www.linkedin.com/oauth/v2/authorization',

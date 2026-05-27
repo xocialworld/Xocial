@@ -49,10 +49,76 @@ export interface LinkedInOrganization {
   };
 }
 
+function envFlagEnabled(value: string | undefined): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function parseScopeList(value: string | undefined): string[] {
+  return String(value || '')
+    .split(/[\s,]+/)
+    .map((scope) => scope.trim())
+    .filter(Boolean);
+}
+
+function uniqueScopes(scopes: string[]): string[] {
+  return Array.from(new Set(scopes));
+}
+
+export function getLinkedInScopes(env: NodeJS.ProcessEnv = process.env): string[] {
+  const scopes = [...OAUTH_CONFIG.linkedin.scopes];
+
+  if (envFlagEnabled(env.LINKEDIN_ENABLE_ORGANIZATION_ACCESS)) {
+    scopes.push('rw_organization_admin', 'r_organization_social', 'w_organization_social');
+  }
+
+  if (envFlagEnabled(env.LINKEDIN_ENABLE_MEMBER_ANALYTICS)) {
+    scopes.push('r_member_social', 'r_member_postAnalytics');
+  }
+
+  scopes.push(...parseScopeList(env.LINKEDIN_EXTRA_SCOPES));
+
+  return uniqueScopes(scopes);
+}
+
+export function parseLinkedInScopes(scopes: string | string[] | null | undefined): string[] {
+  if (Array.isArray(scopes)) {
+    return uniqueScopes(scopes.flatMap((scope) => parseScopeList(scope)));
+  }
+
+  return uniqueScopes(parseScopeList(scopes || undefined));
+}
+
+export function hasLinkedInScope(
+  scopes: string | string[] | null | undefined,
+  scope: string
+): boolean {
+  return parseLinkedInScopes(scopes).includes(scope);
+}
+
+export function hasLinkedInOrganizationAccess(scopes: string | string[] | null | undefined) {
+  const parsed = parseLinkedInScopes(scopes);
+  return (
+    parsed.includes('rw_organization_admin') &&
+    (parsed.includes('r_organization_social') || parsed.includes('w_organization_social'))
+  );
+}
+
+export function hasLinkedInReadAccess(
+  scopes: string | string[] | null | undefined,
+  accountType: 'personal' | 'organization'
+) {
+  const parsed = parseLinkedInScopes(scopes);
+  if (accountType === 'organization') {
+    return parsed.includes('r_organization_social');
+  }
+
+  return parsed.includes('r_member_social') || parsed.includes('r_member_postAnalytics');
+}
+
 function linkedInRestHeaders(accessToken: string, contentType = false): HeadersInit {
   return {
     Authorization: `Bearer ${accessToken}`,
-    'LinkedIn-Version': LINKEDIN_MARKETING_API_VERSION,
+    'Linkedin-Version': LINKEDIN_MARKETING_API_VERSION,
     'X-Restli-Protocol-Version': '2.0.0',
     ...(contentType ? { 'Content-Type': 'application/json' } : {}),
   };
@@ -115,14 +181,15 @@ export async function getLinkedInUserPosts(
  */
 export function getLinkedInAuthUrl(
   config: LinkedInOAuthConfig,
-  state: string
+  state: string,
+  env: NodeJS.ProcessEnv = process.env
 ): string {
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     state,
-    scope: OAUTH_CONFIG.linkedin.scopes.join(' '),
+    scope: getLinkedInScopes(env).join(' '),
   });
 
   return `https://www.linkedin.com/oauth/v2/authorization?${params.toString()}`;

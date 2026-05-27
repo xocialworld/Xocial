@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withErrorHandler, requireAuth, APIError } from '@/lib/api-middleware';
-import { createClient } from '@/lib/supabase/server';
 import { decryptToken } from '@/lib/encryption';
+import {
+    assertTwitterLiveApiEnabled,
+    isTwitterApiCreditsRequiredError,
+    looksLikeTwitterBillingError,
+    TWITTER_CREDITS_REQUIRED_CODE,
+} from '@/lib/twitter-api-mode';
 
 export const GET = withErrorHandler(async (request: NextRequest) => {
     const { user, supabase } = await requireAuth(request);
@@ -38,6 +43,20 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         throw new APIError(403, 'You do not have access to this account', 'FORBIDDEN');
     }
 
+    try {
+        assertTwitterLiveApiEnabled('fetching X account stats');
+    } catch (error) {
+        if (isTwitterApiCreditsRequiredError(error)) {
+            throw new APIError(
+                402,
+                error instanceof Error ? error.message : 'X API credits required',
+                TWITTER_CREDITS_REQUIRED_CODE
+            );
+        }
+
+        throw error;
+    }
+
     const accessToken = decryptToken(account.access_token);
     const twitterUserId = account.account_id;
 
@@ -53,8 +72,19 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     });
 
     if (!response.ok) {
-        const err = await response.json();
-        throw new APIError(500, err.detail || 'Failed to fetch Twitter stats', 'TWITTER_API_ERROR');
+        const errorText = await response.text();
+        let detail = errorText || 'Failed to fetch Twitter stats';
+
+        try {
+            const err = JSON.parse(errorText);
+            detail = err.detail || err.title || err.errors?.[0]?.message || detail;
+        } catch { }
+
+        if (looksLikeTwitterBillingError(detail, response.status)) {
+            throw new APIError(402, `X API credits required: ${detail}`, TWITTER_CREDITS_REQUIRED_CODE);
+        }
+
+        throw new APIError(500, detail, 'TWITTER_API_ERROR');
     }
 
     const data = await response.json();

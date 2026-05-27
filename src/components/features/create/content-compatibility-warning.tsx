@@ -1,10 +1,10 @@
 'use client';
 
 import { useMemo } from 'react';
-import { AlertTriangle, X, Info, Twitter } from 'lucide-react';
+import { AlertTriangle, X, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Platform, MediaFile } from '@/types';
-import { getCompatiblePlatforms, PLATFORM_CAPABILITIES } from '@/lib/platforms/capabilities';
+import { getCompatiblePlatforms } from '@/lib/platforms/capabilities';
 
 interface ContentCompatibilityWarningProps {
     selectedPlatforms: Platform[];
@@ -21,12 +21,8 @@ export function ContentCompatibilityWarning({
 }: ContentCompatibilityWarningProps) {
     const hasImages = media.some(m => m.type === 'image');
     const hasVideos = media.some(m => m.type === 'video');
-    const hasMedia = hasImages || hasVideos;
     const imageCount = media.filter(m => m.type === 'image').length;
     const videoCount = media.filter(m => m.type === 'video').length;
-
-    // Check if Twitter is selected with media
-    const isTwitterSelectedWithMedia = selectedPlatforms.includes('twitter') && hasMedia;
 
     const { incompatible } = useMemo(() => {
         return getCompatiblePlatforms(selectedPlatforms, {
@@ -39,44 +35,12 @@ export function ContentCompatibilityWarning({
     }, [selectedPlatforms, hasText, hasImages, hasVideos, imageCount, videoCount]);
 
     // Show nothing if no warnings needed
-    if (incompatible.length === 0 && !isTwitterSelectedWithMedia) {
+    if (incompatible.length === 0) {
         return null;
     }
 
     return (
         <div className="space-y-3">
-            {/* Twitter Media Warning Banner */}
-            {isTwitterSelectedWithMedia && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-                    <div className="flex items-start gap-3">
-                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                            <Twitter className="h-4 w-4 text-blue-600" />
-                        </div>
-                        <div className="flex-1">
-                            <h4 className="font-medium text-blue-800">
-                                Twitter Media Notice
-                            </h4>
-                            <p className="text-sm text-blue-700 mt-1">
-                                <strong>Media will not be posted to Twitter.</strong> Your text will be posted, but images/videos
-                                won&apos;t be included due to Twitter API limitations. To include media, please post manually through the Twitter app.
-                            </p>
-                            <p className="text-xs text-blue-600 mt-2">
-                                This is a temporary limitation. Twitter is updating their API (expected Q1 2025).
-                            </p>
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onRemovePlatform('twitter')}
-                            className="flex-shrink-0 border-blue-300 text-blue-700 hover:bg-blue-100 hover:text-blue-800"
-                        >
-                            <X className="h-4 w-4 mr-1" />
-                            Remove Twitter
-                        </Button>
-                    </div>
-                </div>
-            )}
-
             {/* Incompatible Platforms Warning */}
             {incompatible.length > 0 && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3">
@@ -179,4 +143,3 @@ function getPlatformGuidance(
             return null;
     }
 }
-

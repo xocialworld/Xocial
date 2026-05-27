@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { MediaAsset } from "@/hooks/use-media-assets";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
@@ -46,7 +47,14 @@ export function PlatformPreview({ content, media, platform, user }: PlatformPrev
                         media[0].file_type === 'video' || media[0].mime_type.startsWith('video/') ? (
                             <video src={media[0].url} className="w-full h-full object-cover" controls />
                         ) : (
-                            <img src={media[0].url} alt="Post content" className="w-full h-full object-cover" />
+                            <Image
+                                src={media[0].url}
+                                alt="Post content"
+                                fill
+                                sizes="375px"
+                                className="object-cover"
+                                unoptimized
+                            />
                         )
                     ) : (
                         <div className="text-gray-400 text-xs">No media</div>
@@ -112,7 +120,18 @@ export function PlatformPreview({ content, media, platform, user }: PlatformPrev
                                 {m.file_type === 'video' || m.mime_type.startsWith('video/') ? (
                                     <video src={m.url} className="w-full h-full object-cover" />
                                 ) : (
-                                    <img src={m.url} alt="Post content" className="w-full h-full object-cover" />
+                                    <Image
+                                        src={m.url}
+                                        alt="Post content"
+                                        width={800}
+                                        height={800}
+                                        sizes={media.length === 1 ? "500px" : "250px"}
+                                        className={cn(
+                                            "object-cover",
+                                            media.length === 1 ? "h-auto max-h-[500px] w-full" : "h-full w-full"
+                                        )}
+                                        unoptimized
+                                    />
                                 )}
                                 {i === 3 && media.length > 4 && (
                                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xl font-bold">
@@ -185,7 +204,15 @@ export function PlatformPreview({ content, media, platform, user }: PlatformPrev
                         {media[0].file_type === 'video' || media[0].mime_type.startsWith('video/') ? (
                             <video src={media[0].url} className="w-full h-auto max-h-[500px] object-contain bg-black" controls />
                         ) : (
-                            <img src={media[0].url} alt="Post content" className="w-full h-auto max-h-[500px] object-cover" />
+                            <Image
+                                src={media[0].url}
+                                alt="Post content"
+                                width={800}
+                                height={800}
+                                sizes="500px"
+                                className="h-auto max-h-[500px] w-full object-cover"
+                                unoptimized
+                            />
                         )}
                         {media.length > 1 && (
                             <div className="p-2 bg-gray-100 text-xs text-gray-500 text-center">

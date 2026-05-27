@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import {
   withErrorHandler,
-  requireAuth,
   successResponse,
   validateRequest,
   APIError,
@@ -10,6 +9,8 @@ import {
 import { refineContent } from '@/lib/openai';
 import { logger } from '@/lib/logger';
 import { z } from 'zod';
+import { requireWorkspaceContext } from '@/lib/workspace-context';
+import { recordAIModelRun, recordLearningEvent } from '@/lib/intelligence/learning';
 
 /**
  * Validation schema for content refinement
@@ -42,7 +43,10 @@ const refineSchema = z.object({
  * Refine existing content with specific improvements
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user } = await requireAuth(request);
+  const { user, workspace, serviceClient } = await requireWorkspaceContext(request, {
+    roles: ['owner', 'admin', 'manager', 'creator'],
+    allowOnboardingFallback: true,
+  });
   const startTime = Date.now();
 
   // Validate request
@@ -62,6 +66,44 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     validatedData.customInstruction
   );
 
+  const totalDuration = Date.now() - startTime;
+  const modelRun = await recordAIModelRun(serviceClient, {
+    workspaceId: workspace.id,
+    userId: user.id,
+    feature: 'content_refinement',
+    promptVersion: 'create.refine.v1',
+    inputPayload: {
+      content: validatedData.content,
+      platform: validatedData.platform,
+      refinementType: validatedData.refinementType,
+      customInstruction: validatedData.customInstruction,
+    },
+    outputPayload: {
+      text: refinedText,
+    },
+    status: 'succeeded',
+    latencyMs: totalDuration,
+    entityType: 'ai_refinement',
+  });
+
+  await recordLearningEvent(serviceClient, {
+    workspaceId: workspace.id,
+    actorUserId: user.id,
+    source: 'xocial_ai',
+    eventType: 'ai_regenerated',
+    entityType: 'ai_refinement',
+    entityId: modelRun?.id ?? null,
+    platform: validatedData.platform,
+    signalStrength: 0.65,
+    metadata: {
+      modelRunId: modelRun?.id,
+      refinementType: validatedData.refinementType,
+      customInstruction: validatedData.customInstruction,
+      contentLength: validatedData.content.length,
+      outputLength: refinedText.length,
+    },
+  });
+
   logger.ai('ai_refine', {
     userId: user.id,
     metadata: {
@@ -76,7 +118,6 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     refinementType: validatedData.refinementType,
   });
 
-  const totalDuration = Date.now() - startTime;
   logger.trackAPIRequest('POST', '/api/ai/refine', 200, totalDuration, {
     userId: user.id,
     metadata: { platform: validatedData.platform, type: validatedData.refinementType },

@@ -8,6 +8,8 @@ import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/analytics/youtube?accountId=xxx&startDate=xxx&endDate=xxx&videoId=xxx
  * Fetch YouTube analytics data

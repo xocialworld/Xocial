@@ -24,8 +24,8 @@ export async function GET(request: NextRequest) {
     call('/api/cron/refresh-youtube-tokens'),
     call('/api/cron/sync-youtube-analytics'),
     call('/api/cron/refresh-tokens'),
+    call('/api/cron/agent-tasks?limit=10'),
   ]);
 
   return NextResponse.json({ success: true, results, timestamp: new Date().toISOString() });
 }
-

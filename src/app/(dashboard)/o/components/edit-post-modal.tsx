@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -196,7 +197,14 @@ export function EditPostModal({ post, isOpen, onClose, onSave, onUpdateStatus }:
                                                     {media.file_type === 'video' || media.mime_type?.startsWith('video/') ? (
                                                         <video src={media.url} className="w-full h-full object-cover" />
                                                     ) : (
-                                                        <img src={media.url} alt="media" className="w-full h-full object-cover" />
+                                                        <Image
+                                                            src={media.url}
+                                                            alt="media"
+                                                            fill
+                                                            sizes="96px"
+                                                            className="object-cover"
+                                                            unoptimized
+                                                        />
                                                     )}
                                                     <button
                                                         onClick={() => setSelectedMedia(prev => prev.filter(p => p.id !== media.id))}

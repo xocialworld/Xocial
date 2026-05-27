@@ -7,6 +7,8 @@ import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/youtube/analytics
  * Fetch detailed YouTube Analytics for a video or channel

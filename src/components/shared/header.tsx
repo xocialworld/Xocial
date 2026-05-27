@@ -120,7 +120,7 @@ export function Header({ user }: HeaderProps) {
             size="sm"
             className="hidden md:flex gap-1.5 h-8 px-2.5 text-secondary-600 hover:text-primary-600 hover:bg-primary-50"
           >
-            <Link href="/c">
+            <Link href="/l">
               <Sparkles className="h-4 w-4" />
               <span className="text-xs font-medium">AI</span>
             </Link>

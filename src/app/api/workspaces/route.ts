@@ -9,6 +9,7 @@ import {
   getUserWorkspace,
 } from '@/lib/api-middleware';
 import { ensureAccountForUser, enforceLimit } from '@/lib/workspace-context';
+import { applyDevAdminPlanOverride, pickHighestPlan } from '@/lib/dev-admin-entitlements';
 import { slugify } from '@/lib/utils';
 import { createWorkspaceSchema } from '@/lib/validations';
 
@@ -31,13 +32,6 @@ type WorkspaceScope = {
   workspaces: WorkspaceRow[];
 };
 
-const PLAN_PRIORITY: Record<string, number> = {
-  free: 0,
-  pro: 1,
-  growth: 2,
-  enterprise: 3,
-};
-
 export const dynamic = 'force-dynamic';
 
 function isMissingSchemaError(error: any) {
@@ -53,37 +47,6 @@ function isMissingSchemaError(error: any) {
     message.includes('column workspaces.account_id does not exist') ||
     message.includes('column subscriptions.account_id does not exist')
   );
-}
-
-function getConfiguredTestPlan(userId: string) {
-  if (process.env.NODE_ENV !== 'production') {
-    return process.env.XOCIAL_TEST_SUBSCRIPTION_PLAN || 'enterprise';
-  }
-
-  const configuredUserIds = (process.env.XOCIAL_TEST_SUBSCRIPTION_USER_IDS || '')
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-
-  if (configuredUserIds.includes(userId)) {
-    return process.env.XOCIAL_TEST_SUBSCRIPTION_PLAN || 'enterprise';
-  }
-
-  return null;
-}
-
-function rankPlan(plan?: string | null) {
-  return PLAN_PRIORITY[plan || 'free'] ?? 0;
-}
-
-function pickHighestPlan(plans: Array<string | null | undefined>): string {
-  let best = 'free';
-  plans.forEach((plan) => {
-    if (rankPlan(plan) > rankPlan(best)) {
-      best = plan || best;
-    }
-  });
-  return best;
 }
 
 async function getWorkspaceScope(
@@ -140,10 +103,34 @@ async function getPlanLimitsByName(serviceClient: ReturnType<typeof createServic
   return new Map((data ?? []).map((limit: any) => [limit.plan, limit]));
 }
 
+function getFallbackPlanLimits(plan: string) {
+  if (plan === 'enterprise') {
+    return {
+      plan,
+      max_workspaces: 999,
+      max_social_profiles: 999,
+      max_users: 999,
+      max_scheduled_posts: null,
+      ai_enabled: true,
+      advanced_analytics: true,
+      approval_workflows: true,
+      engagement_inbox: true,
+      custom_branding: true,
+    };
+  }
+
+  return {
+    plan,
+    max_workspaces: 1,
+    max_social_profiles: 3,
+    max_users: 1,
+  };
+}
+
 async function getEffectiveWorkspacePlan(
   serviceClient: ReturnType<typeof createServiceRoleClient>,
   scope: WorkspaceScope,
-  userId: string,
+  user: { id?: string | null; email?: string | null },
   accountId?: string | null
 ) {
   const planLimitsByName = await getPlanLimitsByName(serviceClient);
@@ -189,19 +176,11 @@ async function getEffectiveWorkspacePlan(
   }
 
   let plan: string = pickHighestPlan([...subscriptionPlans, ...workspacePlanTiers]);
-
-  const configuredTestPlan = getConfiguredTestPlan(userId);
-  if (plan === 'free' && configuredTestPlan) {
-    plan = configuredTestPlan;
-  }
+  plan = applyDevAdminPlanOverride(plan, user);
 
   const limits = planLimitsByName.get(plan) ??
-    planLimitsByName.get('free') ?? {
-      plan,
-      max_workspaces: plan === 'enterprise' ? 999 : 1,
-      max_social_profiles: plan === 'enterprise' ? 999 : 3,
-      max_users: plan === 'enterprise' ? 999 : 1,
-    };
+    (plan === 'free' ? planLimitsByName.get('free') : null) ??
+    getFallbackPlanLimits(plan);
 
   return {
     plan,
@@ -327,7 +306,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   const { plan, limits } = await getEffectiveWorkspacePlan(
     serviceClient,
     scope,
-    user.id,
+    user,
     account?.id
   );
 

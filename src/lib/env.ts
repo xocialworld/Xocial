@@ -71,11 +71,15 @@ const envSchema = z.object({
   TWITTER_CLIENT_ID: z.string().optional(),
   TWITTER_CLIENT_SECRET: z.string().optional(),
   TWITTER_BEARER_TOKEN: z.string().optional(),
+  TWITTER_API_MODE: z.string().optional(),
 
   // OAuth - LinkedIn
   LINKEDIN_CLIENT_ID: z.string().optional(),
   LINKEDIN_CLIENT_SECRET: z.string().optional(),
   LINKEDIN_API_VERSION: z.string().optional(),
+  LINKEDIN_ENABLE_ORGANIZATION_ACCESS: z.string().optional(),
+  LINKEDIN_ENABLE_MEMBER_ANALYTICS: z.string().optional(),
+  LINKEDIN_EXTRA_SCOPES: z.string().optional(),
 
   // OAuth - YouTube
   YOUTUBE_CLIENT_ID: z.string().optional(),
@@ -94,6 +98,9 @@ const envSchema = z.object({
   IP_HASH_SALT: z.string().optional(),
   VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
   DEMO_PUBLISH: z.string().optional(),
+  XOCIAL_DEV_ADMIN_EMAILS: z.string().optional(),
+  XOCIAL_DEV_ADMIN_USER_IDS: z.string().optional(),
+  XOCIAL_DEV_ADMIN_PLAN: z.string().optional(),
 });
 
 /**

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generatePKCE, getTwitterAuthUrl } from '@/lib/platforms/twitter';
 import { generateState } from '@/lib/oauth/state-manager';
 import { OAUTH_CONFIG } from '@/lib/oauth/oauth-config';
+import { getTwitterApiModeSummary } from '@/lib/twitter-api-mode';
 
 /**
  * GET /api/auth/twitter/test-url
@@ -12,6 +13,7 @@ import { OAUTH_CONFIG } from '@/lib/oauth/oauth-config';
 export async function GET(request: NextRequest) {
     const origin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin || 'http://localhost:3000';
     const redirectUri = `${origin}/api/auth/twitter/callback`;
+    const apiMode = getTwitterApiModeSummary(origin);
 
     // Check if Twitter is configured
     if (!process.env.TWITTER_CLIENT_ID || !process.env.TWITTER_CLIENT_SECRET) {
@@ -62,6 +64,10 @@ export async function GET(request: NextRequest) {
             scopes: OAUTH_CONFIG.twitter.scopes,
             authEndpoint: OAUTH_CONFIG.twitter.endpoints.auth,
         },
+        xApiMode: {
+            ...apiMode,
+            note: 'This route does not call live X API endpoints and is safe for no-spend setup checks.',
+        },
         pkce: {
             challengeLength: pkce.challenge.length,
             verifierLength: pkce.verifier.length,
@@ -73,6 +79,9 @@ export async function GET(request: NextRequest) {
         verification: {
             stateHasColon: state.includes(':'),
             clientIdHasColon: process.env.TWITTER_CLIENT_ID.includes(':'),
+            callbackUses127001: redirectUri.startsWith('http://127.0.0.1:3000/'),
+            includesRequiredScopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access', 'media.write']
+                .every((scope) => OAUTH_CONFIG.twitter.scopes.includes(scope)),
         },
     }, { status: 200 });
 }

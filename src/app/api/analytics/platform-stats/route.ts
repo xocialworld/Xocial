@@ -3,6 +3,8 @@ import { checkRateLimit, handleAPIError } from '@/lib/api-middleware';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 
+export const dynamic = 'force-dynamic';
+
 // Platform-specific metric keys for proper data mapping
 const PLATFORM_METRIC_KEYS: Record<string, string[]> = {
   youtube: ['views', 'subscribers', 'likes', 'comments', 'watchTime'],

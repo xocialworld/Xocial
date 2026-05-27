@@ -39,6 +39,8 @@ import {
   recordPublishAttempt,
   startJobRun,
 } from '@/lib/observability/job-runs';
+import { recordLearningEvent } from '@/lib/intelligence/learning';
+import { enqueueAgentTask, queuePostIntelligenceTasks } from '@/lib/intelligence/tasks';
 
 // Maximum retry attempts before permanent failure. Instagram video/Reels
 // containers can remain in Meta processing for several minutes.
@@ -494,6 +496,31 @@ export const GET = withCronVerification(async (request: NextRequest) => {
             metadata: { results: allPublishResults },
           });
 
+          await recordLearningEvent(supabase, {
+            workspaceId: post.workspace_id,
+            source: 'cron',
+            eventType: 'post_published',
+            entityType: 'post',
+            entityId: post.id,
+            signalStrength: 1,
+            metadata: { platforms: post.platforms, results: allPublishResults },
+          });
+          await queuePostIntelligenceTasks(supabase, {
+            workspaceId: post.workspace_id,
+            postId: post.id,
+            platforms: normalizePlatforms(post.platforms),
+            reason: 'scheduled_publish_succeeded',
+            priority: 7,
+          });
+          await enqueueAgentTask(supabase, {
+            workspaceId: post.workspace_id,
+            agentType: 'performance_analyst',
+            entityType: 'post',
+            entityId: post.id,
+            priority: 4,
+            inputPayload: { trigger: 'scheduled_publish_succeeded' },
+          });
+
           console.log(`[Cron: Publish] Successfully published post ${post.id}`);
 
           results.push({
@@ -561,6 +588,20 @@ export const GET = withCronVerification(async (request: NextRequest) => {
               },
             });
 
+            await recordLearningEvent(supabase, {
+              workspaceId: post.workspace_id,
+              source: 'cron',
+              eventType: 'publish_retry_scheduled',
+              entityType: 'post',
+              entityId: post.id,
+              signalStrength: 0.45,
+              metadata: {
+                results: allPublishResults,
+                nextRetryAt: nextRetryTime.toISOString(),
+                pendingPlatformPublishes: nextPendingPlatformPublishes,
+              },
+            });
+
             results.push({
               postId: post.id,
               success: false,
@@ -605,6 +646,23 @@ export const GET = withCronVerification(async (request: NextRequest) => {
               message: 'Scheduled post published to some platforms with errors',
               errorMessage: errors.join('; '),
               metadata: { results: allPublishResults },
+            });
+
+            await recordLearningEvent(supabase, {
+              workspaceId: post.workspace_id,
+              source: 'cron',
+              eventType: 'publish_failed',
+              entityType: 'post',
+              entityId: post.id,
+              signalStrength: 0.35,
+              metadata: { platforms: post.platforms, results: allPublishResults, errors },
+            });
+            await queuePostIntelligenceTasks(supabase, {
+              workspaceId: post.workspace_id,
+              postId: post.id,
+              platforms: normalizePlatforms(post.platforms),
+              reason: 'scheduled_publish_partial',
+              priority: 5,
             });
 
             console.log(
@@ -667,6 +725,20 @@ export const GET = withCronVerification(async (request: NextRequest) => {
               },
             });
 
+            await recordLearningEvent(supabase, {
+              workspaceId: post.workspace_id,
+              source: 'cron',
+              eventType: 'publish_retry_scheduled',
+              entityType: 'post',
+              entityId: post.id,
+              signalStrength: 0.35,
+              metadata: {
+                results: allPublishResults,
+                nextRetryAt: nextRetryTime.toISOString(),
+                pendingPlatformPublishes: nextPendingPlatformPublishes,
+              },
+            });
+
             results.push({
               postId: post.id,
               success: false,
@@ -710,6 +782,23 @@ export const GET = withCronVerification(async (request: NextRequest) => {
               message: 'Scheduled publish failed',
               errorMessage: errors.join('; '),
               metadata: { results: allPublishResults },
+            });
+
+            await recordLearningEvent(supabase, {
+              workspaceId: post.workspace_id,
+              source: 'cron',
+              eventType: 'publish_failed',
+              entityType: 'post',
+              entityId: post.id,
+              signalStrength: 0.25,
+              metadata: { platforms: post.platforms, results: allPublishResults, errors },
+            });
+            await queuePostIntelligenceTasks(supabase, {
+              workspaceId: post.workspace_id,
+              postId: post.id,
+              platforms: normalizePlatforms(post.platforms),
+              reason: 'scheduled_publish_failed',
+              priority: 5,
             });
 
             results.push({

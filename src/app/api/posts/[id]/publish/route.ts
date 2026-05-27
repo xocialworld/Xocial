@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { handleAPIError, APIError } from '@/lib/api-middleware';
+import { handleAPIError, APIError, createServiceRoleClient } from '@/lib/api-middleware';
 import { platformPublisher } from '@/lib/platforms/publisher';
 import type { Platform, PublishResult } from '@/lib/platforms/publisher';
 import {
@@ -22,12 +22,15 @@ import {
   recordPublishAttempt,
   startJobRun,
 } from '@/lib/observability/job-runs';
+import { recordLearningEvents } from '@/lib/intelligence/learning';
+import { enqueueAgentTask, queuePostIntelligenceTasks } from '@/lib/intelligence/tasks';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient();
+    const serviceClient = createServiceRoleClient();
 
     const {
       data: { user },
@@ -89,6 +92,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       message: 'Publishing started',
       metadata: { platforms },
     });
+
+    await recordLearningEvents(serviceClient, [
+      {
+        workspaceId: post.workspace_id,
+        actorUserId: user.id,
+        source: 'publisher',
+        eventType: 'publish_started',
+        entityType: 'post',
+        entityId: postId,
+        signalStrength: 0.5,
+        metadata: {
+          platforms,
+          jobRunId: jobRun?.id,
+          attemptNo,
+        },
+      },
+    ]);
 
     const accountIds = await resolveAccountIds(supabase, post.workspace_id, platforms, metadata);
 
@@ -224,6 +244,68 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           : 'Failed to publish to selected platforms',
       errorMessage: firstError,
       metadata: { results: allResults },
+    });
+
+    await recordLearningEvents(serviceClient, [
+      {
+        workspaceId: post.workspace_id,
+        actorUserId: user.id,
+        source: 'publisher',
+        eventType: allSuccessful
+          ? 'publish_succeeded'
+          : anySuccessful
+            ? 'publish_partial'
+            : 'publish_failed',
+        entityType: 'post',
+        entityId: postId,
+        signalStrength: allSuccessful ? 1 : anySuccessful ? 0.65 : 0.2,
+        metadata: {
+          platforms,
+          results: allResults,
+          status: updates.status,
+          errorMessage: firstError,
+          jobRunId: jobRun?.id,
+          attemptNo,
+        },
+      },
+      anySuccessful
+        ? {
+            workspaceId: post.workspace_id,
+            actorUserId: user.id,
+            source: 'publisher',
+            eventType: 'post_published' as const,
+            entityType: 'post',
+            entityId: postId,
+            signalStrength: allSuccessful ? 1 : 0.75,
+            metadata: {
+              platforms: allResults.filter((result) => result.success).map((result) => result.platform),
+              results: allResults,
+              status: updates.status,
+              jobRunId: jobRun?.id,
+              attemptNo,
+            },
+          }
+        : null,
+    ]);
+
+    await queuePostIntelligenceTasks(serviceClient, {
+      workspaceId: post.workspace_id,
+      postId,
+      platforms,
+      reason: allSuccessful ? 'publish_succeeded' : anySuccessful ? 'publish_partial' : 'publish_failed',
+      priority: anySuccessful ? 7 : 5,
+    });
+    await enqueueAgentTask(serviceClient, {
+      workspaceId: post.workspace_id,
+      agentType: anySuccessful ? 'performance_analyst' : 'safety',
+      entityType: 'post',
+      entityId: postId,
+      priority: anySuccessful ? 4 : 6,
+      inputPayload: {
+        trigger: allSuccessful ? 'publish_succeeded' : anySuccessful ? 'publish_partial' : 'publish_failed',
+        platforms,
+        results: allResults,
+      },
     });
 
     await finishJobRun(supabase, jobRun?.id, {

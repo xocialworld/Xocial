@@ -9,6 +9,10 @@ import {
 import { getYouTubeChannelVideos, getYouTubeVideoStats, refreshYouTubeToken } from '@/lib/oauth/youtube';
 import { decryptToken, encryptToken } from '@/lib/encryption';
 import { syncTwitterTweets } from '@/lib/twitter-sync';
+import {
+    isTwitterApiCreditsRequiredError,
+    TWITTER_CREDITS_REQUIRED_CODE,
+} from '@/lib/twitter-api-mode';
 
 /**
  * POST /api/accounts/[id]/sync-posts - Trigger sync to fetch historical posts from platform
@@ -110,15 +114,17 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     } catch (error) {
         console.error('Sync error:', error);
         const message = error instanceof Error ? error.message : String(error);
+        if (platform === 'twitter' && isTwitterApiCreditsRequiredError(error)) {
+            throw new APIError(402, message, TWITTER_CREDITS_REQUIRED_CODE);
+        }
         // If Twitter token is expired/invalid, surface as 401 so UI can prompt reconnect.
         if (platform === 'twitter' && (message.includes('401') || message.toLowerCase().includes('unauthorized'))) {
             throw new APIError(401, 'Twitter authentication expired. Please reconnect Twitter in Accounts (X) and try again.', 'TWITTER_TOKEN_EXPIRED');
         }
         // If Twitter is rate-limiting us, surface as 429 so UI can prompt to retry later.
         if (platform === 'twitter' && (message.includes('429') || message.toLowerCase().includes('rate'))) {
-            // Try to parse our encoded format: "Failed to fetch user tweets: 429;retryAfter=NN"
-            const match = message.match(/429;retryAfter=(\d+)/);
-            const retryAfterSeconds = match ? Number(match[1]) : null;
+            const retryAfterSeconds =
+                typeof (error as any)?.retryAfter === 'number' ? (error as any).retryAfter : null;
             throw new APIError(
                 429,
                 retryAfterSeconds

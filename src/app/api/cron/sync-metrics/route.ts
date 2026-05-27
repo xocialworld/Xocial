@@ -9,12 +9,12 @@
 import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { withCronVerification, cronSuccessResponse, cronErrorResponse } from '@/lib/cron-verification';
-import { createFacebookClient } from '@/lib/platforms/facebook';
 import { createInstagramClient } from '@/lib/platforms/instagram';
-import { createTwitterClient } from '@/lib/platforms/twitter';
 import { createLinkedInClientFromToken } from '@/lib/platforms/linkedin';
-import { createYouTubeClient } from '@/lib/platforms/youtube';
 import { createTikTokClient } from '@/lib/platforms/tiktok';
+import { isTwitterNoSpendMode } from '@/lib/twitter-api-mode';
+import { hasLinkedInScope } from '@/lib/oauth/linkedin';
+import { recordMetricSnapshotAndOutcome } from '@/lib/intelligence/metrics';
 
 /**
  * GET /api/cron/sync-metrics
@@ -44,7 +44,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
 
     const { data: platformPostsData, error: fetchError } = await supabase
       .from('platform_posts')
-      .select('post_id, platform, platform_post_id, published_at, posts:posts!inner(workspace_id)')
+      .select('post_id, platform, platform_post_id, social_account_id, published_at, posts:posts!inner(workspace_id)')
       .eq('status', 'published')
       .gte('published_at', sevenDaysAgo.toISOString())
       .limit(200);
@@ -67,6 +67,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       post_id: string;
       platform: string;
       platform_post_id: string;
+      social_account_id?: string | null;
       published_at: string;
       posts: { workspace_id: string };
     };
@@ -75,6 +76,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
       post_id: row.post_id,
       platform: row.platform,
       platform_post_id: row.platform_post_id,
+      social_account_id: row.social_account_id,
       published_at: row.published_at,
       posts: Array.isArray(row.posts) ? row.posts[0] : row.posts,
     }));
@@ -136,6 +138,16 @@ export const GET = withCronVerification(async (request: NextRequest) => {
                   last_synced_at: new Date().toISOString(),
                 });
             }
+
+            await recordMetricSnapshotAndOutcome(supabase, {
+              workspaceId: pp.posts.workspace_id,
+              postId: pp.post_id,
+              platformPostId: pp.platform_post_id,
+              socialAccountId: pp.social_account_id || null,
+              platform: pp.platform,
+              metrics,
+              raw: metrics,
+            });
 
             console.log(`[Cron: Sync Metrics] Synced ${pp.platform} metrics for post ${pp.post_id}`);
           }
@@ -208,7 +220,7 @@ async function fetchPlatformMetrics(
     // Get access token for the platform
     const { data: account } = await supabase
       .from('social_accounts')
-      .select('access_token, platform_user_id')
+      .select('access_token, platform_user_id, metadata')
       .eq('workspace_id', workspaceId)
       .eq('platform', platform)
       .eq('is_active', true)
@@ -230,6 +242,10 @@ async function fetchPlatformMetrics(
         return await fetchTwitterMetrics(externalPostId, account.access_token);
 
       case 'linkedin':
+        if (!canFetchLinkedInMetrics(account)) {
+          console.log('[Metrics] Skipping LinkedIn metrics; approved read/analytics scope is unavailable');
+          return null;
+        }
         return await fetchLinkedInMetrics(externalPostId, account.access_token);
 
       case 'youtube':
@@ -246,6 +262,17 @@ async function fetchPlatformMetrics(
     console.error(`[Metrics] Error fetching ${platform} metrics:`, error);
     return null;
   }
+}
+
+function canFetchLinkedInMetrics(account: any) {
+  const scopes = account?.metadata?.scopes;
+  const type = account?.metadata?.type === 'organization' ? 'organization' : 'personal';
+
+  if (type === 'organization') {
+    return hasLinkedInScope(scopes, 'r_organization_social');
+  }
+
+  return hasLinkedInScope(scopes, 'r_member_social') || hasLinkedInScope(scopes, 'r_member_postAnalytics');
 }
 
 /**
@@ -307,6 +334,11 @@ async function fetchInstagramMetrics(postId: string, accessToken: string) {
 
 async function fetchTwitterMetrics(postId: string, accessToken: string) {
   try {
+    if (isTwitterNoSpendMode()) {
+      console.log('[Metrics] Twitter metrics skipped because TWITTER_API_MODE is no-spend');
+      return null;
+    }
+
     const { TwitterClient } = await import('@/lib/platforms/twitter');
     const client = new TwitterClient(accessToken);
 

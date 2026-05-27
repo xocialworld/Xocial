@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { ChevronsUpDown, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -37,9 +37,9 @@ export function WorkspaceSwitcher() {
   const touchLastFetched = useWorkspaceStore((state) => state.touchLastFetched);
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
   const selected = useSelectedWorkspace();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
-  const fetchWorkspaces = async () => {
+  const fetchWorkspaces = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch(`/api/workspaces?include_members=false&t=${Date.now()}`, {
@@ -84,18 +84,16 @@ export function WorkspaceSwitcher() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const lastFetchedAt = useWorkspaceStore((state) => state.lastFetchedAt);
+  }, [selectWorkspace, setWorkspaces, touchLastFetched]);
 
   // Wait for hydration before fetching
   useEffect(() => {
-    // Only fetch if hydrated and not loading
+    // Only fetch if hydrated.
     // We removed the stale check to force consistency with the DB on mount
-    if (!_hasHydrated || loading) return;
+    if (!_hasHydrated) return;
 
     fetchWorkspaces();
-  }, [_hasHydrated]); // Run once when hydrated
+  }, [_hasHydrated, fetchWorkspaces]); // Run once when hydrated
 
   // Also validate selection after fetch in fetchWorkspaces function above (need to modify that too)
 
@@ -130,7 +128,7 @@ export function WorkspaceSwitcher() {
     return () => {
       cleanupPromise.then(cleanup => cleanup && cleanup());
     };
-  }, [supabase]);
+  }, [fetchWorkspaces, supabase]);
 
 
   const buttonLabel = useMemo(() => {
@@ -251,4 +249,3 @@ export function WorkspaceSwitcher() {
     </div>
   );
 }
-

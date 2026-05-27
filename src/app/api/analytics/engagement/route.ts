@@ -4,6 +4,8 @@ import { checkRateLimit, handleAPIError } from '@/lib/api-middleware';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);

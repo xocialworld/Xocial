@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import { useMediaAssets, MediaAsset, useUploadMedia, useDeleteMedia } from '@/hooks/use-media-assets';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
@@ -130,11 +131,13 @@ export function MediaLibraryPanel({ className, onSelect }: MediaLibraryPanelProp
                                             )}
                                         </div>
                                     ) : (
-                                        <img
+                                        <Image
                                             src={asset.thumbnail_url || asset.url}
                                             alt={asset.original_filename}
-                                            className="w-full h-full object-cover"
-                                            loading="lazy"
+                                            fill
+                                            sizes="160px"
+                                            className="object-cover"
+                                            unoptimized
                                         />
                                     )}
 

@@ -9,6 +9,7 @@ import {
     exchangeLinkedInCode,
     getLinkedInProfile,
     getLinkedInOrganizations,
+    hasLinkedInOrganizationAccess,
 } from '@/lib/oauth/linkedin';
 import { verifyOAuthState } from '@/lib/oauth/state-manager';
 import { encryptToken } from '@/lib/encryption';
@@ -68,13 +69,17 @@ export async function GET(request: NextRequest) {
         const profile = await getLinkedInProfile(tokenResponse.access_token);
         console.log(`[LinkedIn Callback] Found profile: ${profile.name}`);
 
-        // Try to get organizations (company pages) - this may fail if user doesn't have org access
+        // Organization/page access requires approved LinkedIn Community Management scopes.
         let organizations: any[] = [];
-        try {
-            organizations = await getLinkedInOrganizations(tokenResponse.access_token);
-            console.log(`[LinkedIn Callback] Found ${organizations.length} organizations`);
-        } catch (error) {
-            console.warn('[LinkedIn Callback] No organization access:', error);
+        if (hasLinkedInOrganizationAccess(tokenResponse.scope)) {
+            try {
+                organizations = await getLinkedInOrganizations(tokenResponse.access_token);
+                console.log(`[LinkedIn Callback] Found ${organizations.length} organizations`);
+            } catch (error) {
+                console.warn('[LinkedIn Callback] Organization access lookup failed:', error);
+            }
+        } else {
+            console.log('[LinkedIn Callback] Organization access not enabled for this token');
         }
 
         const workspaceId = stateVerification.workspaceId;

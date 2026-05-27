@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { withCronVerification, cronSuccessResponse, cronErrorResponse } from '@/lib/cron-verification';
 import { logger } from '@/lib/logger';
+import { processDueAgentTasks } from '@/lib/intelligence/tasks';
 
 interface TaskResult {
     task: string;
@@ -113,6 +114,30 @@ export const GET = withCronVerification(async (request: NextRequest) => {
         console.error('[Cron: Daily Tasks] Metrics sync task failed:', error);
         results.push({
             task: 'sync_metrics',
+            success: false,
+            message: error.message,
+            duration: Date.now() - startTime,
+        });
+    }
+
+    // Task 4: Process queued intelligence workers
+    try {
+        const taskStart = Date.now();
+        console.log('[Cron: Daily Tasks] Running: Intelligence Agent Tasks');
+
+        const agentResult = await processDueAgentTasks(supabase as any, { limit: 15 });
+
+        results.push({
+            task: 'intelligence_agent_tasks',
+            success: true,
+            message: `Processed ${agentResult.processed} agent tasks`,
+            details: agentResult,
+            duration: Date.now() - taskStart,
+        });
+    } catch (error: any) {
+        console.error('[Cron: Daily Tasks] Intelligence agent task failed:', error);
+        results.push({
+            task: 'intelligence_agent_tasks',
             success: false,
             message: error.message,
             duration: Date.now() - startTime,

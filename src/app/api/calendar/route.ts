@@ -138,7 +138,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     let calendarDate: string;
     if (post.status === 'published' || post.status === 'partial') {
       calendarDate = post.published_at || post.scheduled_at || post.created_at;
-    } else if (post.status === 'scheduled') {
+    } else if (post.status === 'scheduled' || post.scheduled_at) {
       calendarDate = post.scheduled_at || post.created_at;
     } else {
       calendarDate = post.created_at;

@@ -1,6 +1,13 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { createServiceRoleClient } from '@/lib/api-middleware';
+import {
+    normalizeApprovalReasons,
+    summarizeApprovalReasons,
+} from '@/lib/intelligence/approval-reasons';
+import { recordLearningEvent } from '@/lib/intelligence/learning';
+import { enqueueAgentTask, queuePostIntelligenceTasks } from '@/lib/intelligence/tasks';
 
 // GET: Fetch pending approvals
 export async function GET(req: NextRequest) {
@@ -102,16 +109,27 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { instance_id: postId, action, comment } = body; // 'instance_id' maps to 'post.id'
+    const { instance_id: postId, action } = body; // 'instance_id' maps to 'post.id'
+    const comment = typeof body.comment === 'string' ? body.comment.trim() : '';
 
     if (!postId || !['approve', 'reject'].includes(action)) {
         return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
     }
+    const decision = action === 'approve' ? 'approve' : 'reject';
+    const structuredReasons = normalizeApprovalReasons(body.reasonIds, decision);
+    const reasonSummary = summarizeApprovalReasons(structuredReasons);
+    const reasonMetadata = {
+        reasonIds: structuredReasons.map((reason) => reason.id),
+        reasonLabels: structuredReasons.map((reason) => reason.label),
+        reasonCategories: structuredReasons.map((reason) => reason.category),
+        reasonHints: structuredReasons.map((reason) => reason.brandLearningHint),
+        reasonSummary,
+    };
 
     // 1. Verify access: User must be admin/owner of the workspace the post belongs to
     const { data: post, error: postError } = await supabase
         .from('posts')
-        .select('workspace_id, scheduled_at')
+        .select('workspace_id, scheduled_at, platforms')
         .eq('id', postId)
         .single();
 
@@ -159,5 +177,55 @@ export async function POST(req: NextRequest) {
     // TODO: Log the approval action/comment in an audit table if it existed.
     console.log(`User ${user.id} ${action}d post ${postId}. New status: ${newStatus}. Comment: ${comment}`);
 
-    return NextResponse.json({ success: true, newStatus });
+    const serviceClient = createServiceRoleClient();
+    await serviceClient.from('approval_learning_signals').insert({
+        workspace_id: post.workspace_id,
+        post_id: postId,
+        actor_user_id: user.id,
+        signal_type: action === 'approve' ? 'approved' : 'rejected',
+        comment: comment || null,
+        metadata: {
+            nextStatus: newStatus,
+            source: 'approvals_board',
+            ...reasonMetadata,
+        },
+    });
+
+    await recordLearningEvent(serviceClient, {
+        workspaceId: post.workspace_id,
+        actorUserId: user.id,
+        source: 'approval',
+        eventType: action === 'approve' ? 'approval_approved' : 'approval_rejected',
+        entityType: 'post',
+        entityId: postId,
+        signalStrength: action === 'approve' ? 0.85 : 0.75,
+        metadata: {
+            comment,
+            nextStatus: newStatus,
+            ...reasonMetadata,
+        },
+    });
+
+    await queuePostIntelligenceTasks(serviceClient, {
+        workspaceId: post.workspace_id,
+        postId,
+        platforms: Array.isArray(post.platforms) ? post.platforms : [],
+        reason: action === 'approve' ? 'approval_approved' : 'approval_rejected',
+        priority: 6,
+    });
+    await enqueueAgentTask(serviceClient, {
+        workspaceId: post.workspace_id,
+        agentType: 'brand_learner',
+        entityType: 'post',
+        entityId: postId,
+        priority: 7,
+        inputPayload: {
+            action,
+            comment,
+            ...reasonMetadata,
+            trigger: 'approval_action',
+        },
+    });
+
+    return NextResponse.json({ success: true, newStatus, reasons: structuredReasons });
 }

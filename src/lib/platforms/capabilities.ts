@@ -83,6 +83,7 @@ export const PLATFORM_CAPABILITIES: Record<Platform, PlatformContentCapabilities
             'Up to 9 images per post',
             'Articles can include external links',
             'Scheduling is handled by Xocial because the LinkedIn Posts API publishes immediately',
+            'Member post sync/analytics require approved LinkedIn read or analytics access',
             'Organization publishing and analytics require approved LinkedIn Community Management access',
         ],
     },

@@ -7,6 +7,7 @@ import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { decryptToken } from '@/lib/encryption';
 import { getYouTubeChannelVideos, getYouTubeVideoStats } from '@/lib/oauth/youtube';
 import { getTwitterUserTweets } from '@/lib/platforms/twitter';
+import { isTwitterLiveApiEnabled } from '@/lib/twitter-api-mode';
 
 /**
  * GET /api/accounts/[id]/posts - Fetch all posts for a specific social account
@@ -258,7 +259,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     }
 
     // Twitter: Fetch fresh tweets
-    if (platform === 'twitter') {
+    if (platform === 'twitter' && isTwitterLiveApiEnabled()) {
         try {
             const accessToken = decryptToken(account.access_token);
             const tweets = await getTwitterUserTweets(accessToken, account.account_id, 20); // Fetch top 20 fresh
@@ -298,6 +299,8 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         } catch (err: any) {
             console.error('[Twitter] Failed to fetch fresh tweets:', err.message);
         }
+    } else if (platform === 'twitter') {
+        console.log('[Twitter] Skipping fresh tweet fetch because TWITTER_API_MODE is no-spend');
     }
 
     // Merge fresh posts with DB posts

@@ -8,6 +8,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { cancelSubscription, pauseSubscription, resumeSubscription } from '@/lib/razorpay';
+import { getConfiguredDevAdminPlan } from '@/lib/dev-admin-entitlements';
+
+function getFallbackDevAdminLimits(plan: string) {
+    return {
+        plan,
+        max_users: plan === 'enterprise' ? 999 : 1,
+        max_workspaces: plan === 'enterprise' ? 999 : 1,
+        max_social_profiles: plan === 'enterprise' ? 999 : 3,
+        max_scheduled_posts: plan === 'enterprise' ? null : 10,
+        ai_enabled: plan === 'enterprise',
+        advanced_analytics: plan === 'enterprise',
+        approval_workflows: plan === 'enterprise',
+        engagement_inbox: plan === 'enterprise',
+        custom_branding: plan === 'enterprise',
+    };
+}
 
 // GET - Fetch current subscription for workspace
 export async function GET(request: NextRequest) {
@@ -42,6 +58,24 @@ export async function GET(request: NextRequest) {
                 { error: 'Not a member of this workspace' },
                 { status: 403 }
             );
+        }
+
+        const devAdminPlan = getConfiguredDevAdminPlan(user);
+        if (devAdminPlan) {
+            const { data: planLimits } = await supabase
+                .from('plan_limits')
+                .select('*')
+                .eq('plan', devAdminPlan)
+                .maybeSingle();
+
+            return NextResponse.json({
+                subscription: {
+                    plan: devAdminPlan,
+                    status: 'active',
+                    limits: planLimits || getFallbackDevAdminLimits(devAdminPlan),
+                    dev_admin_override: true,
+                },
+            });
         }
 
         // Get subscription with plan limits

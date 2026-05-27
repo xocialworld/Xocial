@@ -15,6 +15,96 @@ import {
   getOAuthAppOrigin,
   sanitizeOAuthRedirect,
 } from '@/lib/oauth/redirect';
+import {
+  assertTwitterLiveApiEnabled,
+  isTwitterApiCreditsRequiredError,
+  TWITTER_CREDITS_REQUIRED_CODE,
+} from '@/lib/twitter-api-mode';
+import {
+  applyDevAdminPlanOverride,
+  getConfiguredDevAdminPlan,
+  type EntitlementUser,
+} from '@/lib/dev-admin-entitlements';
+
+function getFallbackLimitsForPlan(plan: string) {
+  if (plan === 'enterprise') {
+    return {
+      plan,
+      max_social_profiles: 999,
+      max_workspaces: 999,
+      max_users: 999,
+      max_scheduled_posts: null,
+      ai_enabled: true,
+      advanced_analytics: true,
+      approval_workflows: true,
+      engagement_inbox: true,
+      custom_branding: true,
+    };
+  }
+
+  return {
+    plan,
+    max_social_profiles: 3,
+    max_workspaces: 1,
+    max_users: 1,
+    max_scheduled_posts: 10,
+    ai_enabled: false,
+    advanced_analytics: false,
+    approval_workflows: false,
+    engagement_inbox: false,
+    custom_branding: false,
+  };
+}
+
+async function getEntitlementUser(serviceClient: any, user: EntitlementUser): Promise<EntitlementUser> {
+  if (user.email || !user.id) {
+    return user;
+  }
+
+  const { data: profile } = await serviceClient
+    .from('profiles')
+    .select('email')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  return {
+    id: user.id,
+    email: profile?.email ?? user.email ?? null,
+  };
+}
+
+async function applyAuthConnectPlanOverride(
+  serviceClient: any,
+  user: EntitlementUser,
+  limits: Record<string, any>
+) {
+  const entitlementUser = await getEntitlementUser(serviceClient, user);
+  const effectivePlan = applyDevAdminPlanOverride(limits.plan ?? 'free', entitlementUser);
+
+  if (effectivePlan === limits.plan) {
+    return {
+      limits,
+      entitlementUser,
+      devAdminPlan: getConfiguredDevAdminPlan(entitlementUser),
+    };
+  }
+
+  const { data: planLimits } = await serviceClient
+    .from('plan_limits')
+    .select('*')
+    .eq('plan', effectivePlan)
+    .maybeSingle();
+
+  return {
+    limits: {
+      ...limits,
+      ...(planLimits ?? getFallbackLimitsForPlan(effectivePlan)),
+      plan: effectivePlan,
+    },
+    entitlementUser,
+    devAdminPlan: getConfiguredDevAdminPlan(entitlementUser),
+  };
+}
 
 /**
  * GET /api/auth/connect?platform=youtube&redirect=/x
@@ -36,18 +126,39 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(400, `Invalid platform: ${platform}`, 'INVALID_PLATFORM');
   }
 
-  const { user, workspace, usage, limits } = await requireWorkspaceContext(request, {
+  const { user, workspace, usage, limits, serviceClient } = await requireWorkspaceContext(request, {
     roles: ['owner', 'admin', 'manager'],
   });
+  const {
+    limits: effectiveLimits,
+    entitlementUser,
+    devAdminPlan,
+  } = await applyAuthConnectPlanOverride(serviceClient, user, limits);
 
-  if (usage.social_profiles_count >= limits.max_social_profiles) {
+  logger.info('[OAuth Connect] Plan gate resolved', {
+    platform,
+    userId: user.id,
+    workspaceId: workspace.id,
+    contextPlan: limits.plan,
+    effectivePlan: effectiveLimits.plan,
+    devAdminPlan,
+    hasAuthEmail: !!user.email,
+    hasProfileEmail: !!entitlementUser.email,
+    socialProfilesCount: usage.social_profiles_count,
+    socialProfilesLimit: effectiveLimits.max_social_profiles,
+  });
+
+  if (usage.social_profiles_count >= effectiveLimits.max_social_profiles) {
     throw new APIError(
       402,
-      `Social account limit reached for your ${limits.plan} plan`,
+      `Social account limit reached for your ${effectiveLimits.plan} plan`,
       'PLAN_LIMIT_EXCEEDED',
       {
         current: usage.social_profiles_count,
-        limit: limits.max_social_profiles,
+        limit: effectiveLimits.max_social_profiles,
+        contextPlan: limits.plan,
+        effectivePlan: effectiveLimits.plan,
+        devAdminPlan,
       }
     );
   }
@@ -164,6 +275,8 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
         break;
 
       case 'twitter':
+        assertTwitterLiveApiEnabled('starting live X OAuth connection');
+
         if (!process.env.TWITTER_CLIENT_ID || !process.env.TWITTER_CLIENT_SECRET) {
           throw new APIError(
             500,
@@ -242,6 +355,15 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
       const errorUrl = buildOAuthRedirectUrl(redirectUrl, appUrl, {
         error: error.message,
         code: error.code,
+        platform,
+      });
+      return NextResponse.redirect(errorUrl);
+    }
+
+    if (isTwitterApiCreditsRequiredError(error)) {
+      const errorUrl = buildOAuthRedirectUrl(redirectUrl, appUrl, {
+        error: error instanceof Error ? error.message : 'X API credits required',
+        code: TWITTER_CREDITS_REQUIRED_CODE,
         platform,
       });
       return NextResponse.redirect(errorUrl);

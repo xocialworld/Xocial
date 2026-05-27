@@ -4,6 +4,7 @@ import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { decryptToken } from '@/lib/encryption';
 import { getInstagramGraphBaseUrl, replyToInstagramComment } from '@/lib/oauth/instagram';
 import { logger } from '@/lib/logger';
+import { recordLearningEvent } from '@/lib/intelligence/learning';
 
 function getConnectedVia(metadata: any): string | undefined {
   if (!metadata) return undefined;
@@ -22,7 +23,8 @@ function getConnectedVia(metadata: any): string | undefined {
  * Reply to an Instagram comment
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
+  const { user, userClient: supabase, serviceClient, workspace } =
+    await requireWorkspaceContext(request);
 
   const body = await request.json();
   const { accountId, commentId, replyText } = body;
@@ -48,6 +50,22 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     const baseUrl = getInstagramGraphBaseUrl(getConnectedVia(account.metadata));
 
     const result = await replyToInstagramComment(commentId, accessToken, replyText, baseUrl);
+
+    await recordLearningEvent(serviceClient, {
+      workspaceId: workspace.id,
+      actorUserId: user.id,
+      source: 'user',
+      eventType: 'comment_replied',
+      entityType: 'comment',
+      entityId: commentId,
+      platform: 'instagram',
+      signalStrength: 0.45,
+      metadata: {
+        accountId,
+        commentId,
+        replyLength: replyText.length,
+      },
+    });
 
     logger.info('[Instagram Comment Reply] Reply sent successfully', {
       userId: user.id,

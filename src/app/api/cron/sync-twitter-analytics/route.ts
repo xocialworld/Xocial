@@ -4,6 +4,7 @@ import { withCronVerification, cronSuccessResponse, cronErrorResponse } from '@/
 import { getTwitterTweetMetrics } from '@/lib/platforms/twitter';
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
+import { isTwitterNoSpendMode } from '@/lib/twitter-api-mode';
 
 /**
  * GET /api/cron/sync-twitter-analytics
@@ -15,6 +16,16 @@ export const GET = withCronVerification(async (request: NextRequest) => {
 
     try {
         logger.info('[Cron: Sync Twitter Analytics] Starting analytics sync job');
+
+        if (isTwitterNoSpendMode()) {
+            logger.info('[Cron: Sync Twitter Analytics] Skipped because TWITTER_API_MODE is no-spend');
+            return cronSuccessResponse({
+                message: 'Twitter analytics sync skipped because TWITTER_API_MODE is no-spend',
+                skipped: true,
+                synced: 0,
+                duration: Date.now() - startTime,
+            });
+        }
 
         const supabase = createClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,

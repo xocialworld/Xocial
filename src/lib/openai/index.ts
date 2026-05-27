@@ -66,6 +66,24 @@ export interface GenerateContentRequest {
   maxLength?: number;
   model?: string;
   userId?: string;
+  intelligenceContext?: {
+    brandProfile?: {
+      voice?: string;
+      audience?: string;
+      products_offers?: string[];
+      content_pillars?: string[];
+      do_rules?: string[];
+      dont_rules?: string[];
+      approved_examples?: string[];
+      rejected_examples?: string[];
+      platform_preferences?: Record<string, unknown>;
+    };
+    recentTopPosts?: unknown[];
+    recentFailedPosts?: unknown[];
+    currentPerformanceSummary?: Record<string, unknown>;
+    campaignGoal?: string;
+    contentPillar?: string;
+  };
 }
 
 export interface GeneratedContent {
@@ -620,6 +638,30 @@ function buildSystemPrompt(
     })
     .join('\n\n');
 
+  const context = request.intelligenceContext;
+  const brand = context?.brandProfile;
+  const intelligenceLines = [
+    context?.campaignGoal ? `Campaign goal: ${context.campaignGoal}` : '',
+    context?.contentPillar ? `Preferred content pillar: ${context.contentPillar}` : '',
+    brand?.voice ? `Brand voice: ${brand.voice}` : '',
+    brand?.audience ? `Brand audience: ${brand.audience}` : '',
+    brand?.products_offers?.length ? `Products/offers: ${brand.products_offers.slice(0, 6).join(', ')}` : '',
+    brand?.content_pillars?.length ? `Content pillars: ${brand.content_pillars.slice(0, 8).join(', ')}` : '',
+    brand?.do_rules?.length ? `Brand do rules: ${brand.do_rules.slice(0, 8).join('; ')}` : '',
+    brand?.dont_rules?.length ? `Brand do-not rules: ${brand.dont_rules.slice(0, 8).join('; ')}` : '',
+    brand?.approved_examples?.length
+      ? `Approved example style: ${brand.approved_examples.slice(0, 2).join('\n---\n')}`
+      : '',
+    brand?.rejected_examples?.length
+      ? `Avoid rejected example patterns: ${brand.rejected_examples.slice(0, 2).join('\n---\n')}`
+      : '',
+    context?.currentPerformanceSummary && Object.keys(context.currentPerformanceSummary).length
+      ? `Recent performance summary: ${JSON.stringify(context.currentPerformanceSummary).slice(0, 1200)}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
   const schemaExample = `{
   "platform_content": {
     "instagram": {
@@ -658,6 +700,8 @@ SPECIFIC INSTRUCTIONS:
 ${preferenceLines}
 
 ${platformSections}
+
+${intelligenceLines ? `XOCIAL MEMORY CONTEXT:\n${intelligenceLines}\n\nUse this memory to sound like the user's actual brand. Do not mention that you used memory or analytics.` : ''}
 
 Return a single JSON object EXACTLY matching this structure (no extra commentary, no markdown formatting).
 DO NOT wrap the response in \`\`\`json ... \`\`\`. Return RAW JSON only.

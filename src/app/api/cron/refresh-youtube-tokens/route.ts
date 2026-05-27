@@ -4,6 +4,8 @@ import { refreshYouTubeToken } from '@/lib/oauth/youtube';
 import { encryptToken, decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/cron/refresh-youtube-tokens
  * Cron job to refresh YouTube access tokens that are about to expire
@@ -133,4 +135,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

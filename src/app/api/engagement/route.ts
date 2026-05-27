@@ -3,6 +3,8 @@ import { checkRateLimit, handleAPIError } from '@/lib/api-middleware';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { logger } from '@/lib/logger';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/engagement
  * Fetch engagement items (comments, mentions) from connected social accounts

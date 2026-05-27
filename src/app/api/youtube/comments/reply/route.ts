@@ -7,13 +7,15 @@ import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { decryptToken } from '@/lib/encryption';
 import { replyToYouTubeComment } from '@/lib/oauth/youtube';
 import { logger } from '@/lib/logger';
+import { recordLearningEvent } from '@/lib/intelligence/learning';
 
 /**
  * POST /api/youtube/comments/reply
  * Reply to a YouTube comment
  */
 export const POST = withErrorHandler(async (request: NextRequest) => {
-    const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request);
+    const { user, userClient: supabase, serviceClient, workspace } =
+        await requireWorkspaceContext(request);
 
     const body = await request.json();
     const { accountId, commentId, replyText } = body;
@@ -41,6 +43,22 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 
         // Reply to comment via YouTube API
         const result = await replyToYouTubeComment(accessToken, commentId, replyText);
+
+        await recordLearningEvent(serviceClient, {
+            workspaceId: workspace.id,
+            actorUserId: user.id,
+            source: 'user',
+            eventType: 'comment_replied',
+            entityType: 'comment',
+            entityId: commentId,
+            platform: 'youtube',
+            signalStrength: 0.45,
+            metadata: {
+                accountId,
+                commentId,
+                replyLength: replyText.length,
+            },
+        });
 
         logger.info('[YouTube Comment Reply] Reply sent successfully', {
             userId: user.id,

@@ -8,6 +8,11 @@
  */
 
 import { OAUTH_CONFIG } from '@/lib/oauth/oauth-config';
+import {
+  assertTwitterLiveApiEnabled,
+  looksLikeTwitterBillingError,
+  TWITTER_CREDITS_REQUIRED_CODE,
+} from '@/lib/twitter-api-mode';
 import { createHash, randomBytes } from 'node:crypto';
 
 // ─── 1. Types & Interfaces ───────────────────────────────────────────
@@ -63,6 +68,7 @@ export class TwitterClient {
    * Post a tweet
    */
   async publishTweet(tweet: Tweet): Promise<{ data: { id: string; text: string } }> {
+    assertTwitterLiveApiEnabled('publishing posts to X');
     const url = `${this.baseUrl}/tweets`;
 
     const body: any = {
@@ -112,6 +118,14 @@ export class TwitterClient {
         const errorJson = JSON.parse(errorText);
         errorMessage = errorJson.detail || errorJson.title || errorJson.errors?.[0]?.message || errorMessage;
 
+        const categorized = categorizeTwitterError(response.status, errorText);
+        if (categorized.type === 'CREDITS_REQUIRED' || categorized.type === 'RATE_LIMIT') {
+          throw createTwitterError(categorized.message, categorized.type, {
+            retryAfter: categorized.retryAfter,
+            originalStatus: response.status,
+          });
+        }
+
         // Check for specific errors
         if (response.status === 403) {
           errorMessage = `Twitter access denied: ${errorMessage}. Make sure your app has write permissions.`;
@@ -119,6 +133,9 @@ export class TwitterClient {
           errorMessage = `Twitter authentication failed: ${errorMessage}. Please reconnect your account.`;
         }
       } catch (e) {
+        if ((e as TwitterError)?.type) {
+          throw e;
+        }
         errorMessage = errorText || errorMessage;
       }
 
@@ -136,6 +153,7 @@ export class TwitterClient {
    * Endpoints: /2/media/upload/initialize, /2/media/upload/{id}/append, /2/media/upload/{id}/finalize
    */
   async uploadMedia(mediaUrl: string, mediaType: 'image' | 'video' = 'image'): Promise<string> {
+    assertTwitterLiveApiEnabled('uploading media to X');
     console.log('[Twitter] Uploading media from URL:', mediaUrl, 'type:', mediaType);
 
     try {
@@ -166,8 +184,8 @@ export class TwitterClient {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          file_type: contentType,
-          file_size: mediaSize,
+          media_type: contentType,
+          total_bytes: mediaSize,
           media_category: mediaType === 'video' ? 'tweet_video' : 'tweet_image',
         }),
       });
@@ -175,6 +193,14 @@ export class TwitterClient {
       if (!initResponse.ok) {
         const errorText = await initResponse.text();
         console.error('[Twitter] v2 Media upload INIT failed:', initResponse.status, errorText);
+        const categorized = categorizeTwitterError(initResponse.status, errorText);
+
+        if (categorized.type === 'CREDITS_REQUIRED' || categorized.type === 'RATE_LIMIT') {
+          throw createTwitterError(categorized.message, categorized.type, {
+            retryAfter: categorized.retryAfter,
+            originalStatus: initResponse.status,
+          });
+        }
 
         throw new Error(
           `X media upload initialize failed: ${errorText}. Make sure the app has the media.write scope and an API tier that includes media upload.`
@@ -188,18 +214,28 @@ export class TwitterClient {
       // ─── Step 2: Append media data ───
       console.log('[Twitter] Step 2: Appending media data...');
 
+      const appendBody = new FormData();
+      appendBody.append('media', new Blob([mediaBuffer], { type: contentType }), 'upload');
+      appendBody.append('segment_index', '0');
+
       const appendResponse = await fetch(`${this.baseUrl}/media/upload/${mediaId}/append`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.accessToken}`,
-          'Content-Type': contentType,
         },
-        body: new Blob([mediaBuffer]),
+        body: appendBody,
       });
 
       if (!appendResponse.ok) {
         const errorText = await appendResponse.text();
         console.error('[Twitter] v2 Media upload APPEND failed:', errorText);
+        const categorized = categorizeTwitterError(appendResponse.status, errorText);
+        if (categorized.type === 'CREDITS_REQUIRED' || categorized.type === 'RATE_LIMIT') {
+          throw createTwitterError(categorized.message, categorized.type, {
+            retryAfter: categorized.retryAfter,
+            originalStatus: appendResponse.status,
+          });
+        }
         throw new Error(`Twitter media upload APPEND failed: ${errorText}`);
       }
 
@@ -219,6 +255,13 @@ export class TwitterClient {
       if (!finalizeResponse.ok) {
         const errorText = await finalizeResponse.text();
         console.error('[Twitter] v2 Media upload FINALIZE failed:', errorText);
+        const categorized = categorizeTwitterError(finalizeResponse.status, errorText);
+        if (categorized.type === 'CREDITS_REQUIRED' || categorized.type === 'RATE_LIMIT') {
+          throw createTwitterError(categorized.message, categorized.type, {
+            retryAfter: categorized.retryAfter,
+            originalStatus: finalizeResponse.status,
+          });
+        }
         throw new Error(`Twitter media upload FINALIZE failed: ${errorText}`);
       }
 
@@ -242,6 +285,7 @@ export class TwitterClient {
    * Wait for video media to finish processing
    */
   private async waitForMediaProcessing(mediaId: string, maxAttempts = 30): Promise<void> {
+    assertTwitterLiveApiEnabled('checking X media processing status');
     for (let i = 0; i < maxAttempts; i++) {
       const statusResponse = await fetch(`${this.baseUrl}/media/upload/${mediaId}/status`, {
         headers: {
@@ -276,6 +320,7 @@ export class TwitterClient {
    * Get tweet with metrics
    */
   async getTweet(tweetId: string): Promise<any> {
+    assertTwitterLiveApiEnabled('fetching X post metrics');
     const url = `${this.baseUrl}/tweets/${tweetId}`;
     const params = new URLSearchParams({
       'tweet.fields': 'public_metrics,non_public_metrics,organic_metrics,promoted_metrics',
@@ -288,8 +333,12 @@ export class TwitterClient {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to fetch tweet');
+      const errorText = await response.text();
+      const categorized = categorizeTwitterError(response.status, errorText);
+      throw createTwitterError(categorized.message, categorized.type, {
+        retryAfter: categorized.retryAfter,
+        originalStatus: response.status,
+      });
     }
 
     const data = await response.json();
@@ -300,6 +349,7 @@ export class TwitterClient {
    * Get user information
    */
   async getUserInfo(username?: string): Promise<any> {
+    assertTwitterLiveApiEnabled('fetching X user profile');
     const url = username
       ? `${this.baseUrl}/users/by/username/${username}`
       : `${this.baseUrl}/users/me`;
@@ -315,8 +365,12 @@ export class TwitterClient {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to fetch Twitter user info');
+      const errorText = await response.text();
+      const categorized = categorizeTwitterError(response.status, errorText);
+      throw createTwitterError(categorized.message, categorized.type, {
+        retryAfter: categorized.retryAfter,
+        originalStatus: response.status,
+      });
     }
 
     const data = await response.json();
@@ -330,6 +384,7 @@ export class TwitterClient {
 export type TwitterErrorType = 
   | 'AUTH_ERROR'           // 401 - Token invalid/expired, needs reconnection
   | 'RATE_LIMIT'           // 429 - Rate limited, retry later
+  | 'CREDITS_REQUIRED'     // 402/billing/credit failures - add X API credits
   | 'FORBIDDEN'            // 403 - Missing permissions
   | 'CONTENT_ERROR'        // 400 - Content rejected (duplicate, etc.)
   | 'MEDIA_ERROR'          // Media upload/processing failed
@@ -356,6 +411,7 @@ function createTwitterError(
 ): TwitterError {
   const error = new Error(message) as TwitterError;
   error.type = type;
+  (error as any).code = type === 'CREDITS_REQUIRED' ? TWITTER_CREDITS_REQUIRED_CODE : type;
   error.retryAfter = options?.retryAfter;
   error.originalStatus = options?.originalStatus;
   error.canRetry = ['RATE_LIMIT', 'SERVER_ERROR'].includes(type);
@@ -369,6 +425,13 @@ function categorizeTwitterError(status: number, errorText: string): { type: Twit
   try {
     const errorJson = JSON.parse(errorText);
     const message = errorJson.detail || errorJson.title || errorJson.errors?.[0]?.message || errorText;
+
+    if (looksLikeTwitterBillingError(message, status)) {
+      return {
+        type: 'CREDITS_REQUIRED',
+        message: `X API credits required: ${message}. Add X API credits or keep TWITTER_API_MODE=no-spend for dry-run development.`,
+      };
+    }
     
     switch (status) {
       case 401:
@@ -408,6 +471,13 @@ function categorizeTwitterError(status: number, errorText: string): { type: Twit
         };
     }
   } catch {
+    if (looksLikeTwitterBillingError(errorText, status)) {
+      return {
+        type: 'CREDITS_REQUIRED',
+        message: `X API credits required: ${errorText || `Twitter API error: ${status}`}. Add X API credits or keep TWITTER_API_MODE=no-spend for dry-run development.`,
+      };
+    }
+
     return {
       type: status >= 500 ? 'SERVER_ERROR' : 'UNKNOWN',
       message: errorText || `Twitter API error: ${status}`,
@@ -419,6 +489,8 @@ function categorizeTwitterError(status: number, errorText: string): { type: Twit
  * Factory function to create Twitter client
  */
 export async function createTwitterClient(accountId: string): Promise<TwitterClient> {
+  assertTwitterLiveApiEnabled('using connected X accounts');
+
   const { createAdminClient } = await import('@/lib/supabase/admin');
   const { decryptToken, encryptToken } = await import('@/lib/encryption');
 
@@ -547,6 +619,8 @@ export async function getTwitterUserProfile(accessToken: string, userId: string)
 }
 
 export async function getTwitterUserTweets(accessToken: string, userId: string, maxTweets: number = 50) {
+  assertTwitterLiveApiEnabled('syncing X posts');
+
   const baseUrl = 'https://api.x.com/2';
   const url = `${baseUrl}/users/${userId}/tweets`;
   const params = new URLSearchParams({
@@ -609,8 +683,10 @@ export async function getTwitterUserTweets(accessToken: string, userId: string, 
             : null;
         const suggested = retryAfterSeconds ?? untilResetSeconds ?? null;
         if (suggested !== null) {
-          // Encode as "429;retryAfter=NN" so upstream can parse
-          throw new Error(`Failed to fetch user tweets: 429;retryAfter=${suggested}`);
+          throw createTwitterError('Twitter rate limit exceeded', 'RATE_LIMIT', {
+            retryAfter: suggested,
+            originalStatus: 429,
+          });
         }
       }
       const delayMs = 500 * Math.pow(2, attempt); // 500, 1000, 2000
@@ -618,22 +694,19 @@ export async function getTwitterUserTweets(accessToken: string, userId: string, 
       continue;
     }
 
-    // Non-retriable error
-    try {
-      const error = JSON.parse(lastBody);
-      throw new Error(error.detail || error.errors?.[0]?.message || `Failed to fetch user tweets: ${status}`);
-    } catch {
-      throw new Error(`Failed to fetch user tweets: ${status}`);
-    }
+    const categorized = categorizeTwitterError(status, lastBody);
+    throw createTwitterError(categorized.message, categorized.type, {
+      retryAfter: categorized.retryAfter,
+      originalStatus: status,
+    });
   }
 
   const status = lastResponse?.status ?? 0;
-  try {
-    const error = JSON.parse(lastBody);
-    throw new Error(error.detail || error.errors?.[0]?.message || `Failed to fetch user tweets: ${status}`);
-  } catch {
-    throw new Error(`Failed to fetch user tweets: ${status}`);
-  }
+  const categorized = categorizeTwitterError(status, lastBody);
+  throw createTwitterError(categorized.message, categorized.type, {
+    retryAfter: categorized.retryAfter,
+    originalStatus: status,
+  });
 }
 
 export const getTweetMetrics = getTwitterTweetMetrics;
@@ -729,6 +802,8 @@ export async function exchangeTwitterCode(
   code: string,
   codeVerifier: string
 ): Promise<TwitterTokenResponse> {
+  assertTwitterLiveApiEnabled('connecting X accounts');
+
   // Use the Client ID exactly as provided from Twitter Developer Portal
   const clientId = config.clientId;
 
@@ -789,6 +864,8 @@ export async function refreshTwitterToken(
   config: TwitterOAuthConfig,
   refreshToken: string
 ): Promise<TwitterTokenResponse> {
+  assertTwitterLiveApiEnabled('refreshing X OAuth tokens');
+
   // Use the Client ID exactly as provided from Twitter Developer Portal
   const clientId = config.clientId;
 
@@ -810,8 +887,16 @@ export async function refreshTwitterToken(
   });
 
   if (!response.ok) {
+    const errorText = await response.text();
+    const categorized = categorizeTwitterError(response.status, errorText);
     const { APIError } = await import('@/lib/api-middleware');
-    throw new APIError(401, 'Failed to refresh Twitter token', 'OAUTH_TOKEN_REFRESH_FAILED');
+    throw new APIError(
+      response.status,
+      categorized.message || 'Failed to refresh Twitter token',
+      categorized.type === 'CREDITS_REQUIRED'
+        ? TWITTER_CREDITS_REQUIRED_CODE
+        : 'OAUTH_TOKEN_REFRESH_FAILED'
+    );
   }
 
   return response.json();
@@ -823,6 +908,8 @@ export async function refreshTwitterToken(
 export async function getTwitterUser(
   accessToken: string
 ): Promise<TwitterUser> {
+  assertTwitterLiveApiEnabled('fetching X user profile');
+
   const params = new URLSearchParams({
     'user.fields': 'id,name,username,profile_image_url,description,public_metrics',
   });
@@ -834,8 +921,16 @@ export async function getTwitterUser(
   });
 
   if (!response.ok) {
+    const errorText = await response.text();
+    const categorized = categorizeTwitterError(response.status, errorText);
     const { APIError } = await import('@/lib/api-middleware');
-    throw new APIError(response.status, 'Failed to fetch Twitter user', 'TWITTER_API_ERROR');
+    throw new APIError(
+      response.status,
+      categorized.message || 'Failed to fetch Twitter user',
+      categorized.type === 'CREDITS_REQUIRED'
+        ? TWITTER_CREDITS_REQUIRED_CODE
+        : 'TWITTER_API_ERROR'
+    );
   }
 
   const data = await response.json();

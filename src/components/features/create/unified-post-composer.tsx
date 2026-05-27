@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
     AlertTriangle,
+    Brain,
     Calendar,
     CheckCircle2,
     ChevronDown,
@@ -89,6 +90,20 @@ type AIGenerationMeta = {
     model?: string;
     platforms: Platform[];
     sourcePrompt: string;
+};
+
+type IntelligenceContextState = {
+    brandProfile?: {
+        confidence_score?: number;
+        voice?: string;
+        content_pillars?: string[];
+        do_rules?: string[];
+        dont_rules?: string[];
+    };
+    recentTopPosts?: unknown[];
+    recentFailedPosts?: unknown[];
+    currentPerformanceSummary?: Record<string, unknown>;
+    contentPillars?: string[];
 };
 
 type RefinementType =
@@ -344,6 +359,8 @@ export function UnifiedPostComposer() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showMediaLibrary, setShowMediaLibrary] = useState(false);
     const [aiMetadata, setAiMetadata] = useState<AIGenerationMeta | undefined>();
+    const [useBrandBrain, setUseBrandBrain] = useState(true);
+    const [intelligenceContext, setIntelligenceContext] = useState<IntelligenceContextState | null>(null);
     const [aiOptions] = useState<AIGenerationOptions>({
         tone: "professional",
         length: "medium",
@@ -385,6 +402,35 @@ export function UnifiedPostComposer() {
             typeof error === "string" ? error : (error as any)?.message || "Failed to load connected accounts";
         toast.error(message);
     }, [error]);
+
+    useEffect(() => {
+        if (!workspaceId || content.platforms.length === 0) {
+            setIntelligenceContext(null);
+            return;
+        }
+
+        let cancelled = false;
+        const params = new URLSearchParams({
+            workspaceId,
+            platforms: content.platforms.join(","),
+        });
+
+        fetch(`/api/intelligence/context?${params.toString()}`, {
+            headers: workspaceHeader(workspaceId),
+        })
+            .then((response) => response.json())
+            .then((payload) => {
+                if (cancelled) return;
+                setIntelligenceContext(payload?.data?.context || null);
+            })
+            .catch(() => {
+                if (!cancelled) setIntelligenceContext(null);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [content.platforms, workspaceId]);
 
     useEffect(() => {
         setAccountSelections((prev) => {
@@ -580,6 +626,8 @@ export function UnifiedPostComposer() {
                     tone: aiOptions.tone,
                     length: aiOptions.length,
                     model: aiOptions.model,
+                    useBrandBrain,
+                    contentPillar: intelligenceContext?.contentPillars?.[0],
                 }),
             });
 
@@ -621,7 +669,7 @@ export function UnifiedPostComposer() {
         } finally {
             setIsGeneratingBase(false);
         }
-    }, [aiOptions.length, aiOptions.model, aiOptions.tone, content.platforms, content.text, resetPreviewsForBaseChange, workspaceId]);
+    }, [aiOptions.length, aiOptions.model, aiOptions.tone, content.platforms, content.text, intelligenceContext?.contentPillars, resetPreviewsForBaseChange, useBrandBrain, workspaceId]);
 
     const validatePreviewCreation = useCallback(() => {
         if (content.platforms.length === 0) {
@@ -673,6 +721,8 @@ export function UnifiedPostComposer() {
                     model: aiOptions.model,
                     addHashtags: true,
                     addCTA: true,
+                    useBrandBrain,
+                    contentPillar: intelligenceContext?.contentPillars?.[0],
                 }),
             });
 
@@ -714,7 +764,7 @@ export function UnifiedPostComposer() {
         } finally {
             setIsCreatingPreviews(false);
         }
-    }, [aiOptions.length, aiOptions.model, aiOptions.tone, compatiblePlatforms.compatible, content.platforms, content.text, validatePreviewCreation, workspaceId]);
+    }, [aiOptions.length, aiOptions.model, aiOptions.tone, compatiblePlatforms.compatible, content.platforms, content.text, intelligenceContext?.contentPillars, useBrandBrain, validatePreviewCreation, workspaceId]);
 
     const handlePlatformContentChange = useCallback((platform: Platform, value: string) => {
         setContent((prev) => ({
@@ -923,6 +973,12 @@ export function UnifiedPostComposer() {
                         onPlatformToggle={handlePlatformToggle}
                         onAccountSelect={handleAccountSelect}
                         loadingAccounts={loadingAccounts}
+                    />
+
+                    <IntelligenceContextBar
+                        enabled={useBrandBrain}
+                        context={intelligenceContext}
+                        onEnabledChange={setUseBrandBrain}
                     />
 
                     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -1196,6 +1252,52 @@ function DestinationBar({
                     );
                 })}
             </div>
+        </div>
+    );
+}
+
+function IntelligenceContextBar({
+    enabled,
+    context,
+    onEnabledChange,
+}: {
+    enabled: boolean;
+    context: IntelligenceContextState | null;
+    onEnabledChange: (enabled: boolean) => void;
+}) {
+    const completion = Math.round(Number(context?.brandProfile?.confidence_score || 0));
+    const pillars = context?.contentPillars || context?.brandProfile?.content_pillars || [];
+    const outcomeCount = Object.keys(context?.currentPerformanceSummary || {}).length;
+    const topCount = context?.recentTopPosts?.length || 0;
+
+    return (
+        <div className="flex flex-col gap-3 rounded-lg border border-secondary-200 bg-secondary-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+                <div className="rounded-md bg-primary-50 p-2 text-primary-700">
+                    <Brain className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium text-secondary-900">Xocial AI memory</p>
+                        <Badge variant={enabled ? "success" : "default"}>
+                            {enabled ? "On" : "Off"}
+                        </Badge>
+                        {completion > 0 && <Badge variant="secondary">{completion}% Brand Brain</Badge>}
+                    </div>
+                    <p className="mt-1 text-xs text-secondary-500">
+                        {context
+                            ? `${pillars.length} pillars, ${topCount} recent examples, ${outcomeCount} performance signals available for generation.`
+                            : "Select platforms to load Brand Brain, past winners, and platform performance context."}
+                    </p>
+                </div>
+            </div>
+            <label className="flex shrink-0 cursor-pointer items-center gap-2 text-sm font-medium text-secondary-700">
+                <Checkbox
+                    checked={enabled}
+                    onCheckedChange={(checked) => onEnabledChange(Boolean(checked))}
+                />
+                Use Brand Brain
+            </label>
         </div>
     );
 }

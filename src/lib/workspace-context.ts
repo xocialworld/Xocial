@@ -5,6 +5,10 @@ import {
   createServiceRoleClient,
   requireAuth,
 } from '@/lib/api-middleware';
+import {
+  applyDevAdminPlanOverride,
+  type EntitlementUser,
+} from '@/lib/dev-admin-entitlements';
 
 export const WORKSPACE_ROLES = [
   'owner',
@@ -45,6 +49,29 @@ const DEFAULT_FREE_LIMITS = {
   engagement_inbox: false,
   custom_branding: false,
 };
+
+function getFallbackLimitsForPlan(plan: string) {
+  if (plan === 'enterprise') {
+    return {
+      ...DEFAULT_FREE_LIMITS,
+      plan,
+      max_users: 999,
+      max_workspaces: 999,
+      max_social_profiles: 999,
+      max_scheduled_posts: null,
+      ai_enabled: true,
+      advanced_analytics: true,
+      approval_workflows: true,
+      engagement_inbox: true,
+      custom_branding: true,
+    };
+  }
+
+  return {
+    ...DEFAULT_FREE_LIMITS,
+    plan,
+  };
+}
 
 export type WorkspaceContext = {
   user: Awaited<ReturnType<typeof requireAuth>>['user'];
@@ -190,7 +217,11 @@ async function ensureDefaultWorkspace(userId: string, userClient: SupabaseClient
   return getUserWorkspace(userId, userClient);
 }
 
-async function getPlanForWorkspace(serviceClient: SupabaseClient, workspace: any) {
+async function getPlanForWorkspace(
+  serviceClient: SupabaseClient,
+  workspace: any,
+  user: EntitlementUser
+) {
   const accountId = workspace.account_id as string | undefined;
 
   let subscriptionQuery = serviceClient
@@ -206,21 +237,49 @@ async function getPlanForWorkspace(serviceClient: SupabaseClient, workspace: any
     subscriptionQuery = subscriptionQuery.eq('workspace_id', workspace.id);
   }
 
-  const { data } = await subscriptionQuery.maybeSingle();
+  const [{ data }, entitlementUser] = await Promise.all([
+    subscriptionQuery.maybeSingle(),
+    getEntitlementUser(serviceClient, user),
+  ]);
+  const effectivePlan = applyDevAdminPlanOverride(data?.plan ?? 'free', entitlementUser);
   const { data: planLimits } = await serviceClient
     .from('plan_limits')
     .select('*')
-    .eq('plan', data?.plan ?? 'free')
+    .eq('plan', effectivePlan)
     .maybeSingle();
-  const limits = planLimits ?? DEFAULT_FREE_LIMITS;
+  const limits = planLimits ?? getFallbackLimitsForPlan(effectivePlan);
 
   return {
     subscription: data ?? null,
     limits: {
       ...DEFAULT_FREE_LIMITS,
       ...limits,
-      plan: limits.plan ?? data?.plan ?? 'free',
+      plan: effectivePlan,
     },
+  };
+}
+
+async function getEntitlementUser(
+  serviceClient: SupabaseClient,
+  user: EntitlementUser
+): Promise<EntitlementUser> {
+  if (user.email) {
+    return user;
+  }
+
+  if (!user.id) {
+    return user;
+  }
+
+  const { data: profile } = await serviceClient
+    .from('profiles')
+    .select('email')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  return {
+    id: user.id,
+    email: profile?.email ?? user.email ?? null,
   };
 }
 
@@ -325,7 +384,7 @@ export async function requireWorkspaceContext(
   }
 
   const [{ subscription, limits }, usage] = await Promise.all([
-    getPlanForWorkspace(serviceClient, workspace),
+    getPlanForWorkspace(serviceClient, workspace, user),
     getWorkspaceUsage(serviceClient, workspace),
   ]);
 

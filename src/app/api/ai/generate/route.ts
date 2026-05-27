@@ -11,6 +11,8 @@ import { generateContent } from '@/lib/openai';
 import { logger } from '@/lib/logger';
 import type { Platform } from '@/types';
 import { DEFAULT_AI_MODEL } from '@/lib/ai/models';
+import { recordAIModelRun, recordLearningEvent } from '@/lib/intelligence/learning';
+import { buildIntelligenceContext } from '@/lib/intelligence/context';
 import { z } from 'zod';
 
 /**
@@ -49,6 +51,9 @@ const generateSchema = z.object({
   addHashtags: z.boolean().optional(),
   addCTA: z.boolean().optional(),
   maxLength: z.number().optional(),
+  useBrandBrain: z.boolean().optional().default(true),
+  campaignGoal: z.string().optional(),
+  contentPillar: z.string().optional(),
 });
 
 /**
@@ -58,7 +63,12 @@ const generateSchema = z.object({
 export const POST = withErrorHandler(async (request: NextRequest) => {
   // Validate request
   const validatedData = await validateRequest(request, generateSchema);
-  const { user, userClient: supabase, workspace } = await requireWorkspaceContext(request, {
+  const {
+    user,
+    userClient: supabase,
+    serviceClient,
+    workspace,
+  } = await requireWorkspaceContext(request, {
     roles: ['owner', 'admin', 'manager', 'creator'],
   });
 
@@ -77,9 +87,17 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
 
   // Generate content using OpenAI
   let generated;
+  let refinedPrompt = validatedData.prompt;
+  const intelligenceContext = validatedData.useBrandBrain
+    ? await buildIntelligenceContext(serviceClient, {
+        workspaceId: workspace.id,
+        selectedPlatforms: platforms,
+        campaignGoal: validatedData.campaignGoal,
+        query: validatedData.prompt,
+      })
+    : undefined;
   try {
     // Enhance the prompt to be more explicit if it's very short
-    let refinedPrompt = validatedData.prompt;
     if (refinedPrompt.length < 50) {
         refinedPrompt = `Create a high-quality social media post based on this idea: "${refinedPrompt}". Expand on it, make it engaging, and ensure it offers value to the reader.`;
     }
@@ -97,9 +115,40 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       addCTA: validatedData.addCTA,
       maxLength: validatedData.maxLength,
       userId: user.id,
+      intelligenceContext: intelligenceContext
+        ? {
+            brandProfile: intelligenceContext.brandProfile,
+            recentTopPosts: intelligenceContext.recentTopPosts.slice(0, 4),
+            recentFailedPosts: intelligenceContext.recentFailedPosts.slice(0, 3),
+            currentPerformanceSummary: intelligenceContext.currentPerformanceSummary,
+            campaignGoal: validatedData.campaignGoal,
+            contentPillar: validatedData.contentPillar,
+          }
+        : undefined,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to generate AI content';
+    await recordAIModelRun(serviceClient, {
+      workspaceId: workspace.id,
+      userId: user.id,
+      feature: 'content_generation',
+      promptVersion: 'create.generate.v2',
+      model: resolvedModel,
+      inputPayload: {
+        prompt: refinedPrompt,
+        platforms,
+        tone: validatedData.tone,
+        style: validatedData.style,
+        audience: validatedData.audience,
+        length: validatedData.length,
+        useBrandBrain: validatedData.useBrandBrain,
+        campaignGoal: validatedData.campaignGoal,
+        contentPillar: validatedData.contentPillar,
+      },
+      status: 'failed',
+      latencyMs: Date.now() - startTime,
+      errorMessage: message,
+    });
     throw new APIError(502, message, 'AI_GENERATE_FAILED');
   }
 
@@ -132,6 +181,10 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
         addEmojis: validatedData.addEmojis,
         addHashtags: validatedData.addHashtags,
         addCTA: validatedData.addCTA,
+        useBrandBrain: validatedData.useBrandBrain,
+        campaignGoal: validatedData.campaignGoal,
+        contentPillar: validatedData.contentPillar,
+        brandCompletion: intelligenceContext?.brandProfile?.confidence_score,
       },
     })
     .select()
@@ -141,6 +194,54 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     console.error('Failed to store AI generation:', error);
     // Don't fail the request if storage fails
   }
+
+  const modelRun = await recordAIModelRun(serviceClient, {
+    workspaceId: workspace.id,
+    userId: user.id,
+    feature: 'content_generation',
+    promptVersion: 'create.generate.v2',
+    model: generated.model,
+    inputPayload: {
+      prompt: refinedPrompt,
+      sourcePrompt: validatedData.prompt,
+      platforms,
+      tone: validatedData.tone,
+      style: validatedData.style,
+      audience: validatedData.audience,
+      length: validatedData.length,
+      addEmojis: validatedData.addEmojis,
+      addHashtags: validatedData.addHashtags,
+      addCTA: validatedData.addCTA,
+    },
+    outputPayload: {
+      platformContent: generated.platformContent,
+      hashtags: generated.hashtags,
+      summary: generated.summary,
+      generationId: aiGeneration?.id,
+    },
+    status: 'succeeded',
+    tokenUsage: generated.tokenUsage,
+    latencyMs: generationTime,
+    entityType: 'ai_generation',
+    entityId: aiGeneration?.id ?? null,
+  });
+
+  await recordLearningEvent(serviceClient, {
+    workspaceId: workspace.id,
+    actorUserId: user.id,
+    source: 'xocial_ai',
+    eventType: 'ai_generated',
+    entityType: 'ai_generation',
+    entityId: aiGeneration?.id ?? modelRun?.id ?? null,
+    signalStrength: 0.7,
+    metadata: {
+      model: generated.model,
+      platforms,
+      generationId: aiGeneration?.id,
+      modelRunId: modelRun?.id,
+      usedBrandBrain: validatedData.useBrandBrain,
+    },
+  });
 
   logger.ai('ai_generate', {
     userId: user.id,

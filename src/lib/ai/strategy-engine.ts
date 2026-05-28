@@ -6,16 +6,15 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { generateObject } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { env } from '@/lib/env';
+import {
+  createXocialOpenAIProvider,
+  resolveOpenAICompatibleModelId,
+} from '@/lib/ai/gateway';
 import { StrategyRecommendation } from '@/types';
 import { buildAIContextPacket } from '@/lib/intelligence/context';
 import type { AIContextPacket } from '@/types/intelligence';
 
-const gatewayOpenAI = createOpenAI({
-  baseURL: `${env.VERCEL_AI_GATEWAY_URL}/v1`,
-  apiKey: env.VERCEL_AI_GATEWAY_API_KEY,
-});
+const { openai: gatewayOpenAI, usesGateway } = createXocialOpenAIProvider();
 import { logger } from '../logger';
 
 export interface PerformanceData {
@@ -236,7 +235,7 @@ Provide recommendations in JSON format:
 }`;
 
     const result = await generateObject({
-      model: gatewayOpenAI('openai/gpt-4o-mini'),
+      model: gatewayOpenAI(resolveOpenAICompatibleModelId('openai/gpt-4o-mini', usesGateway)),
       schema: {
         parse(data: any) { return data as { recommendations: AIStrategyRecommendation[] }; },
       } as any,
@@ -522,7 +521,7 @@ Generate diverse content ideas that would perform well. Return as JSON:
 }`;
 
     const result = await generateObject({
-      model: gatewayOpenAI('openai/gpt-4o-mini'),
+      model: gatewayOpenAI(resolveOpenAICompatibleModelId('openai/gpt-4o-mini', usesGateway)),
       schema: {
         // Minimal runtime validation; we only need the ideas array
         parse(data: any) { return data as { ideas: Array<{ title: string; description: string; platforms: string[] }> }; },

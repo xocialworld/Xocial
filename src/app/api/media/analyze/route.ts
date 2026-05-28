@@ -6,7 +6,7 @@
 
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { env } from '@/lib/env';
+import { getAIGatewayApiKey, getAIGatewayBaseURL } from '@/lib/ai/gateway';
 import {
   withErrorHandler,
   successResponse,
@@ -91,10 +91,15 @@ Respond with ONLY this JSON object, no extra commentary or text.`,
       temperature: 0.5,
     } as any;
 
-    const response = await fetch(`${env.VERCEL_AI_GATEWAY_URL}/v1/chat/completions`, {
+    const gatewayKey = getAIGatewayApiKey();
+    if (!gatewayKey) {
+      throw new APIError(500, 'AI Gateway is not configured', 'AI_GATEWAY_NOT_CONFIGURED');
+    }
+
+    const response = await fetch(`${getAIGatewayBaseURL()}/v1/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.VERCEL_AI_GATEWAY_API_KEY}`,
+        Authorization: `Bearer ${gatewayKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),

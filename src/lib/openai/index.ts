@@ -4,20 +4,19 @@
  */
 
 import { generateObject, generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
 import type { Platform } from '@/types';
 import { DEFAULT_AI_MODEL } from '@/lib/ai/models';
 import { env } from '@/lib/env';
+import {
+  createXocialOpenAIProvider,
+  resolveOpenAICompatibleModelId,
+} from '@/lib/ai/gateway';
 import type { AIContextPacket } from '@/types/intelligence';
 
 // Initialize OpenAI provider with Vercel AI Gateway support.
-// Use direct OpenAI when only OPENAI_API_KEY is configured.
-const usesGateway = Boolean(env.VERCEL_AI_GATEWAY_API_KEY);
-const openai = createOpenAI({
-  apiKey: env.VERCEL_AI_GATEWAY_API_KEY || env.OPENAI_API_KEY,
-  baseURL: usesGateway && env.VERCEL_AI_GATEWAY_URL ? `${env.VERCEL_AI_GATEWAY_URL}/v1` : undefined,
-});
+// Prefer official AI Gateway keys/OIDC before the legacy custom gateway key.
+const { openai, usesGateway } = createXocialOpenAIProvider();
 
 const DEFAULT_PLATFORM: Platform = 'instagram';
 
@@ -181,16 +180,7 @@ function getProviderOrder() {
 }
 
 function resolveModelId(id: string) {
-  if (usesGateway) {
-    return id.includes('/') ? id : `openai/${id}`;
-  }
-
-  if (!id.startsWith('openai/')) {
-    console.warn(`[AI] Direct OpenAI configured. Falling back from ${id} to gpt-4o-mini`);
-    return 'gpt-4o-mini';
-  }
-
-  return id.replace('openai/', '');
+  return resolveOpenAICompatibleModelId(id, usesGateway);
 }
 
 function getFallbackModels(modelId: string) {

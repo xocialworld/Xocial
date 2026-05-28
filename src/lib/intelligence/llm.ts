@@ -1,16 +1,15 @@
 import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_AI_MODEL } from '@/lib/ai/models';
 import { env } from '@/lib/env';
+import {
+  createXocialOpenAIProvider,
+  resolveOpenAICompatibleModelId,
+} from '@/lib/ai/gateway';
 import { recordAIModelRun } from './learning';
 
-const usesGateway = Boolean(env.VERCEL_AI_GATEWAY_API_KEY);
-const openai = createOpenAI({
-  apiKey: env.VERCEL_AI_GATEWAY_API_KEY || env.OPENAI_API_KEY,
-  baseURL: usesGateway && env.VERCEL_AI_GATEWAY_URL ? `${env.VERCEL_AI_GATEWAY_URL}/v1` : undefined,
-});
+const { openai, usesGateway } = createXocialOpenAIProvider();
 
 function getProviderOrder() {
   return (env.VERCEL_AI_GATEWAY_ORDER || 'openai')
@@ -20,15 +19,7 @@ function getProviderOrder() {
 }
 
 function resolveModelId(id: string) {
-  if (usesGateway) {
-    return id.includes('/') ? id : `openai/${id}`;
-  }
-
-  if (!id.startsWith('openai/')) {
-    return 'gpt-4o-mini';
-  }
-
-  return id.replace('openai/', '');
+  return resolveOpenAICompatibleModelId(id, usesGateway);
 }
 
 function extractJsonObject(rawText: string): unknown {

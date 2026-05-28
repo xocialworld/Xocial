@@ -26,6 +26,8 @@ const envSchema = z.object({
   }),
 
   // Vercel AI Gateway Configuration
+  AI_GATEWAY_API_KEY: z.string().optional(),
+  VERCEL_OIDC_TOKEN: z.string().optional(),
   VERCEL_AI_GATEWAY_API_KEY: z.string().optional(),
   VERCEL_AI_GATEWAY_URL: z.string().url().optional().default('https://ai-gateway.vercel.sh'),
   VERCEL_AI_GATEWAY_ORDER: z.string().optional(),
@@ -198,7 +200,13 @@ export const isFeatureEnabled = {
   linkedin: () => !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET),
   youtube: () => !!(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET),
   tiktok: () => !!(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET),
-  ai: () => !!(env.VERCEL_AI_GATEWAY_API_KEY || env.OPENAI_API_KEY),
+  ai: () =>
+    !!(
+      env.AI_GATEWAY_API_KEY ||
+      env.VERCEL_OIDC_TOKEN ||
+      env.VERCEL_AI_GATEWAY_API_KEY ||
+      env.OPENAI_API_KEY
+    ),
 };
 
 /**

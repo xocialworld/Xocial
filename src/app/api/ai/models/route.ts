@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { withErrorHandler, successResponse } from '@/lib/api-middleware';
 import { env } from '@/lib/env';
+import { getAIGatewayApiKey, getAIGatewayBaseURL } from '@/lib/ai/gateway';
 import { AI_MODELS } from '@/lib/ai/models';
 import type { AIModel } from '@/lib/ai/models';
 import type { NextResponse } from 'next/server';
@@ -18,8 +19,8 @@ function mapGatewayModel(m: any): AIModel | null {
 }
 
 export const GET = withErrorHandler(async (_req: NextRequest) => {
-  const key = env.VERCEL_AI_GATEWAY_API_KEY || process.env.AI_GATEWAY_API_KEY || '';
-  const base = env.VERCEL_AI_GATEWAY_URL || 'https://ai-gateway.vercel.sh';
+  const key = getAIGatewayApiKey();
+  const base = getAIGatewayBaseURL();
   const url = `${base}/v1/ai/models`;
   try {
     if (!key) throw new Error('missing');

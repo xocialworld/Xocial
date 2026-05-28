@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { withErrorHandler } from '@/lib/api-middleware';
 import { env } from '@/lib/env';
+import { hasAIGatewayAuth } from '@/lib/ai/gateway';
 
 /**
  * Health check endpoint
@@ -71,7 +72,7 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
 
     // Check 3: Vercel AI Gateway
     try {
-      if (process.env.VERCEL_AI_GATEWAY_API_KEY || env.OPENAI_API_KEY) {
+      if (hasAIGatewayAuth() || env.OPENAI_API_KEY) {
         const aiStart = Date.now();
         const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/ai/models`);
         const json = await res.json().catch(() => null);

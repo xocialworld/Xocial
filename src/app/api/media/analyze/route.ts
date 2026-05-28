@@ -6,7 +6,7 @@
 
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { getAIGatewayApiKey, getAIGatewayBaseURL } from '@/lib/ai/gateway';
+import { getAIGatewayApiKey, getAIGatewayBaseURL, getAIGatewayRequestToken } from '@/lib/ai/gateway';
 import {
   withErrorHandler,
   successResponse,
@@ -91,7 +91,7 @@ Respond with ONLY this JSON object, no extra commentary or text.`,
       temperature: 0.5,
     } as any;
 
-    const gatewayKey = getAIGatewayApiKey();
+    const gatewayKey = getAIGatewayApiKey(getAIGatewayRequestToken(request));
     if (!gatewayKey) {
       throw new APIError(500, 'AI Gateway is not configured', 'AI_GATEWAY_NOT_CONFIGURED');
     }

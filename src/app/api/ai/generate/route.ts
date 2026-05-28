@@ -14,6 +14,7 @@ import { DEFAULT_AI_MODEL } from '@/lib/ai/models';
 import { recordAIModelRun, recordLearningEvent } from '@/lib/intelligence/learning';
 import { buildAIContextPacket } from '@/lib/intelligence/context';
 import type { AIExplanation } from '@/types/intelligence';
+import { getAIGatewayRequestToken } from '@/lib/ai/gateway';
 import { z } from 'zod';
 
 /**
@@ -139,6 +140,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   const resolvedModel = validatedData.model ?? DEFAULT_AI_MODEL;
 
   const startTime = Date.now();
+  const aiGatewayToken = getAIGatewayRequestToken(request);
 
   const limited = await enforceUserRateLimit(supabase, user.id, 'ai_generations', 'created_at', 60_000, 30);
   if (!limited) {
@@ -176,6 +178,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       addCTA: validatedData.addCTA,
       maxLength: validatedData.maxLength,
       userId: user.id,
+      aiGatewayToken,
       intelligenceContext: aiContextPacket
         ? {
             promptContext: aiContextPacket?.promptContext,

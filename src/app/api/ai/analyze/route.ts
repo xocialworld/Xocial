@@ -10,6 +10,7 @@ import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { buildAIContextPacket } from '@/lib/intelligence/context';
 import { recordAIModelRun, recordLearningEvent } from '@/lib/intelligence/learning';
 import type { Platform } from '@/types';
+import { getAIGatewayRequestToken, hasAIGatewayAuth } from '@/lib/ai/gateway';
 import { z } from 'zod';
 
 const platformEnum = z.enum([
@@ -43,12 +44,13 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     allowOnboardingFallback: true,
   });
   const startTime = Date.now();
+  const aiGatewayToken = getAIGatewayRequestToken(request);
 
   // Check if Vercel AI Gateway is configured
-  if (!process.env.VERCEL_AI_GATEWAY_API_KEY && !process.env.OPENAI_API_KEY) {
+  if (!hasAIGatewayAuth(aiGatewayToken) && !process.env.OPENAI_API_KEY) {
     throw new APIError(
       501,
-      'AI analysis is not configured. Please add VERCEL_AI_GATEWAY_API_KEY or OPENAI_API_KEY to environment variables.',
+      'AI analysis is not configured. Please add AI_GATEWAY_API_KEY or OPENAI_API_KEY to environment variables.',
       'AI_NOT_CONFIGURED'
     );
   }
@@ -71,6 +73,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     platforms,
     promptContext: aiContextPacket?.promptContext,
     contextMetadata: aiContextPacket?.contextMetadata,
+    aiGatewayToken,
   });
   const latencyMs = Date.now() - startTime;
 

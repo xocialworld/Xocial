@@ -14,10 +14,6 @@ import {
 } from '@/lib/ai/gateway';
 import type { AIContextPacket } from '@/types/intelligence';
 
-// Initialize OpenAI provider with Vercel AI Gateway support.
-// Prefer official AI Gateway keys/OIDC before the legacy custom gateway key.
-const { openai, usesGateway } = createXocialOpenAIProvider();
-
 const DEFAULT_PLATFORM: Platform = 'instagram';
 
 // Model fallback configuration for gateway provider options
@@ -66,6 +62,7 @@ export interface GenerateContentRequest {
   maxLength?: number;
   model?: string;
   userId?: string;
+  aiGatewayToken?: string | null;
   intelligenceContext?: {
     promptContext?: string;
     contextMetadata?: AIContextPacket['contextMetadata'];
@@ -91,6 +88,7 @@ export interface GenerateContentRequest {
 type PromptContextInput = {
   promptContext?: string;
   contextMetadata?: AIContextPacket['contextMetadata'];
+  aiGatewayToken?: string | null;
 };
 
 export interface GeneratedContent {
@@ -177,10 +175,6 @@ function getProviderOrder() {
     .split(',')
     .map((p) => p.trim())
     .filter(Boolean);
-}
-
-function resolveModelId(id: string) {
-  return resolveOpenAICompatibleModelId(id, usesGateway);
 }
 
 function getFallbackModels(modelId: string) {
@@ -316,6 +310,8 @@ export async function generateContent(
   const systemPrompt = buildSystemPrompt(targetPlatforms, request, lengthDescription.description);
 
   try {
+    const { openai, usesGateway } = createXocialOpenAIProvider(request.aiGatewayToken);
+    const resolveModelId = (id: string) => resolveOpenAICompatibleModelId(id, usesGateway);
     const modelString = resolveModelId(resolvedModel);
     const fallbackModels = getFallbackModels(resolvedModel);
     const providerOrder = getProviderOrder();
@@ -769,6 +765,8 @@ export async function refineContent(
   };
 
   try {
+    const { openai, usesGateway } = createXocialOpenAIProvider(options.aiGatewayToken);
+    const resolveModelId = (id: string) => resolveOpenAICompatibleModelId(id, usesGateway);
     const providerOrder = getProviderOrder();
 
     const result = await generateText({
@@ -813,6 +811,8 @@ export async function generateHashtags(
   options: PromptContextInput & { intent?: string } = {}
 ): Promise<string[]> {
   try {
+    const { openai, usesGateway } = createXocialOpenAIProvider(options.aiGatewayToken);
+    const resolveModelId = (id: string) => resolveOpenAICompatibleModelId(id, usesGateway);
     const providerOrder = getProviderOrder();
 
     const result = await generateText({
@@ -864,6 +864,8 @@ export async function analyzeContent(content: string, options: PromptContextInpu
   });
 
   try {
+    const { openai, usesGateway } = createXocialOpenAIProvider(options.aiGatewayToken);
+    const resolveModelId = (id: string) => resolveOpenAICompatibleModelId(id, usesGateway);
     const result = await generateObject({
       model: openai(resolveModelId('openai/gpt-4o-mini')),
       schema: analysisSchema,
@@ -908,6 +910,8 @@ export async function generateVariations(
   options: PromptContextInput = {}
 ): Promise<string[]> {
   try {
+    const { openai, usesGateway } = createXocialOpenAIProvider(options.aiGatewayToken);
+    const resolveModelId = (id: string) => resolveOpenAICompatibleModelId(id, usesGateway);
     const providerOrder = getProviderOrder();
 
     const result = await generateText({

@@ -14,6 +14,7 @@ import { recordAIModelRun, recordLearningEvent } from '@/lib/intelligence/learni
 import { buildAIContextPacket } from '@/lib/intelligence/context';
 import type { Platform } from '@/types';
 import type { AIExplanation } from '@/types/intelligence';
+import { getAIGatewayRequestToken } from '@/lib/ai/gateway';
 
 const PLATFORM_VALUES: Platform[] = [
   'facebook',
@@ -51,6 +52,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     allowOnboardingFallback: true,
   });
   const startTime = Date.now();
+  const aiGatewayToken = getAIGatewayRequestToken(request);
 
   // Validate request
   const validatedData = await validateRequest(request, hashtagSchema);
@@ -82,8 +84,9 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
           promptContext: aiContextPacket.promptContext,
           contextMetadata: aiContextPacket.contextMetadata,
           intent: validatedData.intent,
+          aiGatewayToken,
         }
-      : { intent: validatedData.intent }
+      : { intent: validatedData.intent, aiGatewayToken }
   );
 
   const totalDuration = Date.now() - startTime;

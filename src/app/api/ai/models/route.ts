@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { withErrorHandler, successResponse } from '@/lib/api-middleware';
 import { env } from '@/lib/env';
-import { getAIGatewayApiKey, getAIGatewayBaseURL } from '@/lib/ai/gateway';
+import { getAIGatewayApiKey, getAIGatewayBaseURL, getAIGatewayRequestToken } from '@/lib/ai/gateway';
 import { AI_MODELS } from '@/lib/ai/models';
 import type { AIModel } from '@/lib/ai/models';
 import type { NextResponse } from 'next/server';
@@ -18,8 +18,8 @@ function mapGatewayModel(m: any): AIModel | null {
   return { id, label, provider: provider[0].toUpperCase()+provider.slice(1), description, context, priceHint, category };
 }
 
-export const GET = withErrorHandler(async (_req: NextRequest) => {
-  const key = getAIGatewayApiKey();
+export const GET = withErrorHandler(async (request: NextRequest) => {
+  const key = getAIGatewayApiKey(getAIGatewayRequestToken(request));
   const base = getAIGatewayBaseURL();
   const url = `${base}/v1/ai/models`;
   try {

@@ -9,6 +9,7 @@ import { z } from 'zod';
 import type { Platform } from '@/types';
 import { DEFAULT_AI_MODEL } from '@/lib/ai/models';
 import { env } from '@/lib/env';
+import type { AIContextPacket } from '@/types/intelligence';
 
 // Initialize OpenAI provider with Vercel AI Gateway support.
 // Use direct OpenAI when only OPENAI_API_KEY is configured.
@@ -67,6 +68,8 @@ export interface GenerateContentRequest {
   model?: string;
   userId?: string;
   intelligenceContext?: {
+    promptContext?: string;
+    contextMetadata?: AIContextPacket['contextMetadata'];
     brandProfile?: {
       voice?: string;
       audience?: string;
@@ -85,6 +88,11 @@ export interface GenerateContentRequest {
     contentPillar?: string;
   };
 }
+
+type PromptContextInput = {
+  promptContext?: string;
+  contextMetadata?: AIContextPacket['contextMetadata'];
+};
 
 export interface GeneratedContent {
   text: string;
@@ -683,6 +691,8 @@ function buildSystemPrompt(
   }
 }`;
 
+  const sharedPromptContext = context?.promptContext;
+
   return `You are Xocial's Expert Social Media Strategist, capable of turning even the vaguest ideas into professional, attention-grabbing content for multiple platforms.
 
 YOUR CORE MISSION:
@@ -701,7 +711,7 @@ ${preferenceLines}
 
 ${platformSections}
 
-${intelligenceLines ? `XOCIAL MEMORY CONTEXT:\n${intelligenceLines}\n\nUse this memory to sound like the user's actual brand. Do not mention that you used memory or analytics.` : ''}
+${sharedPromptContext || intelligenceLines ? `${sharedPromptContext || `XOCIAL MEMORY CONTEXT:\n${intelligenceLines}`}\n\nUse this memory to sound like the user's actual brand. Do not mention that you used memory or analytics.` : ''}
 
 Return a single JSON object EXACTLY matching this structure (no extra commentary, no markdown formatting).
 DO NOT wrap the response in \`\`\`json ... \`\`\`. Return RAW JSON only.
@@ -755,7 +765,8 @@ export async function refineContent(
   originalContent: string,
   platform: string,
   refinementType: 'shorter' | 'longer' | 'more_emojis' | 'more_professional' | 'more_casual' | 'add_urgency' | 'custom',
-  customInstruction?: string
+  customInstruction?: string,
+  options: PromptContextInput = {}
 ): Promise<string> {
   const refinementInstructions = {
     shorter: 'Make this content more concise while keeping the main message.',
@@ -775,7 +786,14 @@ export async function refineContent(
       messages: [
         {
           role: 'system',
-          content: `You are refining social media content for ${platform}. ${refinementInstructions[refinementType]} Keep the content platform-appropriate and preserve the core intent.`,
+          content: [
+            `You are refining social media content for ${platform}. ${refinementInstructions[refinementType]} Keep the content platform-appropriate and preserve the core intent.`,
+            options.promptContext
+              ? `${options.promptContext}\n\nFollow this memory closely, especially brand voice, audience, platform preferences, approved examples, and do-not rules.`
+              : '',
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
         },
         { role: 'user', content: originalContent },
       ],
@@ -801,7 +819,8 @@ export async function refineContent(
 export async function generateHashtags(
   content: string,
   platform: string,
-  count: number = 5
+  count: number = 5,
+  options: PromptContextInput & { intent?: string } = {}
 ): Promise<string[]> {
   try {
     const providerOrder = getProviderOrder();
@@ -811,7 +830,15 @@ export async function generateHashtags(
       messages: [
         {
           role: 'system',
-          content: `Generate ${count} relevant, trending hashtags for ${platform} based on the content. Return only the hashtags without the # symbol, one per line.`,
+          content: [
+            `Generate ${count} relevant, platform-appropriate hashtags for ${platform} based on the content. Return only the hashtags without the # symbol, one per line.`,
+            options.intent ? `Hashtag intent: ${options.intent}` : '',
+            options.promptContext
+              ? `${options.promptContext}\n\nUse Brand Brain pillars, audience language, past winners, and do-not rules. Avoid off-brand, competitor, banned, or irrelevant hashtags.`
+              : '',
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
         },
         { role: 'user', content },
       ],
@@ -835,7 +862,7 @@ export async function generateHashtags(
 /**
  * Analyze content sentiment and provide suggestions
  */
-export async function analyzeContent(content: string): Promise<{
+export async function analyzeContent(content: string, options: PromptContextInput & { platforms?: string[] } = {}): Promise<{
   sentiment: 'positive' | 'neutral' | 'negative';
   readability: 'easy' | 'moderate' | 'difficult';
   suggestions: string[];
@@ -856,7 +883,9 @@ export async function analyzeContent(content: string): Promise<{
           content: `Analyze this social media content and provide:
 1. Sentiment (positive/neutral/negative)
 2. Readability (easy/moderate/difficult)
-3. 3 specific improvement suggestions`,
+3. 3 specific improvement suggestions
+${options.platforms?.length ? `Target platforms: ${options.platforms.join(', ')}` : ''}
+${options.promptContext ? `\n${options.promptContext}\n\nEvaluate whether the content fits the Brand Brain voice, audience, platform preferences, and do-not rules.` : ''}`,
         },
         { role: 'user', content },
       ],
@@ -885,7 +914,8 @@ export async function analyzeContent(content: string): Promise<{
 export async function generateVariations(
   originalContent: string,
   platform: string,
-  count: number = 3
+  count: number = 3,
+  options: PromptContextInput = {}
 ): Promise<string[]> {
   try {
     const providerOrder = getProviderOrder();
@@ -900,6 +930,7 @@ export async function generateVariations(
 - Use different wording and structure
 - Be optimized for ${platform}
 - Be numbered (1., 2., 3., etc.)
+${options.promptContext ? `\n${options.promptContext}\n\nAll variations must follow the workspace Brand Brain and avoid do-not rules.` : ''}
 
 Separate each variation with a blank line.`,
         },

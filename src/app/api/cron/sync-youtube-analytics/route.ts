@@ -4,7 +4,7 @@ import { withCronVerification, cronSuccessResponse, cronErrorResponse } from '@/
 import { getYouTubeVideoStats } from '@/lib/oauth/youtube';
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
-import { recordMetricSnapshotAndOutcome } from '@/lib/intelligence/metrics';
+import { persistPlatformMetrics } from '@/lib/intelligence/analytics-sync';
 
 /**
  * GET /api/cron/sync-youtube-analytics
@@ -90,54 +90,26 @@ export const GET = withCronVerification(async (request: NextRequest) => {
             const stats = videoStats.statistics as Record<string, string | undefined> | undefined;
             const favoriteCount = stats?.favoriteCount ?? '0';
 
-            // Upsert analytics data
-            const { error: upsertError } = await supabase
-              .from('post_analytics')
-              .upsert({
-                post_id: post.id,
-                platform: 'youtube',
+            const syncResult = await persistPlatformMetrics(supabase, {
+              workspaceId: account.workspace_id,
+              postId: post.id,
+              platformPostId: post.external_post_id,
+              socialAccountId: account.id,
+              platform: 'youtube',
+              publishedAt: post.published_at,
+              metrics: {
+                ...videoStats.statistics,
+                views: parseInt(videoStats.statistics?.viewCount || '0'),
                 likes: parseInt(videoStats.statistics?.likeCount || '0'),
                 comments: parseInt(videoStats.statistics?.commentCount || '0'),
-                shares: 0, // YouTube doesn't provide share count directly
-                views: parseInt(videoStats.statistics?.viewCount || '0'),
-                engagement_rate: 0, // Calculate based on views and interactions
-                reach: parseInt(videoStats.statistics?.viewCount || '0'),
-                impressions: parseInt(videoStats.statistics?.viewCount || '0'),
                 saves: parseInt(favoriteCount || '0'),
-                followers_gain: 0, // Would need Analytics API for this
-                clicks: 0, // Would need Analytics API for this
-                synced_at: new Date().toISOString(),
-                metadata: {
-                  viewCount: videoStats.statistics?.viewCount,
-                  likeCount: videoStats.statistics?.likeCount,
-                  commentCount: videoStats.statistics?.commentCount,
-                  favoriteCount,
-                },
-              }, {
-                onConflict: 'post_id,platform',
-              });
+              },
+              raw: videoStats.statistics || {},
+              syncSource: 'youtube_cron_analytics',
+            });
 
-            if (upsertError) {
-              logger.error(`[Cron: Sync YouTube Analytics] Failed to upsert analytics for video ${post.external_post_id}`, upsertError);
-              totalErrors++;
-            } else {
-              await recordMetricSnapshotAndOutcome(supabase, {
-                workspaceId: account.workspace_id,
-                postId: post.id,
-                platformPostId: post.external_post_id,
-                socialAccountId: account.id,
-                platform: 'youtube',
-                metrics: {
-                  ...videoStats.statistics,
-                  views: parseInt(videoStats.statistics?.viewCount || '0'),
-                  likes: parseInt(videoStats.statistics?.likeCount || '0'),
-                  comments: parseInt(videoStats.statistics?.commentCount || '0'),
-                  saves: parseInt(favoriteCount || '0'),
-                },
-                raw: videoStats.statistics || {},
-              });
-              totalVideosSynced++;
-            }
+            if (syncResult.status === 'synced') totalVideosSynced++;
+            else totalErrors++;
 
             // Small delay to avoid rate limiting
             await new Promise((resolve) => setTimeout(resolve, 100));

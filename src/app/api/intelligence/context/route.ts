@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { withErrorHandler, successResponse } from '@/lib/api-middleware';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
-import { buildIntelligenceContext } from '@/lib/intelligence/context';
+import { buildIntelligenceContext, getContextSources } from '@/lib/intelligence/context';
 import type { Platform } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -35,5 +35,20 @@ export const GET = withErrorHandler(async (request: NextRequest) => {
     query: request.nextUrl.searchParams.get('query') || undefined,
   });
 
-  return successResponse({ context });
+  return successResponse({
+    context,
+    debug: {
+      sources: getContextSources(context),
+      counts: {
+        recentTopPosts: context.recentTopPosts.length,
+        recentFailedPosts: context.recentFailedPosts.length,
+        similarPastExamples: context.similarPastExamples.length,
+        approvalPreferences: context.approvalPreferences.length,
+        feedbackSignals: context.feedbackSignals?.length || 0,
+        audienceLanguage: context.audienceLanguage.length,
+        knowledgeSources: context.activeKnowledgeSources.length,
+        performancePlatforms: Object.keys(context.currentPerformanceSummary || {}).length,
+      },
+    },
+  });
 });

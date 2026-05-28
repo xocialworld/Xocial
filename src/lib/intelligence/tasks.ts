@@ -2,9 +2,20 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import type { Platform } from '@/types';
 import { APPROVAL_REASONS } from './approval-reasons';
-import { buildIntelligenceContext, getBrandProfile } from './context';
-import { recordLearningEvent } from './learning';
+import { getBrandProfile } from './context';
+import { buildLearningEventKey, recordLearningEvent } from './learning';
+import { syncWorkspaceKnowledgeChunks } from './knowledge';
 import { generateWorkerJson } from './llm';
+import {
+  WORKER_INTELLIGENCE_VERSION,
+  WORKER_SCHEMA_VERSION,
+  buildWorkerIntelligenceContext,
+  buildWorkerMetadata,
+  buildWorkerSystemPrompt,
+  buildWorkerUserPrompt,
+  estimateWorkerConfidence,
+  evidenceFromRows,
+} from './worker-context';
 
 export type AgentType =
   | 'signal_ingestion'
@@ -15,7 +26,10 @@ export type AgentType =
   | 'strategy_planner'
   | 'content_adaptation'
   | 'safety'
-  | 'reporting';
+  | 'reporting'
+  | 'learning_backfill'
+  | 'analytics_backfill'
+  | 'knowledge_ingestion';
 
 type AgentTaskRow = {
   id: string;
@@ -60,6 +74,11 @@ const performanceInsightSchema = z.object({
   weak_patterns: z.array(z.string()).default([]),
   recommended_actions: z.array(z.string()).default([]),
   risks: z.array(z.string()).default([]),
+  confidence_score: z.number().min(0).max(1).default(0.65),
+  evidence: z.array(z.string()).default([]),
+  confidence_breakdown: z.record(z.unknown()).default({}),
+  reasoning_summary: z.string().default(''),
+  data_caveats: z.array(z.string()).default([]),
 });
 
 const brandLearnerSchema = z.object({
@@ -86,6 +105,9 @@ const brandLearnerSchema = z.object({
       reason: z.string().min(1),
       evidence: z.array(z.string()).default([]),
       confidence: z.number().min(0).max(1).default(0.65),
+      applyRisk: z.enum(['low', 'medium', 'high']).default('medium'),
+      confidenceBreakdown: z.record(z.unknown()).default({}),
+      reasoningSummary: z.string().default(''),
     })
   ).default([]),
 });
@@ -100,6 +122,13 @@ const strategyPlannerSchema = z.object({
       confidence_score: z.number().min(0).max(1).default(0.65),
       action_items: z.array(z.string()).default([]),
       metrics: z.record(z.unknown()).default({}),
+      target_platforms: z.array(z.string()).default([]),
+      content_pillar: z.string().nullable().default(null),
+      calendar_action: z.string().nullable().default(null),
+      expected_impact: z.string().nullable().default(null),
+      evidence: z.array(z.string()).default([]),
+      confidence_breakdown: z.record(z.unknown()).default({}),
+      reasoning_summary: z.string().default(''),
     })
   ).default([]),
 });
@@ -112,6 +141,10 @@ const reportingSchema = z.object({
   issues: z.array(z.string()).default([]),
   next_actions: z.array(z.string()).default([]),
   client_notes: z.array(z.string()).default([]),
+  confidence_score: z.number().min(0).max(1).default(0.65),
+  evidence: z.array(z.string()).default([]),
+  confidence_breakdown: z.record(z.unknown()).default({}),
+  data_caveats: z.array(z.string()).default([]),
 });
 
 function asRecord(value: unknown): Record<string, any> {
@@ -144,10 +177,6 @@ function hashInput(input: unknown) {
   return JSON.stringify(input || {})
     .slice(0, 500)
     .replace(/\s+/g, ' ');
-}
-
-function compactJson(value: unknown, maxLength = 7000) {
-  return JSON.stringify(value, null, 2).slice(0, maxLength);
 }
 
 function truncateText(value: unknown, maxLength = 700) {
@@ -203,16 +232,6 @@ function approvalReasonEvidence(entries: Array<Record<string, any>>) {
 function approvalReasonSuggestion(entries: Array<Record<string, any>>, fallback: string) {
   const hints = modeList(entries.map((entry) => String(entry.brandLearningHint || '')).filter(Boolean));
   return hints[0] || fallback;
-}
-
-function workerSystemPrompt(agentName: string) {
-  return [
-    `You are ${agentName}, a specialist worker inside Xocial AI.`,
-    'Use only the provided workspace data.',
-    'Return one valid JSON object matching the requested schema.',
-    'Do not invent metrics. If evidence is weak, say confidence is low and recommend a next measurement step.',
-    'Keep language clear for social media managers and agencies.',
-  ].join('\n');
 }
 
 export async function enqueueAgentTask(
@@ -288,6 +307,21 @@ export async function queuePostIntelligenceTasks(
     priority?: number;
   }
 ) {
+  const shouldQueueMetricLifecycle = [
+    'post_published',
+    'publish_succeeded',
+    'publish_partial',
+    'scheduled_publish_completed',
+  ].includes(input.reason);
+  const lifecycleOffsets = shouldQueueMetricLifecycle
+    ? [
+        { phase: 'immediate', minutes: 5, priority: 7 },
+        { phase: 'first_hour', minutes: 60, priority: 6 },
+        { phase: 'day', minutes: 24 * 60, priority: 5 },
+        { phase: 'seven_day', minutes: 7 * 24 * 60, priority: 4 },
+      ]
+    : [];
+
   await Promise.all([
     enqueueAgentTask(supabase, {
       workspaceId: input.workspaceId,
@@ -305,6 +339,22 @@ export async function queuePostIntelligenceTasks(
       priority: 4,
       inputPayload: { reason: input.reason, platforms: input.platforms || [] },
     }),
+    ...lifecycleOffsets.map((offset) =>
+      enqueueAgentTask(supabase, {
+        workspaceId: input.workspaceId,
+        agentType: 'analytics_backfill',
+        entityType: 'post',
+        entityId: input.postId,
+        priority: offset.priority,
+        scheduledFor: new Date(Date.now() + offset.minutes * 60_000).toISOString(),
+        inputPayload: {
+          reason: input.reason,
+          phase: offset.phase,
+          platforms: input.platforms || [],
+          postId: input.postId,
+        },
+      })
+    ),
   ]);
 }
 
@@ -689,6 +739,12 @@ async function runAgentProcessor(
       return processReporting(supabase, task);
     case 'content_adaptation':
       return processContentAdaptation(supabase, task);
+    case 'learning_backfill':
+      return processLearningBackfill(supabase, task);
+    case 'analytics_backfill':
+      return processAnalyticsBackfill(supabase, task);
+    case 'knowledge_ingestion':
+      return processKnowledgeIngestion(supabase, task);
     default:
       throw new Error(`Unsupported agent type: ${task.agent_type}`);
   }
@@ -738,9 +794,20 @@ function classifyText(
   const product = brandProfile.products_offers.find((item) =>
     lower.includes(item.toLowerCase())
   );
-  const hasVideo = media.some((item) => asRecord(item).type === 'video');
-  const hasImage = media.some((item) => asRecord(item).type === 'image');
+  const matchedDoRules = brandProfile.do_rules.filter((rule) =>
+    rule && lower.includes(rule.toLowerCase())
+  );
+  const matchedDontRules = brandProfile.dont_rules.filter((rule) =>
+    rule && lower.includes(rule.toLowerCase())
+  );
+  const hasVideo = media.some((item: unknown) => asRecord(item).type === 'video');
+  const hasImage = media.some((item: unknown) => asRecord(item).type === 'image');
   const cta = ctaRules.find(([term]) => lower.includes(term))?.[1] || 'none';
+  const riskFlags = [
+    /\bguaranteed|100%|risk-free|instant results|cure\b/i.test(text) ? 'absolute_claim' : '',
+    matchedDontRules.length ? 'brand_do_not_rule_match' : '',
+    text.length > 2200 ? 'caption_too_long' : '',
+  ].filter(Boolean);
 
   let hookType = 'direct';
   if (firstLine.includes('?')) hookType = 'question';
@@ -780,10 +847,33 @@ function classifyText(
     hashtag_count: hashtagCount,
     source: metadata?.ai || metadata?.aiGenerationId ? 'ai' : metadata?.external ? 'imported' : 'manual',
     features: {
+      workerVersion: WORKER_INTELLIGENCE_VERSION,
+      schemaVersion: WORKER_SCHEMA_VERSION,
+      classificationMethod: 'deterministic_rules',
       firstLine,
       wordCount: words.length,
       hasQuestion: text.includes('?'),
       lineCount: text.split('\n').filter(Boolean).length,
+      matchedPillar: pillar || null,
+      matchedProduct: product || null,
+      matchedDoRules,
+      matchedDontRules,
+      riskFlags,
+      ctaStrength: cta === 'none' ? 'missing' : ['comment', 'save', 'share', 'subscribe', 'book'].includes(cta) ? 'strong' : 'present',
+      hookQuality:
+        firstLine.length >= 8 && firstLine.length <= 120
+          ? hookType === 'direct'
+            ? 'clear'
+            : 'strong'
+          : 'needs_review',
+      audienceIntent:
+        tone === 'educational'
+          ? 'learn'
+          : tone === 'promotional'
+            ? 'buy_or_book'
+            : hookType === 'story'
+              ? 'relate'
+              : 'engage',
     },
   };
 }
@@ -844,7 +934,13 @@ async function processContentClassifier(
     entityType: 'post',
     entityId: post.id,
     signalStrength: 0.55,
-    metadata: { platforms, rowsWritten: rows.length },
+    metadata: {
+      platforms,
+      rowsWritten: rows.length,
+      workerVersion: WORKER_INTELLIGENCE_VERSION,
+      schemaVersion: WORKER_SCHEMA_VERSION,
+      classificationMethod: 'deterministic_rules',
+    },
   });
 
   return { message: 'Content classified', rowsWritten: rows.length, platforms };
@@ -890,27 +986,41 @@ async function processPerformanceAnalyst(
 
   let aiInsight: z.output<typeof performanceInsightSchema> | null = null;
   let modelRunId: string | undefined;
+  const promptVersion = 'performance-analyst-v2';
+  const workerContext = await buildWorkerIntelligenceContext(supabase, {
+    workspaceId: task.workspace_id,
+    query: 'Analyze recent normalized post outcomes',
+  });
   try {
     const generated = await generateWorkerJson(supabase, {
       workspaceId: task.workspace_id,
       taskId: task.id,
       agentType: 'performance_analyst',
-      promptVersion: 'performance-analyst-v1',
-      system: workerSystemPrompt('Performance Analyst'),
-      user: [
-        'Analyze these normalized post outcomes and explain what is winning, what is weak, and what the team should do next.',
-        'Return JSON with: title, summary, narrative, winner_patterns, weak_patterns, recommended_actions, risks.',
-        '',
-        `Brand/account context: ${compactJson(task.input_payload || {}, 1200)}`,
-        `Outcomes: ${compactJson(rows.slice(0, 30), 7000)}`,
-        `Related posts: ${compactJson((postsForContext || []).map(stripLargePost), 5000)}`,
-      ].join('\n'),
+      promptVersion,
+      system: buildWorkerSystemPrompt('Performance Analyst', [
+        'Compare performance by platform, hook type, CTA type, content pillar, media type, and metric window when data exists.',
+        'Tie every recommendation to post/outcome evidence or explain that the signal is still early.',
+      ]),
+      user: buildWorkerUserPrompt({
+        objective:
+          'Analyze normalized post outcomes and identify winning patterns, weak patterns, risks, and next actions.',
+        outputContract:
+          'Return title, summary, narrative, winner_patterns, weak_patterns, recommended_actions, risks, confidence_score, evidence, confidence_breakdown, reasoning_summary, data_caveats.',
+        context: workerContext,
+        sections: [
+          { title: 'Task input', value: task.input_payload || {}, maxLength: 1200 },
+          { title: 'Ranked outcomes', value: rows.slice(0, 40), maxLength: 7000 },
+          { title: 'Related posts', value: (postsForContext || []).map(stripLargePost), maxLength: 5000 },
+        ],
+      }),
       schema: performanceInsightSchema,
       maxTokens: 1200,
       temperature: 0.25,
       inputPayload: {
         outcomeCount: rows.length,
         postIds,
+        contextMetadata: workerContext.aiContextPacket.contextMetadata,
+        dataCoverage: workerContext.dataCoverage,
       },
       entityType: 'agent_task',
       entityId: task.id,
@@ -921,23 +1031,43 @@ async function processPerformanceAnalyst(
     console.warn('[AgentTasks] Performance analyst AI fallback:', aiError);
   }
 
+  const fallbackEvidence = evidenceFromRows(
+    [...top, ...weak],
+    (row: any) =>
+      `${row.platform || 'platform'} post ${row.post_id || 'unknown'} scored ${Math.round(Number(row.score || 0))}: ${row.reason_summary || 'No reason summary available.'}`,
+    6
+  );
+  const confidenceBreakdown = estimateWorkerConfidence(workerContext, {
+    base: Math.min(0.55, 0.38 + rows.length * 0.01),
+    aiGenerated: Boolean(aiInsight),
+  });
+  const workerMetadata = buildWorkerMetadata({
+    promptVersion,
+    context: workerContext,
+    aiGenerated: Boolean(aiInsight),
+    modelRunId,
+    confidenceBreakdown,
+    evidence: aiInsight?.evidence?.length ? aiInsight.evidence : fallbackEvidence,
+    reasoningSummary: aiInsight?.reasoning_summary || summary,
+  });
+
   const artifact = {
     workspace_id: task.workspace_id,
     task_id: task.id,
     artifact_type: 'performance_insight',
     title: aiInsight?.title || 'Performance pattern detected',
     summary: aiInsight?.summary || summary,
-    confidence: Math.min(0.9, 0.45 + rows.length * 0.02),
+    confidence: Number(aiInsight?.confidence_score || confidenceBreakdown.score),
     status: 'active',
     payload: {
-      aiGenerated: Boolean(aiInsight),
-      modelRunId: modelRunId || null,
+      ...workerMetadata,
       averageScore: Math.round(avgScore),
       bestPlatform,
       narrative: aiInsight?.narrative || summary,
       winnerPatterns: aiInsight?.winner_patterns || [],
       weakPatterns: aiInsight?.weak_patterns || [],
       risks: aiInsight?.risks || [],
+      aiConfidenceBreakdown: aiInsight?.confidence_breakdown || {},
       topPosts: top.map((row: any) => ({
         postId: row.post_id,
         platform: row.platform,
@@ -962,6 +1092,7 @@ async function processPerformanceAnalyst(
       ],
     },
     source_data: {
+      ...workerMetadata,
       dedupeKey: `performance:${hashInput({
         outcomeCount: rows.length,
         top: top.map((row: any) => `${row.post_id}:${row.platform}:${row.score}`),
@@ -1138,28 +1269,42 @@ async function processBrandLearner(
   }
 
   let brandLearnerModelRunId: string | undefined;
+  const promptVersion = 'brand-learner-v2';
+  const workerContext = await buildWorkerIntelligenceContext(supabase, {
+    workspaceId: task.workspace_id,
+    query: 'Propose precise Brand Brain learning updates from approvals, content features, and outcomes',
+  });
   try {
     const generated = await generateWorkerJson(supabase, {
       workspaceId: task.workspace_id,
       taskId: task.id,
       agentType: 'brand_learner',
-      promptVersion: 'brand-learner-v1',
-      system: workerSystemPrompt('Brand Learner'),
-      user: [
-        'Infer Brand Brain update suggestions from approvals, rejections, content classifications, and outcomes.',
-        'Only suggest updates that are useful to a social media manager and supported by evidence.',
-        'Return JSON with a suggestions array. Each suggestion must include field, operation, suggestedValue, reason, evidence, confidence.',
-        'Allowed fields: voice, audience, products_offers, content_pillars, competitors, do_rules, dont_rules, approved_examples, rejected_examples, platform_preferences.',
-        '',
-        `Current Brand Brain: ${compactJson(brandProfile, 3000)}`,
-        `Approval signals: ${compactJson(approvals.slice(0, 25), 5000)}`,
-        `Structured approval reasons: ${compactJson({
-          approvedReasons: approvedReasons.slice(0, 20),
-          rejectedReasons: rejectedReasons.slice(0, 20),
-        }, 5000)}`,
-        `Content features: ${compactJson(features.slice(0, 50), 5000)}`,
-        `Post outcomes: ${compactJson(outcomes.slice(0, 20), 4000)}`,
-      ].join('\n'),
+      promptVersion,
+      system: buildWorkerSystemPrompt('Brand Learner', [
+        'Suggest fewer, stronger Brand Brain updates rather than broad guesses.',
+        'Each suggestion must say how risky it is to apply and which approval/performance evidence supports it.',
+      ]),
+      user: buildWorkerUserPrompt({
+        objective:
+          'Infer high-quality Brand Brain update suggestions from approvals, rejections, content classifications, and outcomes.',
+        outputContract:
+          'Return suggestions array. Each item must include field, operation, suggestedValue, reason, evidence, confidence, applyRisk, confidenceBreakdown, reasoningSummary.',
+        context: workerContext,
+        sections: [
+          { title: 'Current Brand Brain', value: brandProfile, maxLength: 3000 },
+          { title: 'Approval signals', value: approvals.slice(0, 25), maxLength: 5000 },
+          {
+            title: 'Structured approval reasons',
+            value: {
+              approvedReasons: approvedReasons.slice(0, 20),
+              rejectedReasons: rejectedReasons.slice(0, 20),
+            },
+            maxLength: 5000,
+          },
+          { title: 'Content features', value: features.slice(0, 50), maxLength: 5000 },
+          { title: 'Post outcomes', value: outcomes.slice(0, 20), maxLength: 4000 },
+        ],
+      }),
       schema: brandLearnerSchema,
       maxTokens: 1500,
       temperature: 0.25,
@@ -1168,6 +1313,7 @@ async function processBrandLearner(
         structuredApprovalReasons: approvedReasons.length + rejectedReasons.length,
         featureSnapshots: features.length,
         outcomeSummaries: outcomes.length,
+        dataCoverage: workerContext.dataCoverage,
       },
       entityType: 'agent_task',
       entityId: task.id,
@@ -1188,29 +1334,48 @@ async function processBrandLearner(
     return { message: 'No strong Brand Brain suggestions yet', skipped: true };
   }
 
-  const rows = suggestions.map((suggestion) => ({
-    workspace_id: task.workspace_id,
-    task_id: task.id,
-    artifact_type: 'brand_suggestion',
-    title: `Brand Brain suggestion: ${humanize(String(suggestion.field))}`,
-    summary: suggestion.reason,
-    confidence: Number(suggestion.confidence || 0.68),
-    status: 'active',
-    payload: {
-      ...suggestion,
+  const rows = suggestions.map((suggestion) => {
+    const confidenceBreakdown = estimateWorkerConfidence(workerContext, {
+      base: Number(suggestion.confidence || 0.58) - 0.18,
+      aiGenerated: Boolean(suggestion.aiGenerated),
+    });
+    const workerMetadata = buildWorkerMetadata({
+      promptVersion,
+      context: workerContext,
+      aiGenerated: Boolean(suggestion.aiGenerated),
       modelRunId: suggestion.modelRunId || brandLearnerModelRunId || null,
-    },
-    source_data: {
-      dedupeKey: `brand:${String(suggestion.field)}:${hashInput({
-        value: suggestion.suggestedValue,
-        reason: suggestion.reason,
-      })}`,
-      approvals: approvals.length,
-      structuredReasons: approvedReasons.length + rejectedReasons.length,
-      features: features.length,
-      outcomes: outcomes.length,
-    },
-  }));
+      confidenceBreakdown,
+      evidence: Array.isArray(suggestion.evidence) ? suggestion.evidence : [],
+      reasoningSummary: suggestion.reasoningSummary || suggestion.reason,
+    });
+
+    return {
+      workspace_id: task.workspace_id,
+      task_id: task.id,
+      artifact_type: 'brand_suggestion',
+      title: `Brand Brain suggestion: ${humanize(String(suggestion.field))}`,
+      summary: suggestion.reason,
+      confidence: Number(suggestion.confidence || confidenceBreakdown.score),
+      status: 'active',
+      payload: {
+        ...workerMetadata,
+        ...suggestion,
+        applyRisk: suggestion.applyRisk || 'medium',
+        aiConfidenceBreakdown: suggestion.confidenceBreakdown || {},
+      },
+      source_data: {
+        ...workerMetadata,
+        dedupeKey: `brand:${String(suggestion.field)}:${hashInput({
+          value: suggestion.suggestedValue,
+          reason: suggestion.reason,
+        })}`,
+        approvals: approvals.length,
+        structuredReasons: approvedReasons.length + rejectedReasons.length,
+        features: features.length,
+        outcomes: outcomes.length,
+      },
+    };
+  });
 
   const result = await upsertAgentArtifacts(supabase, rows);
 
@@ -1245,6 +1410,11 @@ async function processBestTime(
     .in('id', postIds);
   if (postsError) throw new Error(postsError.message);
 
+  const promptVersion = 'best-time-v2';
+  const workerContext = await buildWorkerIntelligenceContext(supabase, {
+    workspaceId: task.workspace_id,
+    query: 'Find account-specific best posting windows from historical outcomes',
+  });
   const postsById = new Map((posts || []).map((post: any) => [post.id, post]));
   const platformHours = new Map<string, Array<{ hour: number; score: number }>>();
 
@@ -1273,7 +1443,27 @@ async function processBestTime(
       hour: best?.[0] ?? 10,
       averageScore: best ? Math.round(best[1].total / best[1].count) : 0,
       sampleSize: values.length,
+      confidence: Math.min(0.85, 0.3 + values.length * 0.06),
+      evidence: best
+        ? [`${best[1].count} post outcome(s) around ${String(best[0]).padStart(2, '0')}:00 averaged ${Math.round(best[1].total / best[1].count)}.`]
+        : ['No reliable hour-level sample yet.'],
+      explanation: best
+        ? `This window currently has the strongest normalized score for ${platform}, but confidence depends on sample size.`
+        : `Use a default ${platform} posting window until more published outcomes are synced.`,
     };
+  });
+  const confidenceBreakdown = estimateWorkerConfidence(workerContext, {
+    base: Math.min(0.55, 0.3 + postIds.length * 0.015),
+    aiGenerated: false,
+  });
+  const workerMetadata = buildWorkerMetadata({
+    promptVersion,
+    context: workerContext,
+    aiGenerated: false,
+    confidenceBreakdown,
+    evidence: recommendations.flatMap((recommendation) => recommendation.evidence).slice(0, 6),
+    reasoningSummary:
+      'Best-time recommendations compare normalized outcome scores by publish hour for each platform.',
   });
 
   const result = await upsertAgentArtifact(supabase, {
@@ -1282,12 +1472,14 @@ async function processBestTime(
     artifact_type: 'best_time_recommendation',
     title: 'Best posting windows',
     summary: 'Xocial found platform-specific time windows from your published post outcomes.',
-    confidence: Math.min(0.85, 0.35 + postIds.length * 0.03),
+    confidence: confidenceBreakdown.score,
     status: 'active',
-    payload: { recommendations },
+    payload: { ...workerMetadata, recommendations },
     source_data: {
+      ...workerMetadata,
       dedupeKey: `best-time:${hashInput(recommendations)}`,
       outcomeCount: outcomes?.length || 0,
+      postCount: postIds.length,
     },
   });
 
@@ -1301,11 +1493,14 @@ async function processStrategyPlanner(
   supabase: SupabaseClient,
   task: AgentTaskRow
 ): Promise<ProcessorResult> {
-  const context = await buildIntelligenceContext(supabase, {
+  const promptVersion = 'strategy-planner-v2';
+  const workerContext = await buildWorkerIntelligenceContext(supabase, {
     workspaceId: task.workspace_id,
     selectedPlatforms: normalizePlatforms(task.input_payload?.platforms),
     campaignGoal: typeof task.input_payload?.campaignGoal === 'string' ? task.input_payload.campaignGoal : undefined,
+    query: 'Create a weekly social media strategy plan',
   });
+  const context = workerContext.aiContextPacket.intelligenceContext;
   const { data: recentArtifacts } = await supabase
     .from('agent_artifacts')
     .select('artifact_type, title, summary, payload, confidence, created_at')
@@ -1322,17 +1517,22 @@ async function processStrategyPlanner(
       workspaceId: task.workspace_id,
       taskId: task.id,
       agentType: 'strategy_planner',
-      promptVersion: 'strategy-planner-v1',
-      system: workerSystemPrompt('Strategy Planner'),
-      user: [
-        'Create a practical weekly social media strategy plan for Xocial.',
-        'Use Brand Brain, outcomes, recent artifacts, and selected platforms.',
-        'Return JSON with recommendations array. Each recommendation needs type, title, description, priority, confidence_score, action_items, metrics.',
-        'Recommendations must be specific enough to apply in Calendar or Create.',
-        '',
-        `Intelligence context: ${compactJson(context, 9000)}`,
-        `Recent worker artifacts: ${compactJson(recentArtifacts || [], 5000)}`,
-      ].join('\n'),
+      promptVersion,
+      system: buildWorkerSystemPrompt('Strategy Planner', [
+        'Make each recommendation operational in Calendar, Create, or Brand Brain.',
+        'Include target platforms, pillar, calendar action, expected impact, evidence, and confidence.',
+      ]),
+      user: buildWorkerUserPrompt({
+        objective:
+          'Create a practical weekly social media strategy plan from Brand Brain, outcomes, worker artifacts, and selected platforms.',
+        outputContract:
+          'Return recommendations array. Each recommendation needs type, title, description, priority, confidence_score, action_items, metrics, target_platforms, content_pillar, calendar_action, expected_impact, evidence, confidence_breakdown, reasoning_summary.',
+        context: workerContext,
+        sections: [
+          { title: 'Intelligence context', value: context, maxLength: 9000 },
+          { title: 'Recent worker artifacts', value: recentArtifacts || [], maxLength: 5000 },
+        ],
+      }),
       schema: strategyPlannerSchema,
       maxTokens: 1800,
       temperature: 0.35,
@@ -1340,6 +1540,8 @@ async function processStrategyPlanner(
         selectedPlatforms: context.selectedPlatforms,
         campaignGoal: context.campaignGoal || null,
         artifactCount: recentArtifacts?.length || 0,
+        contextMetadata: workerContext.aiContextPacket.contextMetadata,
+        dataCoverage: workerContext.dataCoverage,
       },
       entityType: 'agent_task',
       entityId: task.id,
@@ -1370,6 +1572,12 @@ async function processStrategyPlanner(
         brandCompletion: context.brandProfile.confidence_score || 0,
         outcomeSignals: Object.keys(context.currentPerformanceSummary || {}).length,
       },
+      target_platforms: context.selectedPlatforms,
+      content_pillar: context.contentPillars[0] || null,
+      calendar_action: 'Fill open slots with pillar-led drafts',
+      expected_impact: 'Improves consistency around the clearest brand themes.',
+      evidence: context.contentPillars.slice(0, 3),
+      reasoning_summary: 'Brand Brain already contains content pillars that can drive the weekly plan.',
       status: 'pending',
     },
     {
@@ -1382,12 +1590,25 @@ async function processStrategyPlanner(
       confidence_score: 0.62,
       action_items: ['Run Best-Time Analysis.', 'Apply slots in Calendar.', 'Compare outcomes after 24 hours.'],
       metrics: {},
+      target_platforms: context.selectedPlatforms,
+      content_pillar: null,
+      calendar_action: 'Apply best-time windows to high-value posts',
+      expected_impact: 'Improves the chance that strong content is published when each platform is most responsive.',
+      evidence: workerContext.workerArtifacts
+        .filter((artifact: any) => artifact.artifact_type === 'best_time_recommendation')
+        .map((artifact: any) => artifact.summary)
+        .slice(0, 3),
+      reasoning_summary: 'Timing recommendations should be applied only after each analytics sync refreshes outcomes.',
       status: 'pending',
     },
   ];
   const sourceRecommendations = aiPlan?.recommendations?.length
     ? aiPlan.recommendations
     : fallbackRecommendations;
+  const baseConfidenceBreakdown = estimateWorkerConfidence(workerContext, {
+    base: 0.4,
+    aiGenerated: Boolean(aiPlan),
+  });
   const recommendations = sourceRecommendations.slice(0, 8).map((recommendation: any) => ({
     workspace_id: task.workspace_id,
     type: recommendation.type || 'content',
@@ -1400,6 +1621,19 @@ async function processStrategyPlanner(
       ...(asRecord(recommendation.metrics)),
       aiGenerated: Boolean(aiPlan),
       modelRunId: modelRunId || null,
+      workerVersion: WORKER_INTELLIGENCE_VERSION,
+      schemaVersion: WORKER_SCHEMA_VERSION,
+      promptVersion,
+      contextMetadata: workerContext.aiContextPacket.contextMetadata,
+      dataCoverage: workerContext.dataCoverage,
+      dataCaveats: workerContext.dataCaveats,
+      confidenceBreakdown: recommendation.confidence_breakdown || baseConfidenceBreakdown,
+      targetPlatforms: recommendation.target_platforms || [],
+      contentPillar: recommendation.content_pillar || null,
+      calendarAction: recommendation.calendar_action || null,
+      expectedImpact: recommendation.expected_impact || null,
+      evidence: recommendation.evidence || [],
+      reasoningSummary: recommendation.reasoning_summary || '',
     },
     status: 'pending',
   }));
@@ -1424,12 +1658,48 @@ async function processSafety(
   const platforms = normalizePlatforms(post.platforms);
   const text = platforms.map((platform) => extractText(post.content, platform)).join('\n');
   const lower = text.toLowerCase();
+  const media: unknown[] = Array.isArray(post.media) ? post.media : [];
+  const hasVideo = media.some((item: unknown) => asRecord(item).type === 'video');
+  const hasImage = media.some((item: unknown) => asRecord(item).type === 'image');
   const blockers = brandProfile.dont_rules.filter((rule) => lower.includes(rule.toLowerCase()));
   const riskyClaims = /\bguaranteed|cure|risk-free|100%|instant results\b/i.test(text);
+  const platformIssues = platforms.flatMap((platform) => {
+    if (platform === 'instagram' && !hasVideo && !hasImage) {
+      return ['Instagram needs image or video media before publishing.'];
+    }
+    if ((platform === 'youtube' || platform === 'tiktok') && !hasVideo) {
+      return [`${humanize(platform)} needs video media before publishing.`];
+    }
+    return [];
+  });
 
-  if (blockers.length === 0 && !riskyClaims) {
+  if (blockers.length === 0 && !riskyClaims && platformIssues.length === 0) {
     return { message: 'No safety concerns detected', skipped: true };
   }
+  const promptVersion = 'safety-v2';
+  const workerContext = await buildWorkerIntelligenceContext(supabase, {
+    workspaceId: task.workspace_id,
+    selectedPlatforms: platforms,
+    query: 'Check post safety, brand do-not rules, platform blockers, and risky claims',
+  });
+  const evidence = [
+    ...blockers.map((rule) => `Matched Brand Brain do-not rule: ${rule}`),
+    ...(riskyClaims ? ['Post contains absolute/risky claim language.'] : []),
+    ...platformIssues,
+  ];
+  const confidenceBreakdown = estimateWorkerConfidence(workerContext, {
+    base: 0.55,
+    aiGenerated: false,
+  });
+  const workerMetadata = buildWorkerMetadata({
+    promptVersion,
+    context: workerContext,
+    aiGenerated: false,
+    confidenceBreakdown,
+    evidence,
+    reasoningSummary:
+      'Safety worker checked Brand Brain do-not rules, risky claim terms, and platform media requirements.',
+  });
 
   const result = await upsertAgentArtifact(supabase, {
     workspace_id: task.workspace_id,
@@ -1438,12 +1708,22 @@ async function processSafety(
     title: 'Content safety warning',
     summary: riskyClaims
       ? 'This post may contain risky or absolute claims.'
-      : 'This post appears to match a Brand Brain do-not rule.',
-    confidence: 0.72,
+      : platformIssues.length
+        ? 'This post has platform-specific publishing blockers.'
+        : 'This post appears to match a Brand Brain do-not rule.',
+    confidence: Math.max(0.72, confidenceBreakdown.score),
     status: 'active',
-    payload: { blockers, riskyClaims, platforms },
+    payload: {
+      ...workerMetadata,
+      blockers,
+      riskyClaims,
+      platformIssues,
+      platforms,
+      media: { hasImage, hasVideo },
+    },
     source_data: {
-      dedupeKey: `safety:${post.id}:${hashInput({ blockers, riskyClaims, platforms })}`,
+      ...workerMetadata,
+      dedupeKey: `safety:${post.id}:${hashInput({ blockers, riskyClaims, platformIssues, platforms })}`,
       postId: post.id,
     },
   });
@@ -1495,24 +1775,35 @@ async function processReporting(
       : 0;
   let report: z.output<typeof reportingSchema> | null = null;
   let modelRunId: string | undefined;
+  const promptVersion = 'reporting-v2';
+  const workerContext = await buildWorkerIntelligenceContext(supabase, {
+    workspaceId: task.workspace_id,
+    query: 'Generate an agency-ready weekly report with wins, risks, next actions, and data caveats',
+  });
   try {
     const generated = await generateWorkerJson(supabase, {
       workspaceId: task.workspace_id,
       taskId: task.id,
       agentType: 'reporting',
-      promptVersion: 'reporting-v1',
-      system: workerSystemPrompt('Agency Reporting Analyst'),
-      user: [
-        'Create a concise weekly social media report for an agency/client.',
-        'Return JSON with title, summary, executive_summary, wins, issues, next_actions, client_notes.',
-        'Mention only evidence from the supplied data.',
-        '',
-        `Brand Brain: ${compactJson(brandProfile, 2500)}`,
-        `Outcome summaries: ${compactJson(outcomes.slice(0, 30), 6000)}`,
-        `Learning events: ${compactJson(events.slice(0, 35), 5000)}`,
-        `Worker artifacts: ${compactJson(artifacts.slice(0, 12), 5000)}`,
-        `Strategy recommendations: ${compactJson(recommendations.slice(0, 10), 5000)}`,
-      ].join('\n'),
+      promptVersion,
+      system: buildWorkerSystemPrompt('Agency Reporting Analyst', [
+        'Write in a client-facing agency style: clear, specific, evidence-backed, and not technical.',
+        'Separate wins, issues, next actions, client notes, and data caveats.',
+      ]),
+      user: buildWorkerUserPrompt({
+        objective:
+          'Create a concise weekly social media report for an agency/client from outcomes, learning events, worker artifacts, and recommendations.',
+        outputContract:
+          'Return title, summary, executive_summary, wins, issues, next_actions, client_notes, confidence_score, evidence, confidence_breakdown, data_caveats.',
+        context: workerContext,
+        sections: [
+          { title: 'Brand Brain', value: brandProfile, maxLength: 2500 },
+          { title: 'Outcome summaries', value: outcomes.slice(0, 30), maxLength: 6000 },
+          { title: 'Learning events', value: events.slice(0, 35), maxLength: 5000 },
+          { title: 'Worker artifacts', value: artifacts.slice(0, 12), maxLength: 5000 },
+          { title: 'Strategy recommendations', value: recommendations.slice(0, 10), maxLength: 5000 },
+        ],
+      }),
       schema: reportingSchema,
       maxTokens: 1600,
       temperature: 0.3,
@@ -1521,6 +1812,7 @@ async function processReporting(
         learningEventCount: events.length,
         artifactCount: artifacts.length,
         recommendationCount: recommendations.length,
+        dataCoverage: workerContext.dataCoverage,
       },
       entityType: 'agent_task',
       entityId: task.id,
@@ -1531,6 +1823,31 @@ async function processReporting(
     console.warn('[AgentTasks] Reporting AI fallback:', aiError);
   }
 
+  const confidenceBreakdown = estimateWorkerConfidence(workerContext, {
+    base: outcomes.length > 0 ? 0.44 : 0.28,
+    aiGenerated: Boolean(report),
+  });
+  const reportEvidence =
+    report?.evidence?.length
+      ? report.evidence
+      : evidenceFromRows(
+          outcomes.slice(0, 8),
+          (row: any) =>
+            `${row.platform || 'platform'} post ${row.post_id || 'unknown'} scored ${Math.round(Number(row.score || 0))}: ${row.reason_summary || 'No reason summary available.'}`,
+          6
+        );
+  const workerMetadata = buildWorkerMetadata({
+    promptVersion,
+    context: workerContext,
+    aiGenerated: Boolean(report),
+    modelRunId,
+    confidenceBreakdown,
+    evidence: reportEvidence,
+    reasoningSummary:
+      report?.executive_summary ||
+      `${outcomes.length} outcomes and ${events.length} learning signals were reviewed.`,
+  });
+
   const result = await upsertAgentArtifact(supabase, {
     workspace_id: task.workspace_id,
     task_id: task.id,
@@ -1539,11 +1856,10 @@ async function processReporting(
     summary:
       report?.summary ||
       `${outcomes.length} outcome summaries and ${events.length} learning signals reviewed. Average performance score: ${Math.round(avgScore)}.`,
-    confidence: outcomes.length > 0 ? 0.7 : 0.45,
+    confidence: Number(report?.confidence_score || confidenceBreakdown.score),
     status: 'active',
     payload: {
-      aiGenerated: Boolean(report),
-      modelRunId: modelRunId || null,
+      ...workerMetadata,
       outcomeCount: outcomes.length,
       learningEventCount: events.length,
       averageScore: Math.round(avgScore),
@@ -1561,8 +1877,10 @@ async function processReporting(
               'Use Calendar to schedule the next strategy recommendation.',
             ],
       clientNotes: report?.client_notes || [],
+      aiConfidenceBreakdown: report?.confidence_breakdown || {},
     },
     source_data: {
+      ...workerMetadata,
       dedupeKey: `weekly-report:${new Date().toISOString().slice(0, 10)}:${hashInput({
         outcomes: outcomes.length,
         events: events.length,
@@ -1594,6 +1912,353 @@ async function processContentAdaptation(
     reason: 'content_adaptation_requested',
   });
   return { message: 'Adaptation support tasks queued', rowsWritten: 2 };
+}
+
+async function processLearningBackfill(
+  supabase: SupabaseClient,
+  task: AgentTaskRow
+): Promise<ProcessorResult> {
+  const limit = Math.min(500, Number(task.input_payload?.limit || 150));
+  const [postsResult, attemptsResult, approvalsResult, feedbackResult] = await Promise.all([
+    supabase
+      .from('posts')
+      .select('id, status, platforms, created_by, created_at, updated_at, published_at, scheduled_at, metadata')
+      .eq('workspace_id', task.workspace_id)
+      .order('created_at', { ascending: false })
+      .limit(limit),
+    supabase
+      .from('post_publish_attempts')
+      .select('id, post_id, platform, status, platform_post_id, started_at, completed_at, error_code, error_message')
+      .eq('workspace_id', task.workspace_id)
+      .order('started_at', { ascending: false })
+      .limit(limit),
+    supabase
+      .from('approval_learning_signals')
+      .select('id, post_id, signal_type, actor_user_id, comment, metadata, created_at')
+      .eq('workspace_id', task.workspace_id)
+      .order('created_at', { ascending: false })
+      .limit(limit),
+    supabase
+      .from('ai_feedback_actions')
+      .select('id, target_type, target_id, action, reason_type, comment, metadata, created_at')
+      .eq('workspace_id', task.workspace_id)
+      .order('created_at', { ascending: false })
+      .limit(limit),
+  ]);
+
+  const events: Array<Parameters<typeof recordLearningEvent>[1]> = [];
+  const posts = postsResult.error ? [] : postsResult.data || [];
+  posts.forEach((post: any) => {
+    const platforms = normalizePlatforms(post.platforms);
+    const baseEventType =
+      post.status === 'scheduled'
+        ? 'post_scheduled'
+        : post.status === 'published'
+          ? 'post_published'
+          : 'post_created';
+    events.push({
+      workspaceId: task.workspace_id,
+      actorUserId: post.created_by || null,
+      source: 'xocial_ai',
+      eventType: baseEventType,
+      entityType: 'post',
+      entityId: post.id,
+      signalStrength: post.status === 'published' ? 0.85 : 0.55,
+      eventKey: buildLearningEventKey({
+        workspaceId: task.workspace_id,
+        eventType: baseEventType,
+        entityType: 'post',
+        entityId: post.id,
+        discriminator: 'backfill',
+      }),
+      metadata: {
+        backfilled: true,
+        status: post.status,
+        platforms,
+        scheduledAt: post.scheduled_at,
+        publishedAt: post.published_at,
+      },
+    });
+    platforms.forEach((platform) => {
+      events.push({
+        workspaceId: task.workspace_id,
+        actorUserId: post.created_by || null,
+        source: 'xocial_ai',
+        eventType: 'platform_variant_created',
+        entityType: 'post',
+        entityId: post.id,
+        platform,
+        signalStrength: 0.55,
+        eventKey: buildLearningEventKey({
+          workspaceId: task.workspace_id,
+          eventType: 'platform_variant_created',
+          entityType: 'post',
+          entityId: post.id,
+          platform,
+          discriminator: 'backfill',
+        }),
+        metadata: { backfilled: true, status: post.status },
+      });
+    });
+  });
+
+  const attempts = attemptsResult.error ? [] : attemptsResult.data || [];
+  attempts.forEach((attempt: any) => {
+    const eventType =
+      attempt.status === 'published'
+        ? 'publish_succeeded'
+        : attempt.status === 'failed'
+          ? 'publish_failed'
+          : 'publish_started';
+    events.push({
+      workspaceId: task.workspace_id,
+      source: 'xocial_ai',
+      eventType,
+      entityType: 'post',
+      entityId: attempt.post_id,
+      platform: attempt.platform,
+      signalStrength: attempt.status === 'published' ? 0.85 : attempt.status === 'failed' ? 0.35 : 0.5,
+      eventKey: buildLearningEventKey({
+        workspaceId: task.workspace_id,
+        eventType,
+        entityType: 'post',
+        entityId: attempt.post_id,
+        platform: attempt.platform,
+        discriminator: attempt.id,
+      }),
+      metadata: {
+        backfilled: true,
+        attemptId: attempt.id,
+        platformPostId: attempt.platform_post_id,
+        errorCode: attempt.error_code,
+        errorMessage: attempt.error_message,
+      },
+    });
+  });
+
+  const approvals = approvalsResult.error ? [] : approvalsResult.data || [];
+  approvals.forEach((approval: any) => {
+    const eventType = approval.signal_type === 'approved' ? 'approval_approved' : 'approval_rejected';
+    events.push({
+      workspaceId: task.workspace_id,
+      actorUserId: approval.actor_user_id || null,
+      source: 'xocial_ai',
+      eventType,
+      entityType: 'post',
+      entityId: approval.post_id,
+      signalStrength: approval.signal_type === 'approved' ? 0.75 : 0.8,
+      eventKey: buildLearningEventKey({
+        workspaceId: task.workspace_id,
+        eventType,
+        entityType: 'post',
+        entityId: approval.post_id,
+        discriminator: approval.id,
+      }),
+      metadata: {
+        backfilled: true,
+        approvalSignalId: approval.id,
+        comment: approval.comment,
+        ...(approval.metadata || {}),
+      },
+    });
+  });
+
+  const feedbackActions = feedbackResult.error ? [] : feedbackResult.data || [];
+  feedbackActions.forEach((feedback: any) => {
+    events.push({
+      workspaceId: task.workspace_id,
+      source: 'xocial_ai',
+      eventType: 'ai_feedback_recorded',
+      entityType: feedback.target_type || 'ai_feedback',
+      entityId: feedback.target_id || feedback.id,
+      signalStrength: feedback.action === 'mark_off_brand' ? 0.9 : 0.7,
+      eventKey: buildLearningEventKey({
+        workspaceId: task.workspace_id,
+        eventType: 'ai_feedback_recorded',
+        entityType: feedback.target_type || 'ai_feedback',
+        entityId: feedback.target_id || feedback.id,
+        discriminator: feedback.id,
+      }),
+      metadata: {
+        backfilled: true,
+        feedbackActionId: feedback.id,
+        action: feedback.action,
+        reasonType: feedback.reason_type,
+        comment: feedback.comment,
+        ...(feedback.metadata || {}),
+      },
+    });
+  });
+
+  for (const event of events) {
+    await recordLearningEvent(supabase, event);
+  }
+
+  await recordLearningEvent(supabase, {
+    workspaceId: task.workspace_id,
+    source: 'xocial_ai',
+    eventType: 'learning_backfilled',
+    entityType: 'workspace',
+    entityId: task.workspace_id,
+    signalStrength: 0.6,
+    eventKey: buildLearningEventKey({
+      workspaceId: task.workspace_id,
+      eventType: 'learning_backfilled',
+      entityType: 'workspace',
+      entityId: task.workspace_id,
+      discriminator: new Date().toISOString().slice(0, 10),
+    }),
+    metadata: {
+      taskId: task.id,
+      posts: posts.length,
+      attempts: attempts.length,
+      approvals: approvals.length,
+      feedbackActions: feedbackActions.length,
+      eventsAttempted: events.length,
+    },
+  });
+
+  return {
+    message: 'Learning backfill completed',
+    rowsWritten: events.length,
+    posts: posts.length,
+    attempts: attempts.length,
+    approvals: approvals.length,
+    feedbackActions: feedbackActions.length,
+  };
+}
+
+async function processAnalyticsBackfill(
+  supabase: SupabaseClient,
+  task: AgentTaskRow
+): Promise<ProcessorResult> {
+  const { persistPlatformMetrics, syncPlatformPostMetrics } = await import('./analytics-sync');
+  const platforms = normalizePlatforms(task.input_payload?.platforms);
+  let query = supabase
+    .from('platform_posts')
+    .select('post_id, platform, platform_post_id, social_account_id, published_at, raw_response, metadata')
+    .eq('workspace_id', task.workspace_id)
+    .eq('status', 'published')
+    .not('post_id', 'is', null)
+    .order('published_at', { ascending: false })
+    .limit(Math.min(100, Number(task.input_payload?.limit || 25)));
+
+  if (task.entity_type === 'post' && task.entity_id) {
+    query = query.eq('post_id', task.entity_id);
+  }
+  if (platforms.length) {
+    query = query.in('platform', platforms);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const rows = data || [];
+  const results = [];
+  for (const row of rows as any[]) {
+    const raw = asRecord(row.raw_response);
+    const metadata = asRecord(row.metadata);
+    const embeddedMetrics = asRecord(raw.metrics || metadata.metrics);
+    if (Object.keys(embeddedMetrics).length > 0) {
+      results.push(
+        await persistPlatformMetrics(supabase, {
+          workspaceId: task.workspace_id,
+          postId: row.post_id,
+          platform: row.platform,
+          platformPostId: row.platform_post_id,
+          socialAccountId: row.social_account_id,
+          publishedAt: row.published_at,
+          metrics: embeddedMetrics,
+          raw: raw || embeddedMetrics,
+          syncSource: `agent_analytics_backfill:${task.input_payload?.phase || 'manual'}`,
+        })
+      );
+      continue;
+    }
+
+    results.push(
+      await syncPlatformPostMetrics(supabase, {
+        workspaceId: task.workspace_id,
+        postId: row.post_id,
+        platform: row.platform,
+        platformPostId: row.platform_post_id,
+        socialAccountId: row.social_account_id,
+        publishedAt: row.published_at,
+        syncSource: `agent_analytics_backfill:${task.input_payload?.phase || 'manual'}`,
+      })
+    );
+  }
+
+  await recordLearningEvent(supabase, {
+    workspaceId: task.workspace_id,
+    source: 'xocial_ai',
+    eventType: 'analytics_backfilled',
+    entityType: task.entity_type || 'workspace',
+    entityId: task.entity_id || task.workspace_id,
+    signalStrength: results.some((result: any) => result.status === 'synced') ? 0.65 : 0.35,
+    eventKey: buildLearningEventKey({
+      workspaceId: task.workspace_id,
+      eventType: 'analytics_backfilled',
+      entityType: task.entity_type || 'workspace',
+      entityId: task.entity_id || task.workspace_id,
+      discriminator: `${task.input_payload?.phase || 'manual'}:${new Date().toISOString().slice(0, 13)}`,
+    }),
+    metadata: {
+      taskId: task.id,
+      phase: task.input_payload?.phase || 'manual',
+      processed: results.length,
+      synced: results.filter((result: any) => result.status === 'synced').length,
+      skipped: results.filter((result: any) => result.status === 'skipped').length,
+      failed: results.filter((result: any) => result.status === 'failed').length,
+      results: results.slice(0, 20),
+    },
+  });
+
+  return {
+    message: 'Analytics backfill completed',
+    rowsWritten: results.filter((result: any) => result.snapshotWritten || result.outcomeWritten).length,
+    processed: results.length,
+    synced: results.filter((result: any) => result.status === 'synced').length,
+    skippedCount: results.filter((result: any) => result.status === 'skipped').length,
+    failed: results.filter((result: any) => result.status === 'failed').length,
+  };
+}
+
+async function processKnowledgeIngestion(
+  supabase: SupabaseClient,
+  task: AgentTaskRow
+): Promise<ProcessorResult> {
+  const result = await syncWorkspaceKnowledgeChunks(
+    supabase,
+    task.workspace_id,
+    Math.min(100, Number(task.input_payload?.limit || 50))
+  );
+
+  await recordLearningEvent(supabase, {
+    workspaceId: task.workspace_id,
+    source: 'xocial_ai',
+    eventType: 'knowledge_ingested',
+    entityType: 'workspace',
+    entityId: task.workspace_id,
+    signalStrength: result.chunksWritten > 0 ? 0.7 : 0.35,
+    eventKey: buildLearningEventKey({
+      workspaceId: task.workspace_id,
+      eventType: 'knowledge_ingested',
+      entityType: 'workspace',
+      entityId: task.workspace_id,
+      discriminator: new Date().toISOString().slice(0, 10),
+    }),
+    metadata: {
+      taskId: task.id,
+      ...result,
+    },
+  });
+
+  return {
+    message: 'Knowledge ingestion completed',
+    rowsWritten: result.chunksWritten,
+    documentsProcessed: result.documentsProcessed,
+  };
 }
 
 function mode(values: string[]) {

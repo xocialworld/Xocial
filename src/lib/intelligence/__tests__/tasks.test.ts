@@ -178,6 +178,11 @@ describe('processDueAgentTasks', () => {
       cta_type: 'comment',
       media_type: 'video',
       source: 'ai',
+      features: expect.objectContaining({
+        workerVersion: 'worker-v2',
+        schemaVersion: 2,
+        classificationMethod: 'deterministic_rules',
+      }),
     });
     expect(calls).toEqual(
       expect.arrayContaining([

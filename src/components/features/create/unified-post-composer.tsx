@@ -31,6 +31,7 @@ import { LinkedInPreview } from "@/components/features/compose/previews/linkedin
 import { TikTokPreview } from "@/components/features/compose/previews/tiktok-preview";
 import { TwitterPreview } from "@/components/features/compose/previews/twitter-preview";
 import { YouTubePreview } from "@/components/features/compose/previews/youtube-preview";
+import { FeedbackControls, WhyExplanation } from "@/components/features/intelligence";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -54,6 +55,7 @@ import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/clie
 import { cn } from "@/lib/utils";
 import { useSelectedWorkspace } from "@/store/workspaceStore";
 import type { MediaFile, Platform, PostStatus } from "@/types";
+import type { AIExplanation } from "@/types/intelligence";
 import { MediaLibraryModal } from "./media-library-modal";
 
 type Account = {
@@ -90,6 +92,12 @@ type AIGenerationMeta = {
     model?: string;
     platforms: Platform[];
     sourcePrompt: string;
+    explanation?: AIExplanation;
+    platformExplanations?: Partial<Record<Platform, AIExplanation>>;
+    context?: {
+        brandCompletion?: number;
+        contextSources?: string[];
+    };
 };
 
 type IntelligenceContextState = {
@@ -176,6 +184,15 @@ function parseInitialSchedule(dateParam: string | null, timeParam: string | null
     };
 }
 
+function parseInitialPlatforms(platformsParam: string | null): Platform[] {
+    if (!platformsParam) return [];
+    const requested = platformsParam
+        .split(",")
+        .map((platform) => platform.trim().toLowerCase())
+        .filter(Boolean);
+    return PLATFORM_ORDER.filter((platform) => requested.includes(platform));
+}
+
 function getPlatformLabel(platform: Platform) {
     return platformNames[platform] || platform;
 }
@@ -258,7 +275,7 @@ function buildPostPayload({
         scheduled_at: scheduledAt?.toISOString(),
         media: mediaPayload,
         mediaIds: content.media.map((item) => item.id),
-        ai_generated: Boolean(aiMetadata),
+        ai_generated: Boolean(aiMetadata?.generationId || aiMetadata?.model),
         ai_generation_id: aiMetadata?.generationId,
         ai_prompt: aiMetadata?.sourcePrompt,
         ai_metadata: aiMetadata
@@ -266,6 +283,7 @@ function buildPostPayload({
                 ...aiOptions,
                 model: aiMetadata?.model || aiOptions?.model,
                 platforms: includedPlatforms,
+                context: aiMetadata.context,
             }
             : undefined,
     };
@@ -386,14 +404,32 @@ export function UnifiedPostComposer() {
             setInitialSchedule(schedule);
             setScheduledDate(schedule.date);
             setScheduledTime(schedule.time);
-            prefillApplied.current = true;
-            return;
+        } else {
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            setScheduledDate(formatLocalDate(tomorrow));
+            setScheduledTime("10:00");
         }
 
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        setScheduledDate(formatLocalDate(tomorrow));
-        setScheduledTime("10:00");
+        const initialPlatforms = parseInitialPlatforms(searchParams.get("platforms"));
+        const strategyPrompt = searchParams.get("strategy")?.trim();
+        const pillar = searchParams.get("pillar")?.trim();
+        const initialText = [strategyPrompt, pillar ? `Content pillar: ${pillar}` : ""]
+            .filter(Boolean)
+            .join("\n\n");
+
+        if (initialPlatforms.length > 0 || initialText) {
+            setContent((prev) => ({
+                ...prev,
+                platforms: initialPlatforms.length > 0 ? initialPlatforms : prev.platforms,
+                text: prev.text || initialText,
+            }));
+            if (initialText) {
+                toast.info("Calendar strategy loaded into Create");
+            }
+        }
+
+        prefillApplied.current = true;
     }, [searchParams]);
 
     useEffect(() => {
@@ -660,6 +696,9 @@ export function UnifiedPostComposer() {
                 model: payload?.data?.model,
                 platforms: content.platforms,
                 sourcePrompt,
+                explanation: payload?.data?.explanation,
+                platformExplanations: payload?.data?.platformExplanations,
+                context: payload?.data?.context,
             });
             resetPreviewsForBaseChange();
             toast.success("Base content generated");
@@ -696,9 +735,29 @@ export function UnifiedPostComposer() {
             return acc;
         }, {} as Partial<Record<Platform, string>>);
         const defaultIncluded = compatiblePlatforms.compatible.filter((platform) => content.platforms.includes(platform));
+        const platformExplanations = content.platforms.reduce((acc, platform) => {
+            acc[platform] = {
+                reasonSummary: "This preview uses the pasted content exactly as written, without AI adaptation.",
+                evidence: ["User selected Use pasted content on the Create screen."],
+                confidenceScore: 1,
+                targetPlatforms: [platform],
+                generatedBy: "user_direct_preview",
+            };
+            return acc;
+        }, {} as Partial<Record<Platform, AIExplanation>>);
 
         setContent((prev) => ({ ...prev, platformContent }));
-        setAiMetadata(undefined);
+        setAiMetadata({
+            platforms: content.platforms,
+            sourcePrompt: content.text,
+            explanation: {
+                reasonSummary: "Previews were created directly from the content box, so Xocial did not rewrite or enhance the base text.",
+                evidence: [`${content.platforms.length} selected platform${content.platforms.length === 1 ? "" : "s"}`],
+                confidenceScore: 1,
+                generatedBy: "user_direct_preview",
+            },
+            platformExplanations,
+        });
         setIncludedPlatforms(defaultIncluded);
         setPreviewsReady(true);
         toast.success("Previews created from pasted content");
@@ -745,6 +804,9 @@ export function UnifiedPostComposer() {
                 model: payload?.data?.model,
                 platforms: content.platforms,
                 sourcePrompt,
+                explanation: payload?.data?.explanation,
+                platformExplanations: payload?.data?.platformExplanations,
+                context: payload?.data?.context,
             });
             setIncludedPlatforms(defaultIncluded);
             setPreviewsReady(true);
@@ -758,6 +820,28 @@ export function UnifiedPostComposer() {
             const defaultIncluded = compatiblePlatforms.compatible.filter((platform) => content.platforms.includes(platform));
 
             setContent((prev) => ({ ...prev, platformContent }));
+            setAiMetadata({
+                platforms: content.platforms,
+                sourcePrompt: content.text,
+                explanation: {
+                    reasonSummary: "AI adaptation failed, so Xocial created editable previews from the base content instead.",
+                    evidence: ["Fallback preserves the user's content so publishing can continue."],
+                    dataCaveats: ["Platform-specific tone and length were not AI-adapted for this preview."],
+                    confidenceScore: 0.4,
+                    generatedBy: "fallback_preview",
+                },
+                platformExplanations: content.platforms.reduce((acc, platform) => {
+                    acc[platform] = {
+                        reasonSummary: "AI adaptation failed, so this preview uses the base content as an editable fallback.",
+                        evidence: ["Fallback preserves the user's content so publishing can continue."],
+                        dataCaveats: ["Platform-specific tone and length were not AI-adapted for this preview."],
+                        confidenceScore: 0.4,
+                        targetPlatforms: [platform],
+                        generatedBy: "fallback_preview",
+                    };
+                    return acc;
+                }, {} as Partial<Record<Platform, AIExplanation>>),
+            });
             setIncludedPlatforms(defaultIncluded);
             setPreviewsReady(true);
             toast.warning("AI adaptation failed. Editable base-content previews were created instead.");
@@ -804,7 +888,13 @@ export function UnifiedPostComposer() {
                 const response = await fetch(withWorkspace("/api/ai/hashtags", workspaceId), {
                     method: "POST",
                     headers: { "Content-Type": "application/json", ...workspaceHeader(workspaceId) },
-                    body: JSON.stringify({ content: currentContent, platform, count: 8 }),
+                    body: JSON.stringify({
+                        content: currentContent,
+                        platform,
+                        count: 8,
+                        useBrandBrain,
+                        contentPillar: intelligenceContext?.contentPillars?.[0],
+                    }),
                 });
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok) {
@@ -814,6 +904,19 @@ export function UnifiedPostComposer() {
                 if (hashtags.length > 0) {
                     nextContent = `${currentContent}\n\n${hashtags.map((tag: string) => `#${tag.replace(/^#/, "")}`).join(" ")}`;
                 }
+                setAiMetadata((prev) => ({
+                    ...(prev || { platforms: content.platforms, sourcePrompt: content.text }),
+                    platformExplanations: {
+                        ...(prev?.platformExplanations || {}),
+                        [platform]: payload?.data?.explanation || {
+                            reasonSummary: "Hashtags were generated from the platform draft and appended to this preview.",
+                            evidence: [`${hashtags.length} hashtags generated for ${getPlatformLabel(platform)}.`],
+                            confidenceScore: 0.7,
+                            targetPlatforms: [platform],
+                            generatedBy: "hashtag_generator",
+                        },
+                    },
+                }));
             } else {
                 const response = await fetch(withWorkspace("/api/ai/refine", workspaceId), {
                     method: "POST",
@@ -823,6 +926,8 @@ export function UnifiedPostComposer() {
                         platform,
                         refinementType,
                         customInstruction: instruction,
+                        useBrandBrain,
+                        contentPillar: intelligenceContext?.contentPillars?.[0],
                     }),
                 });
                 const payload = await response.json().catch(() => ({}));
@@ -830,6 +935,24 @@ export function UnifiedPostComposer() {
                     throw new Error(payload?.error?.message || "Failed to regenerate content");
                 }
                 nextContent = payload?.data?.text || currentContent;
+                setAiMetadata((prev) => ({
+                    ...(prev || { platforms: content.platforms, sourcePrompt: content.text }),
+                    generationId: prev?.generationId || payload?.data?.generationId,
+                    model: prev?.model || payload?.data?.model,
+                    platformExplanations: {
+                        ...(prev?.platformExplanations || {}),
+                        [platform]: payload?.data?.explanation || {
+                            reasonSummary:
+                                refinementType === "custom"
+                                    ? `Regenerated using your instruction: ${instruction || "custom change"}.`
+                                    : `Regenerated with the ${refinementType.replace(/_/g, " ")} quick option.`,
+                            evidence: ["The update only changed this platform preview."],
+                            confidenceScore: 0.68,
+                            targetPlatforms: [platform],
+                            generatedBy: "platform_refine",
+                        },
+                    },
+                }));
             }
 
             handlePlatformContentChange(platform, nextContent);
@@ -841,7 +964,7 @@ export function UnifiedPostComposer() {
         } finally {
             setRegeneratingPlatform(null);
         }
-    }, [content.platformContent, content.text, handlePlatformContentChange, workspaceId]);
+    }, [content.platformContent, content.platforms, content.text, handlePlatformContentChange, intelligenceContext?.contentPillars, useBrandBrain, workspaceId]);
 
     const validateBeforeSubmit = useCallback((status: PostStatus, scheduledAt?: Date) => {
         if (selectedIncludedPlatforms.length === 0) {
@@ -996,6 +1119,28 @@ export function UnifiedPostComposer() {
                                 placeholder="Paste an existing caption, or write a brief for AI to turn into platform-specific posts..."
                                 className="min-h-[220px] resize-y border-secondary-200 text-base leading-relaxed focus:border-primary-500 focus:ring-primary-500"
                             />
+                            {aiMetadata?.explanation && (
+                                <div className="mt-3">
+                                    <WhyExplanation explanation={aiMetadata.explanation} compact />
+                                    <FeedbackControls
+                                        targetType="ai_generation"
+                                        targetId={aiMetadata.generationId}
+                                        title="Base content generation"
+                                        workspaceId={workspaceId}
+                                        originalText={content.text}
+                                        originalValue={{ text: content.text, platforms: content.platforms }}
+                                        metadata={{
+                                            source: "create_base_content",
+                                            model: aiMetadata.model,
+                                            platforms: content.platforms,
+                                            generationId: aiMetadata.generationId,
+                                            explanation: aiMetadata.explanation,
+                                        }}
+                                        actions={["accept", "edit_accept", "mark_off_brand"]}
+                                        className="mt-3"
+                                    />
+                                </div>
+                            )}
                             {content.text.length > 0 && content.text.length < 10 && (
                                 <p className="text-xs text-amber-600">
                                     Add {10 - content.text.length} more characters to create previews.
@@ -1069,6 +1214,10 @@ export function UnifiedPostComposer() {
                                     onCheckedChange={(nextChecked) => handleIncludedChange(platform, nextChecked)}
                                     onContentChange={(value) => handlePlatformContentChange(platform, value)}
                                     onRegenerate={() => setRegeneratePlatform(platform)}
+                                    explanation={aiMetadata?.platformExplanations?.[platform]}
+                                    workspaceId={workspaceId}
+                                    generationId={aiMetadata?.generationId}
+                                    sourcePrompt={aiMetadata?.sourcePrompt || content.text}
                                 />
                             );
                         })}
@@ -1478,6 +1627,10 @@ function PreviewCard({
     onCheckedChange,
     onContentChange,
     onRegenerate,
+    explanation,
+    workspaceId,
+    generationId,
+    sourcePrompt,
 }: {
     platform: Platform;
     content: string;
@@ -1490,6 +1643,10 @@ function PreviewCard({
     onCheckedChange: (checked: boolean) => void;
     onContentChange: (value: string) => void;
     onRegenerate: () => void;
+    explanation?: AIExplanation;
+    workspaceId?: string;
+    generationId?: string;
+    sourcePrompt?: string;
 }) {
     const isOverLimit = content.length > charLimit;
     const canInclude = !issue && !isOverLimit;
@@ -1551,6 +1708,25 @@ function PreviewCard({
                         value={content}
                         onChange={(event) => onContentChange(event.target.value)}
                         className="min-h-[180px] resize-y border-secondary-200 text-sm leading-relaxed"
+                    />
+                    {explanation && <WhyExplanation explanation={explanation} compact />}
+                    <FeedbackControls
+                        targetType="platform_variant"
+                        targetId={generationId ? `${generationId}:${platform}` : undefined}
+                        title={`${getPlatformLabel(platform)} preview`}
+                        workspaceId={workspaceId}
+                        originalText={content}
+                        originalValue={{ platform, text: content, sourcePrompt }}
+                        metadata={{
+                            source: "create_platform_preview",
+                            platform,
+                            generationId,
+                            sourcePrompt,
+                            sourceType: explanation?.generatedBy,
+                            confidenceScore: explanation?.confidenceScore,
+                            explanation,
+                        }}
+                        actions={["accept", "edit_accept", "ignore", "mark_off_brand"]}
                     />
                     {(issue || isOverLimit) && (
                         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">

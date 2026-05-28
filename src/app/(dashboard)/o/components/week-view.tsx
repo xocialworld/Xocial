@@ -24,7 +24,9 @@ import {
   Plus,
   Globe,
   Clock,
+  Sparkles,
 } from "lucide-react";
+import type { CalendarStrategyAction } from "@/types/intelligence";
 
 // Calendar post type
 type CalendarPost = {
@@ -51,6 +53,8 @@ interface WeekViewProps {
   onDateChange: (date: Date) => void;
   onPostClick: (post: CalendarPost) => void;
   onNewPost: (date: Date, hour: number) => void;
+  strategyActions?: CalendarStrategyAction[];
+  onStrategyActionClick?: (action: CalendarStrategyAction) => void;
 }
 
 // Hour slots for the week view (6am to 11pm)
@@ -66,6 +70,8 @@ export function WeekView({
   onDateChange,
   onPostClick,
   onNewPost,
+  strategyActions = [],
+  onStrategyActionClick,
 }: WeekViewProps) {
   const [hoveredSlot, setHoveredSlot] = useState<string | null>(null);
   
@@ -95,6 +101,26 @@ export function WeekView({
     
     return grouped;
   }, [posts]);
+
+  const actionsByDayAndHour = useMemo(() => {
+    const grouped: Record<string, CalendarStrategyAction[]> = {};
+
+    for (const action of strategyActions) {
+      const actionDate = parseISO(action.scheduledAt);
+      if (Number.isNaN(actionDate.getTime())) continue;
+
+      const dayKey = format(actionDate, 'yyyy-MM-dd');
+      const hour = getHours(actionDate);
+      const key = `${dayKey}-${hour}`;
+
+      if (!grouped[key]) {
+        grouped[key] = [];
+      }
+      grouped[key].push(action);
+    }
+
+    return grouped;
+  }, [strategyActions]);
 
   // Navigation handlers
   const handlePrevWeek = () => {
@@ -204,6 +230,7 @@ export function WeekView({
                   const dayKey = format(day, 'yyyy-MM-dd');
                   const slotKey = `${dayKey}-${hour}`;
                   const slotPosts = postsByDayAndHour[slotKey] || [];
+                  const slotActions = actionsByDayAndHour[slotKey] || [];
                   const isHovered = hoveredSlot === slotKey;
                   const isCurrentDay = isToday(day);
                   
@@ -263,7 +290,18 @@ export function WeekView({
                       })}
                       
                       {/* Add button on hover */}
-                      {isHovered && slotPosts.length === 0 && (
+                      {slotPosts.length === 0 && slotActions.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => onStrategyActionClick?.(slotActions[0])}
+                          className="mb-1 flex w-full items-start gap-1 rounded-md border border-primary-200 bg-primary-50 p-1.5 text-left text-[11px] text-primary-800 transition-colors hover:bg-primary-100"
+                        >
+                          <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span className="line-clamp-2">{slotActions[0].title}</span>
+                        </button>
+                      )}
+
+                      {isHovered && slotPosts.length === 0 && slotActions.length === 0 && (
                         <button
                           onClick={() => onNewPost(day, hour)}
                           className="absolute inset-0 flex items-center justify-center text-secondary-400 hover:text-primary-500 transition-colors"
@@ -302,4 +340,3 @@ export function WeekView({
     </div>
   );
 }
-

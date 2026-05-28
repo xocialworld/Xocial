@@ -8,9 +8,10 @@ import { RescheduleModal } from "./components/reschedule-modal";
 import { EditPostModal } from "./components/edit-post-modal";
 import { GridView } from "./components/grid-view";
 import { WeekView } from "./components/week-view";
-import { CalendarAIPanel } from "./components/calendar-ai-panel";
+import { CalendarAIPanel, type CalendarAIData } from "./components/calendar-ai-panel";
+import { CalendarStrategyStrip } from "./components/calendar-strategy-strip";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { useCalendarLogic } from "@/hooks/use-calendar-logic";
 import { useCalendarActions } from "@/hooks/use-calendar-actions";
 import { useLazySync } from "@/hooks/use-lazy-sync";
@@ -25,6 +26,8 @@ import {
 import { statusOptions } from "@/store/calendarFiltersStore";
 import { Calendar, Grid3X3, RefreshCw, Loader2, CalendarDays, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import type { CalendarStrategyAction } from "@/types/intelligence";
 
 type ViewMode = 'month' | 'week' | 'grid';
 
@@ -52,6 +55,12 @@ function toTimeParam(date: Date) {
   return `${hours}:${minutes}`;
 }
 
+function monthRange(date: Date) {
+  const from = new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
+  const to = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+  return { from, to };
+}
+
 function OPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -62,6 +71,9 @@ function OPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [gridPlatform, setGridPlatform] = useState<string>('instagram');
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [strategyData, setStrategyData] = useState<CalendarAIData | null>(null);
+  const [strategyLoading, setStrategyLoading] = useState(false);
+  const [focusedStrategyActionId, setFocusedStrategyActionId] = useState<string | null>(null);
 
   // Custom hooks to manage logic
   const {
@@ -86,6 +98,113 @@ function OPage() {
 
   // Lazy sync hook for on-demand month-based syncing
   const { syncMonthRange, isSyncing, syncStatus } = useLazySync();
+
+  const loadStrategyData = useCallback(async () => {
+    if (!workspaceId) {
+      setStrategyData(null);
+      return null;
+    }
+
+    const range = monthRange(currentMonth);
+    setStrategyLoading(true);
+    try {
+      const params = new URLSearchParams({
+        workspaceId,
+        from: range.from.toISOString(),
+        to: range.to.toISOString(),
+      });
+      const response = await fetch(`/api/calendar/ai-actions?${params.toString()}`, {
+        headers: { "x-workspace-id": workspaceId },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error?.message || "Unable to load calendar strategy");
+      }
+      setStrategyData(payload.data);
+      return payload.data as CalendarAIData;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to load calendar strategy");
+      setStrategyData(null);
+      return null;
+    } finally {
+      setStrategyLoading(false);
+    }
+  }, [currentMonth, workspaceId]);
+
+  useEffect(() => {
+    void loadStrategyData();
+  }, [loadStrategyData]);
+
+  const openStrategyAction = useCallback((action: CalendarStrategyAction) => {
+    setFocusedStrategyActionId(action.id);
+    setAiPanelOpen(true);
+  }, []);
+
+  const useStrategyInCreate = useCallback((action: CalendarStrategyAction) => {
+    const scheduledAt = new Date(action.scheduledAt);
+    const safeDate = Number.isNaN(scheduledAt.getTime()) ? new Date() : scheduledAt;
+    const params = new URLSearchParams({
+      date: toDateParam(safeDate),
+      time: toTimeParam(safeDate),
+      platforms: action.platforms.join(","),
+      strategy: [action.title, action.description].filter(Boolean).join(" - "),
+    });
+    if (action.pillar) params.set("pillar", action.pillar);
+    router.push(`/c?${params.toString()}`);
+  }, [router]);
+
+  const createStrategyDraft = useCallback(async (action: CalendarStrategyAction) => {
+    if (!workspaceId) return;
+    try {
+      const params = new URLSearchParams({ workspaceId });
+      const response = await fetch(`/api/calendar/ai-actions?${params.toString()}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-workspace-id": workspaceId,
+        },
+        body: JSON.stringify({
+          type: action.type,
+          title: action.title,
+          description: action.description,
+          scheduledAt: action.scheduledAt,
+          platforms: action.platforms,
+          pillar: action.pillar,
+          recommendationId: action.recommendationId,
+          sourceArtifactId: action.sourceArtifactId,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error?.message || "Unable to create planned draft");
+      }
+      toast.success("Planned draft created");
+      await fetch(`/api/intelligence/feedback?${params.toString()}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-workspace-id": workspaceId,
+        },
+        body: JSON.stringify({
+          targetType: "calendar_suggestion",
+          targetId: action.id,
+          action: "apply",
+          originalValue: action,
+          metadata: {
+            source: "calendar_day_strategy",
+            title: action.title,
+            actionType: action.type,
+            explanation: action.explanation,
+            createdPostId: payload?.data?.post?.id,
+          },
+        }),
+      }).catch(() => null);
+      await refetch();
+      await loadStrategyData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to create planned draft");
+    }
+  }, [loadStrategyData, refetch, workspaceId]);
 
   // Trigger lazy sync when month changes
   useEffect(() => {
@@ -169,6 +288,12 @@ function OPage() {
 
   // Only show full-page spinner on first load with no cached data
   const isInitialLoading = loading && posts.length === 0;
+  const strategyActions = useMemo(() => strategyData?.actions || [], [strategyData?.actions]);
+  const selectedDateStrategyActions = useMemo(() => {
+    if (!selectedDate) return [];
+    const selectedKey = toDateParam(selectedDate);
+    return strategyActions.filter((action) => action.dateKey === selectedKey);
+  }, [selectedDate, strategyActions]);
 
   // Handle case where no workspace is selected
   if (noWorkspace) {
@@ -272,6 +397,15 @@ function OPage() {
           </div>
         )}
 
+        <CalendarStrategyStrip
+          health={strategyData?.strategyHealth}
+          loading={strategyLoading}
+          onOpenAIPlan={() => {
+            setFocusedStrategyActionId(null);
+            setAiPanelOpen(true);
+          }}
+        />
+
         {/* View Mode Toggle Bar */}
         <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-secondary-200">
           <div className="flex items-center gap-2">
@@ -359,6 +493,9 @@ function OPage() {
               currentMonth={currentMonth}
               onMonthChange={setCurrentMonth}
               isLoading={isInitialLoading}
+              strategyActions={strategyActions}
+              dayIntelligence={strategyData?.dayIntelligence || []}
+              onStrategyActionClick={openStrategyAction}
             />
           )}
           {viewMode === 'week' && (
@@ -372,6 +509,8 @@ function OPage() {
                 prefillDate.setHours(hour, 0, 0, 0);
                 router.push(`/c?date=${toDateParam(prefillDate)}&time=${toTimeParam(prefillDate)}`);
               }}
+              strategyActions={strategyActions}
+              onStrategyActionClick={openStrategyAction}
             />
           )}
           {viewMode === 'grid' && (
@@ -402,6 +541,10 @@ function OPage() {
                 onReschedulePost={handleReschedule}
                 onApprovePost={handleApprovePost}
                 onRejectPost={handleRejectPost}
+                strategyActions={selectedDateStrategyActions}
+                onCreateStrategyDraft={createStrategyDraft}
+                onUseStrategyInCreate={useStrategyInCreate}
+                onStrategyActionClick={openStrategyAction}
               />
             )}
           </SheetContent>
@@ -436,7 +579,14 @@ function OPage() {
           onOpenChange={setAiPanelOpen}
           workspaceId={workspaceId}
           currentMonth={currentMonth}
-          onDraftCreated={refetch}
+          initialData={strategyData}
+          focusedActionId={focusedStrategyActionId}
+          onDataLoaded={setStrategyData}
+          onDraftCreated={async () => {
+            await refetch();
+            await loadStrategyData();
+          }}
+          onUseInCreate={useStrategyInCreate}
         />
       </div>
     </ErrorBoundary>

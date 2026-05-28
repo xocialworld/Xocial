@@ -1,9 +1,23 @@
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
-import { X, Clock, Edit2, Trash2, Calendar as CalendarIcon, Loader2, ExternalLink, Globe } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarPlus,
+  X,
+  Clock,
+  Edit2,
+  Trash2,
+  Calendar as CalendarIcon,
+  ExternalLink,
+  Globe,
+  Sparkles,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { WhyExplanation } from "@/components/features/intelligence";
+import type { CalendarStrategyAction } from "@/types/intelligence";
 
 // Content variant type
 type ContentVariant = {
@@ -44,6 +58,10 @@ interface DayPostsPanelProps {
   onDeletePost: (postId: string) => void;
   onReschedulePost: (postId: string) => void;
   isLoading?: boolean;
+  strategyActions?: CalendarStrategyAction[];
+  onCreateStrategyDraft?: (action: CalendarStrategyAction) => void;
+  onUseStrategyInCreate?: (action: CalendarStrategyAction) => void;
+  onStrategyActionClick?: (action: CalendarStrategyAction) => void;
 }
 
 /**
@@ -105,6 +123,10 @@ export function DayPostsPanel({
   onApprovePost,
   onRejectPost,
   isLoading = false,
+  strategyActions = [],
+  onCreateStrategyDraft,
+  onUseStrategyInCreate,
+  onStrategyActionClick,
 }: DayPostsPanelProps & {
   onApprovePost?: (postId: string) => void;
   onRejectPost?: (postId: string) => void;
@@ -145,6 +167,64 @@ export function DayPostsPanel({
       </div>
 
       <ScrollArea className="flex-1 p-4">
+        {strategyActions.length > 0 && (
+          <div className="mb-4 rounded-lg border border-primary-200 bg-primary-50/70 p-3">
+            <div className="mb-2 flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary-700" />
+              <p className="text-sm font-semibold text-primary-950">Xocial strategy for this day</p>
+              <Badge variant="primary">{strategyActions.length}</Badge>
+            </div>
+            <div className="space-y-3">
+              {strategyActions.slice(0, 2).map((action) => (
+                <div key={action.id} className="rounded-md border border-primary-100 bg-white p-3">
+                  <button
+                    type="button"
+                    onClick={() => onStrategyActionClick?.(action)}
+                    className="block w-full text-left"
+                  >
+                    <p className="text-sm font-semibold text-secondary-950">{action.title}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-secondary-600">{action.description}</p>
+                  </button>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {action.platforms.map((platform) => (
+                      <Badge key={platform} variant="outline" size="sm">
+                        {platform === "twitter" ? "X" : platform}
+                      </Badge>
+                    ))}
+                    {action.pillar && (
+                      <Badge variant="secondary" size="sm">
+                        {action.pillar}
+                      </Badge>
+                    )}
+                  </div>
+                  {action.explanation && (
+                    <WhyExplanation explanation={action.explanation} compact className="mt-3" />
+                  )}
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <Button
+                      size="sm"
+                      className="h-8 gap-2"
+                      onClick={() => onCreateStrategyDraft?.(action)}
+                    >
+                      <CalendarPlus className="h-3.5 w-3.5" />
+                      Create draft
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 gap-2"
+                      onClick={() => onUseStrategyInCreate?.(action)}
+                    >
+                      Use in Create
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {posts.length === 0 ? (
           <div className="text-center py-12">
             <div className="bg-secondary-50 rounded-full h-12 w-12 flex items-center justify-center mx-auto mb-3">

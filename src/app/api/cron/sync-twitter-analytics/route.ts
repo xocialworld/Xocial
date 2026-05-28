@@ -5,6 +5,7 @@ import { getTwitterTweetMetrics } from '@/lib/platforms/twitter';
 import { decryptToken } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 import { isTwitterNoSpendMode } from '@/lib/twitter-api-mode';
+import { persistPlatformMetrics } from '@/lib/intelligence/analytics-sync';
 
 /**
  * GET /api/cron/sync-twitter-analytics
@@ -41,7 +42,7 @@ export const GET = withCronVerification(async (request: NextRequest) => {
         // Get all active Twitter accounts
         const { data: accounts, error: fetchError } = await supabase
             .from('social_accounts')
-            .select('id, account_id, account_name, access_token, is_active')
+            .select('id, workspace_id, account_id, account_name, access_token, is_active')
             .eq('platform', 'twitter')
             .eq('is_active', true);
 
@@ -95,42 +96,28 @@ export const GET = withCronVerification(async (request: NextRequest) => {
 
                         const metrics = tweetMetrics.data.public_metrics;
 
-                        // Upsert analytics data
-                        const { error: upsertError } = await supabase
-                            .from('post_analytics')
-                            .upsert({
-                                post_id: post.id,
-                                platform: 'twitter',
+                        const syncResult = await persistPlatformMetrics(supabase, {
+                            workspaceId: account.workspace_id,
+                            postId: post.id,
+                            platformPostId: post.external_post_id,
+                            socialAccountId: account.id,
+                            platform: 'twitter',
+                            publishedAt: post.published_at,
+                            metrics: {
                                 likes: metrics.like_count || 0,
                                 comments: metrics.reply_count || 0,
-                                shares: metrics.retweet_count || 0, // Retweets as shares
+                                shares: metrics.retweet_count || 0,
                                 views: metrics.impression_count || 0,
-                                engagement_rate: metrics.impression_count > 0
-                                    ? ((metrics.like_count + metrics.reply_count + metrics.retweet_count) / metrics.impression_count) * 100
-                                    : 0,
                                 reach: metrics.impression_count || 0,
                                 impressions: metrics.impression_count || 0,
-                                saves: metrics.quote_count || 0, // Using quotes as saves/others for now, or just 0
-                                followers_gain: 0,
-                                clicks: 0,
-                                synced_at: new Date().toISOString(),
-                                metadata: {
-                                    like_count: metrics.like_count,
-                                    reply_count: metrics.reply_count,
-                                    retweet_count: metrics.retweet_count,
-                                    quote_count: metrics.quote_count,
-                                    impression_count: metrics.impression_count,
-                                },
-                            }, {
-                                onConflict: 'post_id,platform',
-                            });
+                                saves: metrics.quote_count || 0,
+                            },
+                            raw: metrics,
+                            syncSource: 'twitter_cron_analytics',
+                        });
 
-                        if (upsertError) {
-                            logger.error(`[Cron: Sync Twitter Analytics] Failed to upsert analytics for tweet ${post.external_post_id}`, upsertError);
-                            totalErrors++;
-                        } else {
-                            totalTweetsSynced++;
-                        }
+                        if (syncResult.status === 'synced') totalTweetsSynced++;
+                        else totalErrors++;
 
                         // Rate limit protection
                         await new Promise((resolve) => setTimeout(resolve, 100));

@@ -8,7 +8,7 @@ import {
 } from './oauth/youtube';
 import { logger } from './logger';
 import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
-import { recordMetricSnapshotAndOutcome } from '@/lib/intelligence/metrics';
+import { persistPlatformMetrics } from '@/lib/intelligence/analytics-sync';
 
 export interface YouTubeChannelStats {
     subscriberCount: number;
@@ -336,20 +336,16 @@ export async function syncYouTubeVideos(
                         fetched_at: new Date().toISOString(),
                     };
 
-                    await supabase
-                        .from('post_analytics')
-                        .upsert(analyticsData, {
-                            onConflict: 'post_id,platform,fetched_at',
-                        });
-
-                    await recordMetricSnapshotAndOutcome(supabase as any, {
+                    await persistPlatformMetrics(supabase as any, {
                         workspaceId: account.workspace_id,
                         postId,
                         platformPostId: videoId,
                         socialAccountId: accountId,
                         platform: 'youtube',
+                        publishedAt: postData.published_at,
                         metrics: analyticsData,
                         raw: videoStats.statistics || {},
+                        syncSource: 'youtube_videos_sync',
                     });
                 }
 
@@ -396,7 +392,7 @@ export async function syncYouTubeAnalytics(accountId: string): Promise<SyncResul
         // Get all YouTube posts for this account
         const { data: posts, error: postsError } = await supabase
             .from('posts')
-            .select('id, external_post_id, content')
+            .select('id, external_post_id, content, published_at')
             .eq('social_account_id', account.id)
             .eq('status', 'published')
             .not('external_post_id', 'is', null);
@@ -439,20 +435,16 @@ export async function syncYouTubeAnalytics(accountId: string): Promise<SyncResul
                         fetched_at: new Date().toISOString(),
                     };
 
-                    await supabase
-                        .from('post_analytics')
-                        .upsert(analyticsData, {
-                            onConflict: 'post_id,platform,fetched_at',
-                        });
-
-                    await recordMetricSnapshotAndOutcome(supabase as any, {
+                    await persistPlatformMetrics(supabase as any, {
                         workspaceId: account.workspace_id,
                         postId: post.id,
                         platformPostId: videoId,
                         socialAccountId: accountId,
                         platform: 'youtube',
+                        publishedAt: post.published_at,
                         metrics: analyticsData,
                         raw: videoStats.statistics || {},
+                        syncSource: 'youtube_analytics_sync',
                     });
 
                     synced++;

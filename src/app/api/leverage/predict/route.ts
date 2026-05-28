@@ -2,10 +2,10 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { withErrorHandler, successResponse, validateRequest } from '@/lib/api-middleware';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
-import { buildIntelligenceContext } from '@/lib/intelligence/context';
+import { buildAIContextPacket } from '@/lib/intelligence/context';
 import { recordLearningEvent } from '@/lib/intelligence/learning';
 import type { Platform } from '@/types';
-import type { ContentScore } from '@/types/intelligence';
+import type { AIExplanation, ContentScore, IntelligenceContext } from '@/types/intelligence';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,7 +54,7 @@ function platformLengthScore(content: string, platform: Platform) {
 function scoreContent(
   content: string,
   platforms: Platform[],
-  context: Awaited<ReturnType<typeof buildIntelligenceContext>>
+  context: IntelligenceContext
 ): ContentScore {
   const { brandProfile } = context;
   const pillarMatches = countMatches(content, brandProfile.content_pillars);
@@ -147,12 +147,30 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   });
   const platforms = (input.platforms?.length ? input.platforms : ['instagram']) as Platform[];
 
-  const context = await buildIntelligenceContext(serviceClient, {
+  const aiContextPacket = await buildAIContextPacket(serviceClient, {
     workspaceId,
     selectedPlatforms: platforms,
     campaignGoal: input.campaignGoal,
+    query: input.content,
   });
+  const context = aiContextPacket.intelligenceContext;
   const score = scoreContent(input.content, platforms, context);
+  const explanation: AIExplanation = {
+    reasonSummary: score.explanation,
+    evidence: [
+      `Brand fit: ${score.brandFit}%.`,
+      `Engagement potential: ${score.engagementPotential}%.`,
+      `Safety score: ${score.safety}%.`,
+      `${platforms.length} selected platform${platforms.length === 1 ? '' : 's'} evaluated.`,
+    ],
+    confidenceScore: score.overall / 100,
+    targetPlatforms: platforms,
+    dataCaveats: aiContextPacket.contextMetadata.contextSources.length
+      ? []
+      : ['More published posts, synced metrics, and approval feedback will improve future scoring.'],
+    generatedBy: 'engagement_predictor',
+    promptVersion: 'leverage.predict.v1',
+  };
 
   await recordLearningEvent(serviceClient, {
     workspaceId,
@@ -165,17 +183,21 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       platforms,
       score: score.overall,
       blockers: score.blockers,
+      contextMetadata: aiContextPacket.contextMetadata,
+      explanation,
     },
   });
 
   return successResponse({
     score,
+    explanation,
     context: {
       brandProfile: context.brandProfile,
       selectedPlatforms: context.selectedPlatforms,
       contentPillars: context.contentPillars,
       recentTopPosts: context.recentTopPosts.slice(0, 3),
       currentPerformanceSummary: context.currentPerformanceSummary,
+      contextMetadata: aiContextPacket.contextMetadata,
     },
   });
 });

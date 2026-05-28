@@ -424,14 +424,22 @@ export async function getInstagramMediaInsights(
   accessToken: string,
   baseUrl = 'https://graph.facebook.com/v24.0'
 ): Promise<any[]> {
-  const metrics = ['impressions', 'reach', 'engagement', 'saved', 'comments', 'likes', 'shares'];
+  const metrics = ['reach', 'views', 'total_interactions', 'saved', 'comments', 'likes', 'shares'];
 
   const response = await fetch(
-    `${baseUrl}/${mediaId}/insights?metric=${metrics.join(',')}&access_token=${accessToken}`
+    `${baseUrl}/${mediaId}/insights?metric=${metrics.join(',')}&access_token=${accessToken}`,
+    { cache: 'no-store' }
   );
 
   if (!response.ok) {
-    throw new Error('Failed to fetch Instagram media insights');
+    let detail = '';
+    try {
+      const error = await response.json();
+      detail = error?.error?.message ? `: ${error.error.message}` : '';
+    } catch {
+      detail = '';
+    }
+    throw new Error(`Failed to fetch Instagram media insights (${response.status})${detail}`);
   }
 
   const data = await response.json();

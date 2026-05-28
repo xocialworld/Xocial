@@ -9,6 +9,8 @@ import { generateObject } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { env } from '@/lib/env';
 import { StrategyRecommendation } from '@/types';
+import { buildAIContextPacket } from '@/lib/intelligence/context';
+import type { AIContextPacket } from '@/types/intelligence';
 
 const gatewayOpenAI = createOpenAI({
   baseURL: `${env.VERCEL_AI_GATEWAY_URL}/v1`,
@@ -196,7 +198,8 @@ export async function analyzePerformance(
  * Generate AI-powered strategy recommendations
  */
 export async function generateRecommendations(
-  performanceData: PerformanceData
+  performanceData: PerformanceData,
+  aiContext?: AIContextPacket
 ): Promise<AIStrategyRecommendation[]> {
   try {
     // Use shared gateway provider
@@ -214,6 +217,8 @@ ${performanceData.bestPostingTimes.map(t => `- ${t.day} at ${t.hour}:00 (${t.avg
 
 Top Hashtags:
 ${performanceData.topHashtags.slice(0, 5).map(h => `- #${h.tag} (used ${h.count}x, ${h.avgEngagement.toFixed(0)} avg engagement)`).join('\n')}
+
+${aiContext?.promptContext ? `${aiContext.promptContext}\n\nUse this memory to make recommendations specific to the workspace brand, approval preferences, and known performance patterns. Do not mention memory internals to the user.` : ''}
 
 Provide recommendations in JSON format:
 {
@@ -357,7 +362,8 @@ function generateRuleBasedRecommendations(
  */
 export async function saveRecommendations(
   workspaceId: string,
-  recommendations: AIStrategyRecommendation[]
+  recommendations: AIStrategyRecommendation[],
+  contextMetadata?: AIContextPacket['contextMetadata']
 ): Promise<StrategyRecommendation[]> {
   try {
     const supabase = createClient(
@@ -373,7 +379,11 @@ export async function saveRecommendations(
       priority: rec.priority,
       confidence_score: rec.confidenceScore,
       action_items: rec.actionItems,
-      metrics: { ...(rec.metrics || {}), expected_impact: rec.expectedImpact },
+      metrics: {
+        ...(rec.metrics || {}),
+        expected_impact: rec.expectedImpact,
+        context_metadata: contextMetadata,
+      },
       status: 'pending',
       valid_from: new Date().toISOString(),
       valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
@@ -543,10 +553,14 @@ Generate diverse content ideas that would perform well. Return as JSON:
  * Main strategy engine function
  */
 export async function runStrategyAnalysis(
-  workspaceId: string
+  workspaceId: string,
+  options: {
+    aiContext?: AIContextPacket;
+  } = {}
 ): Promise<{
   performanceData: PerformanceData | null;
   recommendations: StrategyRecommendation[];
+  contextMetadata?: AIContextPacket['contextMetadata'];
 }> {
   logger.info('Running strategy analysis', { workspaceId });
 
@@ -559,10 +573,27 @@ export async function runStrategyAnalysis(
     };
   }
 
-  const aiRecommendations = await generateRecommendations(performanceData);
+  let aiContext = options.aiContext;
+  if (!aiContext) {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+    aiContext = await buildAIContextPacket(supabase, {
+      workspaceId,
+      campaignGoal: 'Improve social media strategy from recent performance',
+      query: 'Generate weekly strategy recommendations',
+    });
+  }
+
+  const aiRecommendations = await generateRecommendations(performanceData, aiContext);
 
   // Save recommendations to database
-  const savedRecommendations = await saveRecommendations(workspaceId, aiRecommendations);
+  const savedRecommendations = await saveRecommendations(
+    workspaceId,
+    aiRecommendations,
+    aiContext.contextMetadata
+  );
 
   logger.info('Strategy analysis completed', {
     workspaceId,
@@ -572,6 +603,7 @@ export async function runStrategyAnalysis(
   return {
     performanceData,
     recommendations: savedRecommendations,
+    contextMetadata: aiContext.contextMetadata,
   };
 }
 

@@ -45,6 +45,8 @@ import {
     getApprovalReasons,
     type ApprovalDecision,
 } from "@/lib/intelligence/approval-reasons";
+import { FeedbackControls, WhyExplanation } from "@/components/features/intelligence";
+import type { AIExplanation } from "@/types/intelligence";
 
 // Types
 type ApprovalStatus = "pending" | "approved" | "rejected";
@@ -114,6 +116,33 @@ async function performApprovalAction(data: {
     return response.json();
 }
 
+async function recordApprovalFeedback(data: {
+    instance_id: string;
+    action: "approve" | "reject";
+    comment?: string;
+    reasonIds?: string[];
+}) {
+    await fetch("/api/intelligence/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            targetType: "approval_item",
+            targetId: data.instance_id,
+            action: data.action === "approve" ? "accept" : "reject",
+            reasonType: data.reasonIds?.[0] || (data.action === "approve" ? "client_preference" : "not_useful"),
+            comment: data.comment || "",
+            editedValue: {
+                decision: data.action,
+                reasonIds: data.reasonIds || [],
+                comment: data.comment || "",
+            },
+            metadata: {
+                source: "approval_board_decision",
+            },
+        }),
+    }).catch(() => null);
+}
+
 // Approval Card Component
 function ApprovalCard({
     approval,
@@ -145,6 +174,21 @@ function ApprovalCard({
         );
     };
     const selectedReasonCount = approveReasonIds.length + rejectReasonIds.length;
+    const approvalExplanation: AIExplanation = {
+        reasonSummary:
+            "Approval decisions teach Xocial what the client or team considers on-brand, publishable, or in need of revision.",
+        evidence: [
+            approval.post?.platforms?.length
+                ? `Review covers ${approval.post.platforms.length} platform variant${approval.post.platforms.length === 1 ? "" : "s"}.`
+                : "",
+            selectedReasonCount
+                ? `${selectedReasonCount} approval learning tag${selectedReasonCount === 1 ? "" : "s"} selected.`
+                : "Select approval or revision tags to make this signal more useful.",
+        ].filter(Boolean),
+        confidenceScore: selectedReasonCount ? 0.78 : 0.52,
+        generatedBy: "approval_learning_ui",
+        promptVersion: "approvals.feedback.v1",
+    };
 
     const renderReasonGroup = (decision: ApprovalDecision) => {
         const reasons = getApprovalReasons(decision);
@@ -283,6 +327,7 @@ function ApprovalCard({
                         <p className="text-xs leading-relaxed text-secondary-500">
                             These tags teach Brand Brain why content was approved or rejected.
                         </p>
+                        <WhyExplanation explanation={approvalExplanation} compact />
                         {renderReasonGroup("approve")}
                         {renderReasonGroup("reject")}
                         <Textarea
@@ -290,6 +335,24 @@ function ApprovalCard({
                             value={comment}
                             onChange={(e) => setComment(e.target.value)}
                             className="min-h-[68px] bg-white text-sm"
+                        />
+                        <FeedbackControls
+                            targetType="approval_item"
+                            targetId={approval.id}
+                            title="Approval review"
+                            originalText={contentText}
+                            originalValue={{
+                                approvalId: approval.id,
+                                postId: approval.post?.id,
+                                content: contentText,
+                                platforms: approval.post?.platforms || [],
+                            }}
+                            metadata={{
+                                source: "approval_board",
+                                postId: approval.post?.id,
+                                workflow: approval.workflow?.name,
+                            }}
+                            actions={["mark_off_brand"]}
                         />
                     </div>
                 )}
@@ -337,6 +400,7 @@ export function ApprovalsBoard() {
         mutationFn: performApprovalAction,
         onSuccess: (_, variables) => {
             queryClient.invalidateQueries({ queryKey: ["approvals"] });
+            void recordApprovalFeedback(variables);
             toast.success(
                 variables.action === "approve"
                     ? "Content approved successfully!"

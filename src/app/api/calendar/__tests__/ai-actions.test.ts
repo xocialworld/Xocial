@@ -17,10 +17,56 @@ jest.mock('@/lib/intelligence/tasks', () => ({
 }));
 
 jest.mock('@/lib/intelligence/context', () => ({
-  getBrandProfile: jest.fn(),
+  getBrandProfile: jest.fn(async () => ({
+    voice: 'Direct founder-led voice',
+    audience: 'Creators',
+    products_offers: [],
+    content_pillars: ['Proof', 'Education'],
+    competitors: [],
+    do_rules: ['Use proof'],
+    dont_rules: ['Avoid vague hype'],
+    approved_examples: [],
+    rejected_examples: [],
+    platform_preferences: { facebook: 'Proof-led updates' },
+    confidence_score: 68,
+  })),
+  buildAIContextPacket: jest.fn(async () => ({
+    promptContext: 'XOCIAL MEMORY CONTEXT\nBrand voice: Direct founder-led voice',
+    contextMetadata: {
+      usedBrandBrain: true,
+      brandCompletion: 68,
+      contextSources: ['brand_profile'],
+      selectedPlatforms: ['instagram', 'linkedin'],
+    },
+    intelligenceContext: {
+      brandProfile: {
+        voice: 'Direct founder-led voice',
+        audience: 'Creators',
+        products_offers: [],
+        content_pillars: ['Proof'],
+        competitors: [],
+        do_rules: ['Use proof'],
+        dont_rules: ['Avoid vague hype'],
+        approved_examples: [],
+        rejected_examples: [],
+        platform_preferences: {},
+        confidence_score: 68,
+      },
+      selectedPlatforms: ['instagram', 'linkedin'],
+      contentPillars: ['Proof'],
+      platformRules: {},
+      recentTopPosts: [],
+      recentFailedPosts: [],
+      approvalPreferences: [],
+      similarPastExamples: [],
+      currentPerformanceSummary: {},
+      audienceLanguage: [],
+      activeKnowledgeSources: [],
+    },
+  })),
 }));
 
-import { POST } from '@/app/api/calendar/ai-actions/route';
+import { GET, POST } from '@/app/api/calendar/ai-actions/route';
 
 beforeAll(() => {
   if (!(Response as any).json) {
@@ -42,7 +88,7 @@ type QueryState = {
   filters: Array<{ column: string; value: any }>;
 };
 
-function createClientMock() {
+function createClientMock(tableData: Record<string, any[]> = {}) {
   const calls: QueryState[] = [];
 
   class Query {
@@ -53,6 +99,19 @@ function createClientMock() {
     }
 
     select() {
+      return this;
+    }
+
+    order() {
+      return this;
+    }
+
+    limit() {
+      return this;
+    }
+
+    in(column: string, value: any) {
+      this.state.filters.push({ column, value });
       return this;
     }
 
@@ -93,7 +152,7 @@ function createClientMock() {
     }
 
     then(resolve: any, reject: any) {
-      return Promise.resolve({ data: null, error: null }).then(resolve, reject);
+      return Promise.resolve({ data: tableData[this.state.table] || [], error: null }).then(resolve, reject);
     }
   }
 
@@ -126,7 +185,7 @@ describe('Calendar AI actions', () => {
           type: 'create_pillar_balance_draft',
           title: 'Founder proof post',
           description: 'Turn recent customer proof into platform copy.',
-          scheduledAt: '2026-05-28T10:00:00.000Z',
+          scheduledAt: '2026-06-02T10:00:00.000Z',
           platforms: ['instagram', 'linkedin'],
           pillar: 'Proof',
         }),
@@ -140,7 +199,7 @@ describe('Calendar AI actions', () => {
     expect(postInsert?.payload).toMatchObject({
       workspace_id: 'ws-1',
       status: 'draft',
-      scheduled_at: '2026-05-28T10:00:00.000Z',
+      scheduled_at: '2026-06-02T10:00:00.000Z',
       platforms: ['instagram', 'linkedin'],
       tags: ['calendar-ai'],
       created_by: 'user-1',
@@ -153,6 +212,10 @@ describe('Calendar AI actions', () => {
       }),
     });
     expect(postInsert?.payload.content.instagram.text).toContain('Founder proof post');
+    expect(postInsert?.payload.content.instagram.text).toContain('Brand voice: Direct founder-led voice');
+    expect(postInsert?.payload.metadata.aiCalendar.contextMetadata).toMatchObject({
+      brandCompletion: 68,
+    });
     expect(mockRecordLearningEvent).toHaveBeenCalledWith(
       client,
       expect.objectContaining({
@@ -168,6 +231,83 @@ describe('Calendar AI actions', () => {
         postId: 'post-1',
         platforms: ['instagram', 'linkedin'],
         reason: 'calendar_ai_draft_created',
+      })
+    );
+  });
+
+  it('returns operational strategy data and suppresses ignored calendar suggestions', async () => {
+    const { client } = createClientMock({
+      posts: [
+        {
+          id: 'post-1',
+          status: 'published',
+          platforms: ['facebook'],
+          content: { facebook: { text: 'Published post' } },
+          published_at: '2026-05-28T10:00:00.000Z',
+          scheduled_at: null,
+          created_at: '2026-05-28T09:00:00.000Z',
+          metadata: {},
+        },
+      ],
+      strategy_recommendations: [
+        {
+          id: 'rec-1',
+          type: 'campaign',
+          title: 'Launch proof campaign',
+          description: 'Turn proof into a focused campaign.',
+          priority: 'high',
+          confidence_score: 0.8,
+          metrics: {
+            contentPillar: 'Proof',
+            calendarAction: 'Create a campaign draft.',
+            evidence: ['Proof posts are underrepresented.'],
+          },
+        },
+      ],
+      agent_artifacts: [
+        {
+          id: 'artifact-1',
+          artifact_type: 'best_time_recommendation',
+          summary: 'Facebook worked best at 10:00.',
+          payload: {
+            recommendations: [{ platform: 'facebook', hour: 10, averageScore: 72 }],
+          },
+        },
+      ],
+      content_feature_snapshots: [
+        { pillar: 'Proof', topic: 'Proof', platform: 'facebook', created_at: '2026-05-20T10:00:00.000Z' },
+      ],
+      social_accounts: [{ id: 'account-1', platform: 'facebook', status: 'active' }],
+      ai_feedback_actions: [{ target_id: 'campaign-gap-rec-1', action: 'ignore' }],
+    });
+    mockRequireWorkspaceContext.mockResolvedValue({
+      serviceClient: client,
+      workspaceId: 'ws-1',
+      user: { id: 'user-1' },
+    });
+
+    const url = new URL(
+      'http://localhost/api/calendar/ai-actions?from=2026-05-01T00:00:00.000Z&to=2026-05-31T23:59:59.999Z'
+    );
+    const response = await GET(Object.assign(new Request(url), { nextUrl: url }) as any);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.data.strategyHealth).toMatchObject({
+      emptyDays: expect.any(Number),
+      bestTimeSlots: 1,
+      recommendations: expect.any(Number),
+    });
+    expect(body.data.dayIntelligence.length).toBeGreaterThan(0);
+    expect(body.data.actions.some((action: any) => action.id === 'campaign-gap-rec-1')).toBe(false);
+    expect(body.data.actions[0]).toEqual(
+      expect.objectContaining({
+        dateKey: expect.any(String),
+        slotType: expect.any(String),
+        explanation: expect.objectContaining({
+          calendarAction: expect.any(String),
+        }),
       })
     );
   });

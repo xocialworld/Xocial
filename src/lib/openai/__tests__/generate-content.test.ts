@@ -93,4 +93,39 @@ describe('generateContent', () => {
     expect(mockedGenerateText).toHaveBeenCalledTimes(2);
     expect(result.platformContent.linkedin?.text).toBe('Generated LinkedIn post');
   });
+
+  it('injects shared Brand Brain context into the generation prompt', async () => {
+    mockedGenerateText.mockResolvedValueOnce({
+      text: JSON.stringify({
+        platform_content: {
+          instagram: {
+            text: 'Generated Instagram post',
+          },
+        },
+      }),
+      usage: { totalTokens: 55 },
+    });
+
+    await generateContent({
+      prompt: 'Write a product proof post.',
+      platforms: ['instagram'],
+      intelligenceContext: {
+        promptContext:
+          'XOCIAL MEMORY CONTEXT\nBrand voice: Direct founder-led voice\nBrand do-not rules: Avoid vague hype',
+        contextMetadata: {
+          usedBrandBrain: true,
+          brandCompletion: 72,
+          contextSources: ['brand_profile'],
+          selectedPlatforms: ['instagram'],
+        },
+      },
+    });
+
+    const call = mockedGenerateText.mock.calls[0]?.[0];
+    const systemPrompt = call?.messages?.[0]?.content || '';
+
+    expect(systemPrompt).toContain('XOCIAL MEMORY CONTEXT');
+    expect(systemPrompt).toContain('Brand voice: Direct founder-led voice');
+    expect(systemPrompt).toContain('Brand do-not rules: Avoid vague hype');
+  });
 });

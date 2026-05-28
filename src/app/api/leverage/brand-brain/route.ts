@@ -4,6 +4,10 @@ import { withErrorHandler, successResponse, validateRequest } from '@/lib/api-mi
 import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { getBrandProfile } from '@/lib/intelligence/context';
 import { calculateBrandCompletion, recordLearningEvent } from '@/lib/intelligence/learning';
+import {
+  changedBrandProfileFields,
+  recordBrandProfileVersion,
+} from '@/lib/intelligence/brand-profile-versions';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,6 +53,12 @@ export const PUT = withErrorHandler(async (request: NextRequest) => {
     updated_at: new Date().toISOString(),
   };
 
+  const { data: currentProfile } = await serviceClient
+    .from('workspace_brand_profiles')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+
   const { data, error } = await serviceClient
     .from('workspace_brand_profiles')
     .upsert(payload, { onConflict: 'workspace_id' })
@@ -59,6 +69,17 @@ export const PUT = withErrorHandler(async (request: NextRequest) => {
     throw new Error(error.message);
   }
 
+  const changedFields = changedBrandProfileFields(currentProfile, data);
+  await recordBrandProfileVersion(serviceClient, {
+    workspaceId,
+    brandProfileId: data.id,
+    snapshot: currentProfile || data,
+    changedFields,
+    changeSource: 'user',
+    changeReason: 'Manual Brand Brain save',
+    createdBy: user.id,
+  });
+
   await recordLearningEvent(serviceClient, {
     workspaceId,
     actorUserId: user.id,
@@ -68,7 +89,7 @@ export const PUT = withErrorHandler(async (request: NextRequest) => {
     entityId: data.id,
     metadata: {
       completion: calculateBrandCompletion(data),
-      updatedFields: Object.keys(input),
+      updatedFields: changedFields.length ? changedFields : Object.keys(input),
     },
   });
 

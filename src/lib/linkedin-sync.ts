@@ -8,6 +8,7 @@ import {
 } from '@/lib/oauth/linkedin';
 import { logger } from '@/lib/logger';
 import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
+import { persistPlatformMetrics } from '@/lib/intelligence/analytics-sync';
 
 interface SyncResult {
     synced: number;
@@ -125,8 +126,16 @@ export async function syncLinkedInPosts(
                             fetched_at: new Date().toISOString(),
                         };
 
-                        await supabase.from('post_analytics').upsert(analyticsData, {
-                            onConflict: 'post_id,platform',
+                        await persistPlatformMetrics(supabase as any, {
+                            workspaceId: account.workspace_id,
+                            postId,
+                            platformPostId: post.id,
+                            socialAccountId: accountId,
+                            platform: 'linkedin',
+                            publishedAt: postData.published_at,
+                            metrics: analyticsData,
+                            raw: stats,
+                            syncSource: 'linkedin_posts_sync',
                         });
                     }
                 } catch (statsError: any) {
@@ -201,8 +210,16 @@ export async function syncLinkedInAnalytics(accountId: string): Promise<SyncResu
                         fetched_at: new Date().toISOString(),
                     };
 
-                    await supabase.from('post_analytics').upsert(analyticsData, {
-                        onConflict: 'post_id,platform',
+                    await persistPlatformMetrics(supabase as any, {
+                        workspaceId: account.workspace_id,
+                        postId: post.id,
+                        platformPostId: post.external_post_id,
+                        socialAccountId: accountId,
+                        platform: 'linkedin',
+                        publishedAt: post.published_at,
+                        metrics: analyticsData,
+                        raw: stats,
+                        syncSource: 'linkedin_analytics_sync',
                     });
 
                     result.synced++;

@@ -54,6 +54,11 @@ function createSupabaseMock(resolveQuery: (state: QueryState, mode?: 'single' | 
       return this;
     }
 
+    not(column: string, operator: string, value: any) {
+      this.state.filters.push({ method: 'not', column, value: `${operator}:${value}` });
+      return this;
+    }
+
     in(column: string, value: any) {
       this.state.filters.push({ method: 'in', column, value });
       return this;
@@ -149,6 +154,20 @@ describe('recordMetricSnapshotAndOutcome', () => {
       post_id: 'post-1',
       platform: 'instagram',
       baseline_score: 45,
+      metrics: expect.objectContaining({
+        normalized: expect.objectContaining({
+          views: 1200,
+          likes: 120,
+        }),
+        baseline: expect.objectContaining({
+          scope: 'workspace_platform',
+          sampleSize: 2,
+        }),
+        scores: expect.objectContaining({
+          latest: result.score,
+        }),
+        snapshotCount: 1,
+      }),
     });
     expect(taskInsert?.payload).toMatchObject({
       workspace_id: 'ws-1',

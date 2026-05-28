@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { withErrorHandler, successResponse } from '@/lib/api-middleware';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { runStrategyAnalysis } from '@/lib/ai/strategy-engine';
-import { getBrandProfile } from '@/lib/intelligence/context';
+import { buildAIContextPacket } from '@/lib/intelligence/context';
 import { recordAIModelRun, recordLearningEvent } from '@/lib/intelligence/learning';
 
 export const dynamic = 'force-dynamic';
@@ -13,8 +13,15 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   });
 
   const startTime = Date.now();
-  const brandProfile = await getBrandProfile(serviceClient, workspaceId);
-  const { performanceData, recommendations } = await runStrategyAnalysis(workspaceId);
+  const aiContextPacket = await buildAIContextPacket(serviceClient, {
+    workspaceId,
+    campaignGoal: 'Generate actionable social media strategy',
+    query: 'Create strategy recommendations for Leverage',
+  });
+  const { performanceData, recommendations, contextMetadata } = await runStrategyAnalysis(
+    workspaceId,
+    { aiContext: aiContextPacket }
+  );
   const latencyMs = Date.now() - startTime;
 
   const modelRun = await recordAIModelRun(serviceClient, {
@@ -25,10 +32,11 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     model: 'openai/gpt-4o-mini',
     inputPayload: {
       performanceData,
+      contextMetadata,
       brandProfile: {
-        voice: brandProfile.voice,
-        audience: brandProfile.audience,
-        contentPillars: brandProfile.content_pillars,
+        voice: aiContextPacket.intelligenceContext.brandProfile.voice,
+        audience: aiContextPacket.intelligenceContext.brandProfile.audience,
+        contentPillars: aiContextPacket.intelligenceContext.brandProfile.content_pillars,
       },
     },
     outputPayload: {
@@ -49,6 +57,7 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     metadata: {
       recommendationCount: recommendations.length,
       hasPerformanceData: Boolean(performanceData),
+      contextMetadata,
     },
   });
 
@@ -56,5 +65,11 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     performanceData,
     recommendations,
     modelRunId: modelRun?.id ?? null,
+    context: contextMetadata
+      ? {
+          brandCompletion: contextMetadata.brandCompletion,
+          contextSources: contextMetadata.contextSources,
+        }
+      : undefined,
   });
 });

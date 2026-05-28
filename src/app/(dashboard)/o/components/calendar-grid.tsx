@@ -10,10 +10,11 @@ import {
   endOfMonth,
 } from "date-fns";
 import { cn } from "@/lib/utils";
-import { Plus } from "lucide-react";
+import { Clock, Plus, Sparkles, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CalendarPostCard } from "./calendar-post-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { CalendarDayIntelligence, CalendarStrategyAction } from "@/types/intelligence";
 
 // Calendar post type - flexible to handle both Post and CalendarEntry shapes
 type CalendarPost = {
@@ -36,6 +37,9 @@ interface CalendarGridProps {
   currentMonth: Date;
   onMonthChange: (date: Date) => void;
   isLoading?: boolean;
+  strategyActions?: CalendarStrategyAction[];
+  dayIntelligence?: CalendarDayIntelligence[];
+  onStrategyActionClick?: (action: CalendarStrategyAction) => void;
 }
 
 /**
@@ -122,6 +126,9 @@ export function CalendarGrid({
   onPostDrop,
   currentMonth,
   isLoading = false,
+  strategyActions = [],
+  dayIntelligence = [],
+  onStrategyActionClick,
 }: CalendarGridProps) {
   // Show skeleton during initial load
   if (isLoading) {
@@ -141,6 +148,13 @@ export function CalendarGrid({
   const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   const weeks = days.length / 7;
+  const actionsByDate = new Map<string, CalendarStrategyAction[]>();
+  strategyActions.forEach((action) => {
+    const list = actionsByDate.get(action.dateKey) || [];
+    list.push(action);
+    actionsByDate.set(action.dateKey, list);
+  });
+  const intelligenceByDate = new Map(dayIntelligence.map((day) => [day.dateKey, day]));
 
   // Handle Drag and Drop (Simplified HTML5 API)
   const handleDragStart = (e: React.DragEvent, postId: string) => {
@@ -208,6 +222,9 @@ export function CalendarGrid({
           const hiddenCount = dayPosts.length - maxVisiblePosts;
 
           const hasPosts = dayPosts.length > 0;
+          const dayKey = format(day, "yyyy-MM-dd");
+          const dayActions = actionsByDate.get(dayKey) || [];
+          const dayIntel = intelligenceByDate.get(dayKey);
 
           // Helper for status colors in dots
           const getDotColor = (status: string) => {
@@ -267,6 +284,18 @@ export function CalendarGrid({
                 {dayPosts.slice(0, 4).map((post) => (
                   <div key={post.id} className={cn("h-1.5 w-1.5 rounded-full", getDotColor(post.status))} />
                 ))}
+                {dayActions.slice(0, 2).map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onStrategyActionClick?.(action);
+                    }}
+                    className="h-1.5 w-1.5 rounded-full bg-primary-500"
+                    aria-label={`Open ${action.title}`}
+                  />
+                ))}
                 {dayPosts.length > 4 && (
                   <span className="text-[9px] text-secondary-400 leading-none self-center">+</span>
                 )}
@@ -274,6 +303,35 @@ export function CalendarGrid({
 
               {/* Desktop: Posts List */}
               <div className="hidden md:flex flex-1 flex-col gap-1 min-h-0">
+                {dayActions.slice(0, hasPosts ? 1 : 2).map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onStrategyActionClick?.(action);
+                    }}
+                    className={cn(
+                      "flex items-center gap-1 rounded border border-primary-200 bg-primary-50 px-1.5 py-1 text-left text-[10px] font-medium text-primary-800 transition-colors hover:bg-primary-100",
+                      action.slotType === "best_time" && "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100",
+                      action.slotType === "pillar_gap" && "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                    )}
+                  >
+                    {action.slotType === "best_time" ? (
+                      <Clock className="h-3 w-3 shrink-0" />
+                    ) : action.slotType === "pillar_gap" ? (
+                      <Target className="h-3 w-3 shrink-0" />
+                    ) : (
+                      <Sparkles className="h-3 w-3 shrink-0" />
+                    )}
+                    <span className="truncate">{action.title}</span>
+                  </button>
+                ))}
+                {!dayActions.length && dayIntel?.recommendedSlotCount ? (
+                  <div className="rounded bg-primary-50 px-1.5 py-1 text-[10px] text-primary-700">
+                    {dayIntel.recommendedSlotCount} AI slot{dayIntel.recommendedSlotCount === 1 ? "" : "s"}
+                  </div>
+                ) : null}
                 {visiblePosts.map((post) => (
                   <div key={post.id} draggable onDragStart={(e) => handleDragStart(e, post.id)}>
                     <CalendarPostCard

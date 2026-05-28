@@ -11,6 +11,18 @@ import { logger } from '@/lib/logger';
 import { z } from 'zod';
 import { requireWorkspaceContext } from '@/lib/workspace-context';
 import { recordAIModelRun, recordLearningEvent } from '@/lib/intelligence/learning';
+import { buildAIContextPacket } from '@/lib/intelligence/context';
+import type { Platform } from '@/types';
+import type { AIExplanation } from '@/types/intelligence';
+
+const PLATFORM_VALUES: Platform[] = [
+  'facebook',
+  'instagram',
+  'twitter',
+  'linkedin',
+  'tiktok',
+  'youtube',
+];
 
 /**
  * Validation schema for content refinement
@@ -28,6 +40,9 @@ const refineSchema = z.object({
     'custom',
   ]),
   customInstruction: z.string().max(500).optional(),
+  useBrandBrain: z.boolean().optional().default(true),
+  campaignGoal: z.string().optional(),
+  contentPillar: z.string().optional(),
 }).superRefine((data, ctx) => {
   if (data.refinementType === 'custom' && !data.customInstruction?.trim()) {
     ctx.addIssue({
@@ -37,6 +52,10 @@ const refineSchema = z.object({
     });
   }
 });
+
+function normalizePlatform(value: string): Platform | undefined {
+  return PLATFORM_VALUES.includes(value as Platform) ? (value as Platform) : undefined;
+}
 
 /**
  * POST /api/ai/refine
@@ -58,15 +77,49 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     throw new APIError(429, 'Too many AI requests. Please wait a moment.', 'RATE_LIMIT');
   }
 
+  const platform = normalizePlatform(validatedData.platform);
+  const aiContextPacket = validatedData.useBrandBrain
+    ? await buildAIContextPacket(serviceClient, {
+        workspaceId: workspace.id,
+        selectedPlatforms: platform ? [platform] : undefined,
+        campaignGoal: validatedData.campaignGoal,
+        contentPillar: validatedData.contentPillar,
+        query: validatedData.customInstruction || validatedData.content,
+      })
+    : undefined;
+
   // Refine content
   const refinedText = await refineContent(
     validatedData.content,
     validatedData.platform,
     validatedData.refinementType,
-    validatedData.customInstruction
+    validatedData.customInstruction,
+    aiContextPacket
+      ? {
+          promptContext: aiContextPacket.promptContext,
+          contextMetadata: aiContextPacket.contextMetadata,
+        }
+      : undefined
   );
 
   const totalDuration = Date.now() - startTime;
+  const explanation: AIExplanation = {
+    reasonSummary:
+      validatedData.refinementType === 'custom'
+        ? `Regenerated this platform draft using the custom instruction: ${validatedData.customInstruction}.`
+        : `Regenerated this platform draft with the ${validatedData.refinementType.replace(/_/g, ' ')} quick option.`,
+    evidence: [
+      `Target platform: ${validatedData.platform}.`,
+      aiContextPacket?.contextMetadata.contextSources?.length
+        ? `Context sources: ${aiContextPacket.contextMetadata.contextSources.slice(0, 4).join(', ')}.`
+        : '',
+    ].filter(Boolean),
+    confidenceScore: aiContextPacket ? 0.7 : 0.56,
+    targetPlatforms: platform ? [platform] : undefined,
+    contentPillar: validatedData.contentPillar,
+    generatedBy: 'content_refinement',
+    promptVersion: 'create.refine.v1',
+  };
   const modelRun = await recordAIModelRun(serviceClient, {
     workspaceId: workspace.id,
     userId: user.id,
@@ -77,9 +130,11 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       platform: validatedData.platform,
       refinementType: validatedData.refinementType,
       customInstruction: validatedData.customInstruction,
+      contextMetadata: aiContextPacket?.contextMetadata,
     },
     outputPayload: {
       text: refinedText,
+      explanation,
     },
     status: 'succeeded',
     latencyMs: totalDuration,
@@ -101,6 +156,9 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
       customInstruction: validatedData.customInstruction,
       contentLength: validatedData.content.length,
       outputLength: refinedText.length,
+      usedBrandBrain: Boolean(aiContextPacket),
+      contextMetadata: aiContextPacket?.contextMetadata,
+      explanation,
     },
   });
 
@@ -116,6 +174,14 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     text: refinedText,
     original: validatedData.content,
     refinementType: validatedData.refinementType,
+    modelRunId: modelRun?.id ?? null,
+    explanation,
+    context: aiContextPacket
+      ? {
+          brandCompletion: aiContextPacket.contextMetadata.brandCompletion,
+          contextSources: aiContextPacket.contextMetadata.contextSources,
+        }
+      : undefined,
   });
 
   logger.trackAPIRequest('POST', '/api/ai/refine', 200, totalDuration, {

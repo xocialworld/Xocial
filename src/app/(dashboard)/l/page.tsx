@@ -35,6 +35,10 @@ import {
   EmptyState,
   SectionTitle,
 } from "@/components/shared/page-components";
+import {
+  FeedbackControls,
+  WhyExplanation as AIWhyExplanation,
+} from "@/components/features/intelligence";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -55,7 +59,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { cn } from "@/lib/utils";
 import type { Platform, StrategyRecommendation } from "@/types";
-import type { BrandProfile, ContentScore, LeverageInsight } from "@/types/intelligence";
+import type { AIExplanation, BrandProfile, ContentScore, LeverageInsight } from "@/types/intelligence";
 
 const PLATFORM_OPTIONS: Array<{ value: Platform; label: string }> = [
   { value: "instagram", label: "Instagram" },
@@ -103,7 +107,19 @@ const LEARNING_WORKERS: Array<{ agent: string; label: string }> = [
   { agent: "signal_ingestion", label: "Signal Ingestion" },
   { agent: "content_classifier", label: "Content Classifier" },
   { agent: "brand_learner", label: "Brand Learner" },
+  { agent: "learning_backfill", label: "Learning Backfill" },
+  { agent: "analytics_backfill", label: "Analytics Backfill" },
+  { agent: "knowledge_ingestion", label: "Knowledge Ingestion" },
   { agent: "reporting", label: "Reporting" },
+];
+
+const FEEDBACK_REASONS = [
+  { value: "off_brand", label: "Off-brand" },
+  { value: "wrong_audience", label: "Wrong audience" },
+  { value: "wrong_platform", label: "Wrong platform" },
+  { value: "weak_evidence", label: "Weak evidence" },
+  { value: "client_preference", label: "Client preference" },
+  { value: "already_handled", label: "Already handled" },
 ];
 
 type OverviewData = {
@@ -138,6 +154,32 @@ type LearningData = {
   artifacts: AgentArtifact[];
   tasks: AgentTask[];
   sourceCounts: Record<string, number>;
+  eventCoverage?: Array<{ eventType: string; count: number; covered: boolean }>;
+  taskStats?: {
+    failed?: number;
+    running?: number;
+    queued?: number;
+    succeeded?: number;
+    byAgent?: Record<string, Record<string, number>>;
+  };
+  feedbackStats?: {
+    total?: number;
+    byAction?: Record<string, number>;
+    byTarget?: Record<string, number>;
+  };
+  learningLoopReadiness?: {
+    score: number;
+    ready: boolean;
+    missing: string[];
+  };
+  artifactStats?: {
+    active?: number;
+    accepted?: number;
+    ignored?: number;
+    acceptanceRate?: number;
+    averageConfidence?: number;
+  };
+  brandVersions?: Array<Record<string, unknown>>;
   sources: Record<string, boolean>;
 };
 
@@ -191,8 +233,25 @@ type AgentArtifact = {
   updated_at?: string;
 };
 
+type FeedbackTarget =
+  | {
+      kind: "recommendation";
+      id: string;
+      title: string;
+      action: "recommendation_dismiss" | "recommendation_mark_off_brand";
+      tone: "dismiss" | "off_brand";
+    }
+  | {
+      kind: "artifact";
+      id: string;
+      title: string;
+      action: "artifact_ignore" | "artifact_mark_off_brand";
+      tone: "dismiss" | "off_brand";
+    };
+
 type PredictionData = {
   score: ContentScore;
+  explanation?: AIExplanation;
 };
 
 type BrandDraft = BrandProfile & {
@@ -390,6 +449,77 @@ function evidenceItems(payload: BrandSuggestionPayload) {
     : [];
 }
 
+function asRecord(value: unknown): Record<string, any> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {};
+}
+
+function toTextList(value: unknown, limit = 5) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item || "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function compactText(value: unknown, maxLength = 220) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 3).trim()}...`;
+}
+
+function getRecommendationWhy(recommendation: StrategyRecommendation) {
+  const metrics = asRecord(recommendation.metrics);
+  return {
+    reasonSummary: compactText(metrics.reasoningSummary || metrics.expectedImpact || recommendation.description, 320),
+    evidence: toTextList(metrics.evidence, 4),
+    dataCaveats: toTextList(metrics.dataCaveats, 3),
+    confidenceBreakdown: asRecord(metrics.confidenceBreakdown),
+    confidenceScore: Number(recommendation.confidence_score || 0),
+    expectedImpact: metrics.expectedImpact ? compactText(metrics.expectedImpact, 180) : undefined,
+    calendarAction: metrics.calendarAction ? compactText(metrics.calendarAction, 180) : undefined,
+    contentPillar: metrics.contentPillar ? compactText(metrics.contentPillar, 120) : undefined,
+    targetPlatforms: Array.isArray(metrics.targetPlatforms) ? metrics.targetPlatforms : undefined,
+    details: [
+      Array.isArray(metrics.targetPlatforms) && metrics.targetPlatforms.length
+        ? { label: "Platforms", value: metrics.targetPlatforms.map(humanize).join(", ") }
+        : null,
+    ].filter(Boolean) as Array<{ label: string; value: string }>,
+  } satisfies AIExplanation;
+}
+
+function getArtifactWhy(artifact: AgentArtifact) {
+  const payload = asRecord(artifact.payload);
+  const sourceData = asRecord(artifact.source_data);
+  const reasoning =
+    payload.reasoningSummary ||
+    payload.reason ||
+    payload.narrative ||
+    payload.executiveSummary ||
+    sourceData.reasoningSummary ||
+    artifact.summary;
+  const evidence = toTextList(payload.evidence || sourceData.evidence, 4);
+  const caveats = toTextList(payload.dataCaveats || sourceData.dataCaveats, 3);
+  const confidenceBreakdown = asRecord(payload.confidenceBreakdown || sourceData.confidenceBreakdown);
+
+  return {
+    reasonSummary: compactText(reasoning, 320),
+    evidence,
+    dataCaveats: caveats,
+    confidenceBreakdown,
+    confidenceScore: Number(artifact.confidence || 0),
+    details: [
+      payload.bestPlatform ? { label: "Best platform", value: humanize(String(payload.bestPlatform)) } : null,
+      payload.averageScore !== undefined ? { label: "Average score", value: String(payload.averageScore) } : null,
+      payload.outcomeCount !== undefined ? { label: "Outcomes reviewed", value: String(payload.outcomeCount) } : null,
+      payload.learningEventCount !== undefined
+        ? { label: "Learning signals", value: String(payload.learningEventCount) }
+        : null,
+    ].filter(Boolean) as Array<{ label: string; value: string }>,
+  } satisfies AIExplanation;
+}
+
 function StatTile({
   label,
   value,
@@ -480,6 +610,7 @@ function InsightCard({
               <span className="h-1 w-1 rounded-full bg-secondary-300" />
               <span>{Math.round(insight.confidence * 100)}% confidence</span>
             </div>
+            <AIWhyExplanation explanation={insight.explanation} compact className="mt-3" />
           </div>
         </div>
         <Button size="sm" variant="outline" onClick={() => onAction(insight)} className="shrink-0 gap-2">
@@ -703,6 +834,102 @@ function BrandSuggestionReviewDialog({
   );
 }
 
+function FeedbackDialog({
+  target,
+  open,
+  onOpenChange,
+  loading,
+  onSubmit,
+}: {
+  target: FeedbackTarget | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  loading: boolean;
+  onSubmit: (payload: Record<string, unknown>) => Promise<void>;
+}) {
+  const [reasonType, setReasonType] = useState("off_brand");
+  const [comment, setComment] = useState("");
+
+  useEffect(() => {
+    if (!open || !target) return;
+    setReasonType(target.tone === "off_brand" ? "off_brand" : "weak_evidence");
+    setComment("");
+  }, [open, target]);
+
+  const isOffBrand = target?.tone === "off_brand";
+  const title = isOffBrand ? "Mark as off-brand" : "Explain why this is not useful";
+  const description = isOffBrand
+    ? "This will teach Brand Brain what to avoid in future strategy and AI output."
+    : "This feedback becomes a learning event so Xocial can reduce similar recommendations.";
+
+  const submit = async () => {
+    if (!target) return;
+    await onSubmit({
+      reasonType,
+      comment: comment.trim(),
+      feedbackSource: "leverage_ui",
+      feedbackTargetKind: target.kind,
+      feedbackAction: target.action,
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg" onClose={() => onOpenChange(false)}>
+        <DialogHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={isOffBrand ? "error" : "outline"}>
+              {isOffBrand ? "Brand feedback" : "Learning feedback"}
+            </Badge>
+          </div>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="rounded-lg border border-secondary-200 bg-secondary-50 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">Feedback target</p>
+            <p className="mt-1 text-sm font-medium text-secondary-900">{target?.title || "AI item"}</p>
+          </div>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-secondary-800">Reason</span>
+            <Select
+              options={FEEDBACK_REASONS}
+              value={reasonType}
+              onChange={setReasonType}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-secondary-800">
+              Explain what Xocial should learn
+            </span>
+            <Textarea
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              rows={4}
+              placeholder={
+                isOffBrand
+                  ? "Example: This sounds too salesy for this brand. Avoid hype and use practical founder-led language."
+                  : "Example: This is not relevant because the client already approved a different campaign direction."
+              }
+            />
+          </label>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={loading || (isOffBrand && !comment.trim())} className="gap-2">
+            {loading ? <Spinner className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+            Save Feedback
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function LeveragePage() {
   const router = useRouter();
   const { workspace, loading: workspaceLoading } = useWorkspace();
@@ -717,6 +944,8 @@ export default function LeveragePage() {
   const [processingWorkers, setProcessingWorkers] = useState(false);
   const [artifactLoading, setArtifactLoading] = useState<string | null>(null);
   const [reviewingBrandArtifact, setReviewingBrandArtifact] = useState<AgentArtifact | null>(null);
+  const [feedbackTarget, setFeedbackTarget] = useState<FeedbackTarget | null>(null);
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [predicting, setPredicting] = useState(false);
   const [hashtagLoading, setHashtagLoading] = useState(false);
   const [predictionContent, setPredictionContent] = useState("");
@@ -728,6 +957,7 @@ export default function LeveragePage() {
   const [hashtagContent, setHashtagContent] = useState("");
   const [hashtagPlatform, setHashtagPlatform] = useState<Platform>("instagram");
   const [hashtags, setHashtags] = useState<string[]>([]);
+  const [hashtagExplanation, setHashtagExplanation] = useState<AIExplanation | null>(null);
 
   const workspaceQuery = useMemo(() => {
     if (!workspace?.id) return "";
@@ -903,8 +1133,9 @@ export default function LeveragePage() {
           platform: hashtagPlatform,
           count: 14,
         }),
-      }).then((response) => readApiData<{ hashtags: string[] }>(response));
+      }).then((response) => readApiData<{ hashtags: string[]; explanation?: AIExplanation; modelRunId?: string }>(response));
       setHashtags(data.hashtags);
+      setHashtagExplanation(data.explanation || null);
       toast.success("Hashtag set generated");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to generate hashtags");
@@ -935,16 +1166,27 @@ export default function LeveragePage() {
 
   const performRecommendationAction = async (
     recommendationId: string,
-    action: "recommendation_accept" | "recommendation_dismiss" | "recommendation_complete"
+    action:
+      | "recommendation_accept"
+      | "recommendation_dismiss"
+      | "recommendation_complete"
+      | "recommendation_mark_off_brand",
+    payload: Record<string, unknown> = {}
   ) => {
     if (!workspace?.id) return;
     try {
       await fetch(`/api/leverage/actions?${workspaceQuery}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, targetId: recommendationId }),
+        body: JSON.stringify({ action, targetId: recommendationId, payload }),
       }).then((response) => readApiData(response));
-      toast.success(action === "recommendation_dismiss" ? "Recommendation dismissed" : "Recommendation updated");
+      toast.success(
+        action === "recommendation_mark_off_brand"
+          ? "Off-brand feedback saved"
+          : action === "recommendation_dismiss"
+            ? "Recommendation dismissed"
+            : "Recommendation updated"
+      );
       await fetchLeverage();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to update recommendation");
@@ -953,7 +1195,7 @@ export default function LeveragePage() {
 
   const performArtifactAction = async (
     artifactId: string,
-    action: "artifact_accept" | "artifact_ignore",
+    action: "artifact_accept" | "artifact_ignore" | "artifact_mark_off_brand",
     payload: Record<string, unknown> = {}
   ) => {
     if (!workspace?.id) return;
@@ -964,13 +1206,34 @@ export default function LeveragePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, targetId: artifactId, payload }),
       }).then((response) => readApiData(response));
-      toast.success(action === "artifact_accept" ? "AI suggestion accepted" : "AI suggestion ignored");
+      toast.success(
+        action === "artifact_mark_off_brand"
+          ? "Off-brand feedback saved"
+          : action === "artifact_accept"
+            ? "AI suggestion accepted"
+            : "AI suggestion ignored"
+      );
       setReviewingBrandArtifact(null);
       await fetchLeverage();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to update AI suggestion");
     } finally {
       setArtifactLoading(null);
+    }
+  };
+
+  const submitFeedback = async (payload: Record<string, unknown>) => {
+    if (!feedbackTarget) return;
+    setFeedbackSubmitting(true);
+    try {
+      if (feedbackTarget.kind === "recommendation") {
+        await performRecommendationAction(feedbackTarget.id, feedbackTarget.action, payload);
+      } else {
+        await performArtifactAction(feedbackTarget.id, feedbackTarget.action, payload);
+      }
+      setFeedbackTarget(null);
+    } finally {
+      setFeedbackSubmitting(false);
     }
   };
 
@@ -1261,10 +1524,12 @@ export default function LeveragePage() {
               />
               {overview?.recommendations?.length ? (
                 <div className="space-y-3">
-                  {overview.recommendations.map((recommendation) => (
+                  {overview.recommendations.map((recommendation) => {
+                    const why = getRecommendationWhy(recommendation);
+                    return (
                     <ContentCard key={recommendation.id} hover>
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge variant="primary">{humanize(recommendation.type)}</Badge>
                             <Badge variant={priorityVariant(recommendation.priority)}>
@@ -1286,32 +1551,27 @@ export default function LeveragePage() {
                               ))}
                             </div>
                           ) : null}
+                          <AIWhyExplanation explanation={why} className="mt-4" />
                         </div>
-                        <div className="flex shrink-0 flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => performRecommendationAction(recommendation.id, "recommendation_dismiss")}
-                          >
-                            Dismiss
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => performRecommendationAction(recommendation.id, "recommendation_accept")}
-                          >
-                            Accept
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => performRecommendationAction(recommendation.id, "recommendation_complete")}
-                          >
-                            Done
-                          </Button>
-                        </div>
+                        <FeedbackControls
+                          targetType="strategy_recommendation"
+                          targetId={recommendation.id}
+                          title={recommendation.title}
+                          workspaceId={workspace?.id}
+                          originalValue={{
+                            title: recommendation.title,
+                            description: recommendation.description,
+                            metrics: recommendation.metrics,
+                          }}
+                          metadata={{ source: "leverage_strategy", explanation: why }}
+                          actions={["dismiss", "mark_off_brand", "accept", "complete"]}
+                          className="shrink-0 lg:max-w-[250px]"
+                          onSubmitted={fetchLeverage}
+                        />
                       </div>
                     </ContentCard>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <ContentCard>
@@ -1447,15 +1707,41 @@ export default function LeveragePage() {
                       </ul>
                     </div>
                   ) : null}
-                  <div className="rounded-lg border border-secondary-200 bg-secondary-50 p-3">
-                    <p className="text-sm font-medium text-secondary-900">Suggestions</p>
-                    <ul className="mt-2 space-y-1 text-sm text-secondary-600">
-                      {prediction.score.suggestions.length
-                        ? prediction.score.suggestions.map((suggestion) => <li key={suggestion}>{suggestion}</li>)
-                        : <li>Content is ready for the selected platforms.</li>}
-                    </ul>
-                  </div>
-                </div>
+	                  <div className="rounded-lg border border-secondary-200 bg-secondary-50 p-3">
+	                    <p className="text-sm font-medium text-secondary-900">Suggestions</p>
+	                    <ul className="mt-2 space-y-1 text-sm text-secondary-600">
+	                      {prediction.score.suggestions.length
+	                        ? prediction.score.suggestions.map((suggestion) => <li key={suggestion}>{suggestion}</li>)
+	                        : <li>Content is ready for the selected platforms.</li>}
+	                    </ul>
+	                  </div>
+                  <AIWhyExplanation
+                    explanation={{
+                      ...(prediction.explanation || {}),
+                      reasonSummary: prediction.explanation?.reasonSummary || prediction.score.explanation,
+                      evidence: [
+                      `Brand fit: ${Math.round(prediction.score.brandFit)}%`,
+                      `Engagement potential: ${Math.round(prediction.score.engagementPotential)}%`,
+                      `Safety: ${Math.round(prediction.score.safety)}%`,
+                      ],
+                      confidenceScore: prediction.score.overall / 100,
+                      details: Object.entries(prediction.score.platformFit).map(([platform, score]) => ({
+                        label: `${humanize(platform)} fit`,
+                        value: `${Math.round(Number(score || 0))}%`,
+                      })),
+                    }}
+                  />
+                  <FeedbackControls
+                    targetType="content_prediction"
+                    targetId="leverage-prediction"
+                    title="Engagement prediction"
+                    workspaceId={workspace?.id}
+                    originalText={predictionContent}
+                    originalValue={{ content: predictionContent, score: prediction.score, platforms: predictionPlatforms }}
+                    metadata={{ source: "leverage_prediction", platforms: predictionPlatforms }}
+                    actions={["accept", "ignore", "mark_off_brand"]}
+                  />
+	                </div>
               ) : (
                 <div className="mt-8">
                   <EmptyState
@@ -1502,12 +1788,25 @@ export default function LeveragePage() {
             <ContentCard>
               <h3 className="font-semibold text-secondary-950">Suggested Set</h3>
               {hashtags.length ? (
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {hashtags.map((hashtag) => (
-                    <Badge key={hashtag} variant="primary" className="text-sm">
-                      #{hashtag.replace(/^#/, "")}
-                    </Badge>
-                  ))}
+                <div className="mt-5 space-y-4">
+                  <div className="flex flex-wrap gap-2">
+                    {hashtags.map((hashtag) => (
+                      <Badge key={hashtag} variant="primary" className="text-sm">
+                        #{hashtag.replace(/^#/, "")}
+                      </Badge>
+                    ))}
+                  </div>
+                  {hashtagExplanation && <AIWhyExplanation explanation={hashtagExplanation} compact />}
+                  <FeedbackControls
+                    targetType="hashtag_set"
+                    targetId={`leverage-hashtags-${hashtagPlatform}`}
+                    title="Suggested hashtag set"
+                    workspaceId={workspace?.id}
+                    originalText={hashtags.map((hashtag) => `#${hashtag.replace(/^#/, "")}`).join(" ")}
+                    originalValue={{ hashtags, platform: hashtagPlatform, content: hashtagContent }}
+                    metadata={{ source: "leverage_hashtags", platform: hashtagPlatform }}
+                    actions={["accept", "edit_accept", "ignore", "mark_off_brand"]}
+                  />
                 </div>
               ) : (
                 <div className="mt-8">
@@ -1549,6 +1848,52 @@ export default function LeveragePage() {
         </TabsContent>
 
         <TabsContent value="learning" className="mt-0 space-y-6">
+          <div className="grid gap-4 md:grid-cols-4">
+            <StatTile
+              label="Covered Signals"
+              value={`${learning?.eventCoverage?.filter((item) => item.covered).length || 0}/${learning?.eventCoverage?.length || 0}`}
+              icon={Activity}
+              tone="primary"
+            />
+            <StatTile
+              label="Worker Success"
+              value={learning?.taskStats?.succeeded ?? 0}
+              icon={Check}
+              tone="green"
+            />
+            <StatTile
+              label="Feedback Actions"
+              value={learning?.feedbackStats?.total ?? 0}
+              icon={ListChecks}
+              tone="orange"
+            />
+            <StatTile
+              label="Artifact Confidence"
+              value={`${Math.round(Number(learning?.artifactStats?.averageConfidence || 0) * 100)}%`}
+              icon={Brain}
+              tone="secondary"
+            />
+          </div>
+          <ContentCard>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-secondary-950">Learning Loop Readiness</h2>
+                <p className="mt-1 text-sm text-secondary-500">
+                  Measures whether Xocial has enough brand, feedback, approval, worker, and performance data to learn reliably.
+                </p>
+              </div>
+              <Badge variant={learning?.learningLoopReadiness?.ready ? "success" : "warning"}>
+                {Math.round(Number(learning?.learningLoopReadiness?.score || 0) * 100)}% ready
+              </Badge>
+            </div>
+            {learning?.learningLoopReadiness?.missing?.length ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {learning.learningLoopReadiness.missing.map((item) => (
+                  <Badge key={item} variant="outline">{humanize(item)}</Badge>
+                ))}
+              </div>
+            ) : null}
+          </ContentCard>
           <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <ContentCard>
               <h2 className="text-lg font-semibold text-secondary-950">AI Learning Feed</h2>
@@ -1587,16 +1932,18 @@ export default function LeveragePage() {
                 <h3 className="font-semibold text-secondary-950">AI Artifacts</h3>
                 <div className="mt-4 space-y-3">
                   {learning?.artifacts?.length ? (
-                    learning.artifacts.slice(0, 6).map((artifact) => {
-                      const id = String(artifact.id || "");
-                      const artifactType = String(artifact.artifact_type || "artifact");
-                      const status = String(artifact.status || "active");
-                      const isBrandSuggestion = artifactType === "brand_suggestion" && status === "active";
-                      const brandPayload = asBrandSuggestionPayload(artifact);
-                      const brandField = getBrandSuggestionField(artifact);
-                      const evidence = evidenceItems(brandPayload);
-                      return (
-                        <div key={id} className="rounded-lg border border-secondary-200 p-3">
+	                    learning.artifacts.slice(0, 6).map((artifact) => {
+	                      const id = String(artifact.id || "");
+	                      const artifactType = String(artifact.artifact_type || "artifact");
+	                      const status = String(artifact.status || "active");
+	                      const isActive = status === "active";
+	                      const isBrandSuggestion = artifactType === "brand_suggestion" && isActive;
+	                      const brandPayload = asBrandSuggestionPayload(artifact);
+	                      const brandField = getBrandSuggestionField(artifact);
+	                      const evidence = evidenceItems(brandPayload);
+                      const why = getArtifactWhy(artifact);
+	                      return (
+	                        <div key={id} className="rounded-lg border border-secondary-200 p-3">
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge variant="primary">{humanize(artifactType)}</Badge>
                             <Badge variant={status === "active" ? "success" : "default"}>{humanize(status)}</Badge>
@@ -1624,28 +1971,41 @@ export default function LeveragePage() {
                                 <p className="mt-2 text-xs text-secondary-500">
                                   Evidence: {evidence.slice(0, 2).join(" · ")}
                                 </p>
-                              ) : null}
-                            </div>
-                          )}
-                          {isBrandSuggestion && (
+	                              ) : null}
+	                            </div>
+	                          )}
+                          <AIWhyExplanation explanation={why} className="mt-4" />
+	                          {isActive && (
                             <div className="mt-3 flex flex-wrap gap-2">
-                              <Button
-                                size="sm"
-                                className="gap-2"
+                              {isBrandSuggestion ? (
+                                <Button
+                                  size="sm"
+                                  className="gap-2"
+                                  disabled={artifactLoading === id}
+                                  onClick={() => setReviewingBrandArtifact(artifact)}
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" />
+                                  Review & Edit
+                                </Button>
+                              ) : (
+                                null
+                              )}
+                              <FeedbackControls
+                                targetType="agent_artifact"
+                                targetId={id}
+                                title={String(artifact.title || "AI artifact")}
+                                workspaceId={workspace?.id}
+                                originalValue={{
+                                  title: artifact.title,
+                                  summary: artifact.summary,
+                                  payload: artifact.payload,
+                                  artifactType,
+                                }}
+                                metadata={{ source: "leverage_learning", artifactType, explanation: why }}
+                                actions={isBrandSuggestion ? ["ignore", "mark_off_brand"] : ["accept", "ignore", "mark_off_brand"]}
                                 disabled={artifactLoading === id}
-                                onClick={() => setReviewingBrandArtifact(artifact)}
-                              >
-                                <Edit3 className="h-3.5 w-3.5" />
-                                Review & Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={artifactLoading === id}
-                                onClick={() => performArtifactAction(id, "artifact_ignore")}
-                              >
-                                Ignore
-                              </Button>
+                                onSubmitted={fetchLeverage}
+                              />
                             </div>
                           )}
                         </div>
@@ -1668,6 +2028,50 @@ export default function LeveragePage() {
                     ))
                   ) : (
                     <p className="text-sm text-secondary-500">No counted signals yet.</p>
+                  )}
+                </div>
+              </ContentCard>
+              <ContentCard>
+                <h3 className="font-semibold text-secondary-950">Learning Coverage</h3>
+                <p className="mt-1 text-xs text-secondary-500">
+                  These are the signals Xocial needs for the full create-publish-measure-learn loop.
+                </p>
+                <div className="mt-4 space-y-2">
+                  {learning?.eventCoverage?.length ? (
+                    learning.eventCoverage.map((item) => (
+                      <div key={item.eventType} className="flex items-center justify-between gap-3 rounded-lg border border-secondary-100 px-3 py-2">
+                        <span className="text-sm text-secondary-700">{humanize(item.eventType)}</span>
+                        <Badge variant={item.covered ? "success" : "default"}>
+                          {item.covered ? `${item.count}` : "Missing"}
+                        </Badge>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-secondary-500">Coverage appears after learning events are recorded.</p>
+                  )}
+                </div>
+              </ContentCard>
+              <ContentCard>
+                <h3 className="font-semibold text-secondary-950">Brand Brain Versions</h3>
+                <div className="mt-4 space-y-3">
+                  {learning?.brandVersions?.length ? (
+                    learning.brandVersions.slice(0, 5).map((version) => (
+                      <div key={String(version.id)} className="rounded-lg border border-secondary-100 bg-secondary-50 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium text-secondary-900">
+                            Version {String(version.version_no || "")}
+                          </p>
+                          <Badge variant="outline">{humanize(String(version.change_source || "change"))}</Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-secondary-500">
+                          {Array.isArray(version.changed_fields)
+                            ? version.changed_fields.map((field) => humanize(String(field))).join(", ")
+                            : "Profile snapshot"}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-secondary-500">Version history starts after the next Brand Brain update.</p>
                   )}
                 </div>
               </ContentCard>
@@ -1727,6 +2131,18 @@ export default function LeveragePage() {
                 {learning?.tasks?.length ? (
                   <div className="mt-5 space-y-3 border-t border-secondary-100 pt-4">
                     <p className="text-xs font-medium uppercase tracking-wide text-secondary-500">Recent worker runs</p>
+                    {learning?.taskStats?.byAgent ? (
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {Object.entries(learning.taskStats.byAgent).slice(0, 6).map(([agent, stats]) => (
+                          <div key={agent} className="rounded-md border border-secondary-100 bg-white px-3 py-2 text-xs">
+                            <p className="font-medium text-secondary-800">{humanize(agent)}</p>
+                            <p className="mt-1 text-secondary-500">
+                              {Number(stats.succeeded || 0)} succeeded · {Number(stats.failed || 0)} failed · {Number(stats.queued || 0)} queued
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                     {learning.tasks.slice(0, 8).map((task) => {
                       const status = String(task.status || "queued");
                       const runtime = taskRuntime(task);
@@ -1783,6 +2199,16 @@ export default function LeveragePage() {
         loading={Boolean(reviewingBrandArtifact?.id && artifactLoading === reviewingBrandArtifact.id)}
         onAccept={(artifactId, payload) => performArtifactAction(artifactId, "artifact_accept", payload)}
         onIgnore={(artifactId) => performArtifactAction(artifactId, "artifact_ignore")}
+      />
+
+      <FeedbackDialog
+        target={feedbackTarget}
+        open={!!feedbackTarget}
+        onOpenChange={(open) => {
+          if (!open) setFeedbackTarget(null);
+        }}
+        loading={feedbackSubmitting}
+        onSubmit={submitFeedback}
       />
     </PageContainer>
   );

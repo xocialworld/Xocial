@@ -9,6 +9,7 @@ import { refreshTwitterToken, type TwitterOAuthConfig } from '@/lib/platforms/tw
 import { logger } from '@/lib/logger';
 import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
 import { assertTwitterLiveApiEnabled } from '@/lib/twitter-api-mode';
+import { persistPlatformMetrics } from '@/lib/intelligence/analytics-sync';
 
 interface SyncResult {
     synced: number;
@@ -156,8 +157,23 @@ export async function syncTwitterTweets(
                             fetched_at: new Date().toISOString(),
                         };
 
-                        await supabase.from('post_analytics').upsert(analyticsData, {
-                            onConflict: 'post_id,platform',
+                        await persistPlatformMetrics(supabase as any, {
+                            workspaceId: account.workspace_id,
+                            postId,
+                            platformPostId: tweet.id,
+                            socialAccountId: accountId,
+                            platform: 'twitter',
+                            publishedAt: postData.published_at,
+                            metrics: {
+                                ...analyticsData,
+                                reach: tweet.public_metrics.impression_count || 0,
+                                views: tweet.public_metrics.impression_count || 0,
+                                comments: tweet.public_metrics.reply_count || 0,
+                                shares: tweet.public_metrics.retweet_count || 0,
+                                saves: tweet.public_metrics.quote_count || 0,
+                            },
+                            raw: { tweet },
+                            syncSource: 'twitter_tweets_sync',
                         });
                     }
                 } catch (metricsError: any) {
@@ -225,8 +241,23 @@ export async function syncTwitterAnalytics(accountId: string): Promise<SyncResul
                         fetched_at: new Date().toISOString(),
                     };
 
-                    await supabase.from('post_analytics').upsert(analyticsData, {
-                        onConflict: 'post_id,platform',
+                    await persistPlatformMetrics(supabase as any, {
+                        workspaceId: account.workspace_id,
+                        postId: post.id,
+                        platformPostId: post.external_post_id,
+                        socialAccountId: accountId,
+                        platform: 'twitter',
+                        publishedAt: post.published_at,
+                        metrics: {
+                            ...analyticsData,
+                            reach: metrics.public_metrics.impression_count || 0,
+                            views: metrics.public_metrics.impression_count || 0,
+                            comments: metrics.public_metrics.reply_count || 0,
+                            shares: metrics.public_metrics.retweet_count || 0,
+                            saves: metrics.public_metrics.quote_count || 0,
+                        },
+                        raw: metrics,
+                        syncSource: 'twitter_analytics_sync',
                     });
 
                     result.synced++;

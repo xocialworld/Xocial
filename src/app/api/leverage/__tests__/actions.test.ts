@@ -184,7 +184,7 @@ describe('Leverage artifact actions', () => {
       expect.objectContaining({
         workspaceId: 'ws-1',
         actorUserId: 'user-1',
-        eventType: 'recommendation_accepted',
+        eventType: 'artifact_accepted',
         entityType: 'agent_artifact',
       })
     );
@@ -244,8 +244,109 @@ describe('Leverage artifact actions', () => {
       client,
       expect.objectContaining({
         workspaceId: 'ws-1',
-        eventType: 'recommendation_dismissed',
+        eventType: 'artifact_ignored',
         entityId: 'artifact-ignore',
+      })
+    );
+  });
+
+  it('marks an AI artifact off-brand and writes feedback into Brand Brain', async () => {
+    const artifact = {
+      id: 'artifact-off-brand',
+      workspace_id: 'ws-1',
+      artifact_type: 'performance_insight',
+      title: 'Use louder urgency hooks',
+      summary: 'Push more aggressive scarcity messaging next week.',
+      payload: {
+        reasoningSummary: 'Recent posts with urgency performed better.',
+      },
+    };
+    const currentBrand = {
+      workspace_id: 'ws-1',
+      voice: 'calm and practical',
+      audience: 'founders',
+      products_offers: [],
+      content_pillars: [],
+      competitors: [],
+      do_rules: [],
+      dont_rules: ['Avoid hype'],
+      approved_examples: [],
+      rejected_examples: [],
+    };
+
+    const { client, calls } = createClientMock((state, mode) => {
+      if (state.table === 'agent_artifacts' && state.operation === 'select' && mode === 'single') {
+        return { data: artifact, error: null };
+      }
+      if (state.table === 'workspace_brand_profiles' && mode === 'maybeSingle') {
+        return { data: currentBrand, error: null };
+      }
+      if (state.table === 'agent_artifacts' && state.operation === 'update' && mode === 'single') {
+        return {
+          data: {
+            ...artifact,
+            status: state.payload.status,
+            payload: state.payload.payload,
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    });
+
+    mockRequireWorkspaceContext.mockResolvedValue({
+      serviceClient: client,
+      workspaceId: 'ws-1',
+      user: { id: 'user-1' },
+    });
+
+    const response = await POST(
+      new Request('http://localhost/api/leverage/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'artifact_mark_off_brand',
+          targetId: 'artifact-off-brand',
+          payload: {
+            reasonType: 'off_brand',
+            comment: 'Avoid aggressive scarcity. Keep the founder-led practical tone.',
+          },
+        }),
+      }) as any
+    );
+
+    const brandUpsert = calls.find((call) => call.table === 'workspace_brand_profiles');
+    const artifactUpdate = calls.find(
+      (call) => call.table === 'agent_artifacts' && call.operation === 'update'
+    );
+
+    expect(response.status).toBe(200);
+    expect(brandUpsert?.payload.dont_rules).toEqual([
+      'Avoid hype',
+      'Avoid aggressive scarcity. Keep the founder-led practical tone.',
+    ]);
+    expect(brandUpsert?.payload.rejected_examples[0]).toContain('Use louder urgency hooks');
+    expect(artifactUpdate?.payload).toMatchObject({
+      status: 'ignored',
+      payload: expect.objectContaining({
+        appliedBrandFeedback: expect.objectContaining({
+          reasonType: 'off_brand',
+          addedRejectedExample: true,
+        }),
+        feedback: expect.arrayContaining([
+          expect.objectContaining({
+            action: 'artifact_mark_off_brand',
+            markedOffBrand: true,
+          }),
+        ]),
+      }),
+    });
+    expect(mockRecordLearningEvent).toHaveBeenCalledWith(
+      client,
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        eventType: 'artifact_marked_off_brand',
+        entityId: 'artifact-off-brand',
       })
     );
   });

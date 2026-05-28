@@ -8,7 +8,7 @@ import {
   getInstagramComments,
 } from '@/lib/oauth/instagram';
 import { logger } from '@/lib/logger';
-import { recordMetricSnapshotAndOutcome } from '@/lib/intelligence/metrics';
+import { persistPlatformMetrics } from '@/lib/intelligence/analytics-sync';
 import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
 import { upsertSocialComment } from '@/lib/sync/social-comments';
 
@@ -176,18 +176,16 @@ export async function syncInstagramPosts(
                 fetched_at: new Date().toISOString(),
               };
 
-              await supabase.from('post_analytics').upsert(analyticsData, {
-                onConflict: 'post_id,platform',
-              });
-
-              await recordMetricSnapshotAndOutcome(supabase as any, {
+              await persistPlatformMetrics(supabase as any, {
                 workspaceId: account.workspace_id,
                 postId,
                 platformPostId: item.id,
                 socialAccountId: accountId,
                 platform: 'instagram',
+                publishedAt: postData.published_at,
                 metrics: analyticsData,
                 raw: { insights, media: item },
+                syncSource: 'instagram_posts_sync',
               });
             }
           } catch (insightsError: any) {
@@ -270,18 +268,16 @@ export async function syncInstagramAnalytics(accountId: string): Promise<SyncRes
           fetched_at: new Date().toISOString(),
         };
 
-        await supabase.from('post_analytics').upsert(analyticsData, {
-          onConflict: 'post_id,platform',
-        });
-
-        await recordMetricSnapshotAndOutcome(supabase as any, {
+        await persistPlatformMetrics(supabase as any, {
           workspaceId: account.workspace_id,
           postId: post.id,
           platformPostId: post.external_post_id,
           socialAccountId: accountId,
           platform: 'instagram',
+          publishedAt: post.published_at,
           metrics: analyticsData,
           raw: { insights },
+          syncSource: 'instagram_analytics_sync',
         });
 
         result.synced++;

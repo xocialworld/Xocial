@@ -398,6 +398,7 @@ export async function getYouTubeVideoStats(
   const response = await fetch(
     `https://www.googleapis.com/youtube/v3/videos?${params.toString()}`,
     {
+      cache: 'no-store',
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
@@ -405,8 +406,19 @@ export async function getYouTubeVideoStats(
   );
 
   if (!response.ok) {
+    let detail = '';
+    try {
+      const error = await response.json();
+      detail = error?.error?.message ? `: ${error.error.message}` : '';
+    } catch {
+      detail = '';
+    }
     const { APIError } = await import('@/lib/api-middleware');
-    throw new APIError(response.status || 400, 'Failed to fetch YouTube video stats', 'YOUTUBE_API_ERROR');
+    throw new APIError(
+      response.status || 400,
+      `Failed to fetch YouTube video stats (${response.status})${detail}`,
+      'YOUTUBE_API_ERROR'
+    );
   }
 
   const data = await response.json();

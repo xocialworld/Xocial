@@ -6,6 +6,7 @@ import {
 } from '@/lib/oauth/tiktok';
 import { logger } from '@/lib/logger';
 import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
+import { persistPlatformMetrics } from '@/lib/intelligence/analytics-sync';
 
 interface SyncResult {
     synced: number;
@@ -76,8 +77,23 @@ export async function syncTikTokVideos(
                             fetched_at: new Date().toISOString(),
                         };
 
-                        await supabase.from('post_analytics').upsert(analyticsData, {
-                            onConflict: 'post_id,platform',
+                        await persistPlatformMetrics(supabase as any, {
+                            workspaceId: account.workspace_id,
+                            postId,
+                            platformPostId: video.id,
+                            socialAccountId: accountId,
+                            platform: 'tiktok',
+                            publishedAt: postData.published_at,
+                            metrics: {
+                                ...analyticsData,
+                                video_views: video.view_count || 0,
+                                engagement:
+                                    (video.like_count || 0) +
+                                    (video.comment_count || 0) +
+                                    (video.share_count || 0),
+                            },
+                            raw: video,
+                            syncSource: 'tiktok_videos_sync',
                         });
                     }
                 } catch (statsError) {

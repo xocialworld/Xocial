@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ArrowRight,
   BarChart3,
@@ -15,6 +15,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FeedbackControls, WhyExplanation } from "@/components/features/intelligence";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
@@ -25,27 +26,14 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { Platform } from "@/types";
+import type {
+  CalendarCampaignGap,
+  CalendarPlatformOpportunity,
+  CalendarStrategyAction,
+  CalendarStrategyHealth,
+} from "@/types/intelligence";
 
-type CalendarAIAction = {
-  id: string;
-  type:
-    | "fill_empty_day"
-    | "create_strategy_draft"
-    | "create_pillar_balance_draft"
-    | "create_best_time_draft";
-  title: string;
-  description: string;
-  scheduledAt: string;
-  platforms: Platform[];
-  pillar?: string;
-  recommendationId?: string;
-  sourceArtifactId?: string;
-  priority?: string;
-  confidence?: number;
-  source?: string;
-};
-
-type CalendarAIData = {
+export type CalendarAIData = {
   summary: {
     emptyDays: number;
     activeRecommendations: number;
@@ -53,7 +41,18 @@ type CalendarAIData = {
     contentPillars: number;
     plannedPosts: number;
   };
-  actions: CalendarAIAction[];
+  strategyHealth?: CalendarStrategyHealth;
+  actions: CalendarStrategyAction[];
+  platformOpportunities?: CalendarPlatformOpportunity[];
+  campaignGaps?: CalendarCampaignGap[];
+  dayIntelligence?: Array<{
+    dateKey: string;
+    hasPosts: boolean;
+    postCount: number;
+    recommendedSlotCount: number;
+    topActionIds: string[];
+    labels: string[];
+  }>;
   pillarBalance: Array<{ pillar: string; count: number }>;
 };
 
@@ -63,6 +62,10 @@ type CalendarAIPanelProps = {
   workspaceId?: string;
   currentMonth: Date;
   onDraftCreated: () => Promise<unknown> | unknown;
+  initialData?: CalendarAIData | null;
+  focusedActionId?: string | null;
+  onDataLoaded?: (data: CalendarAIData | null) => void;
+  onUseInCreate?: (action: CalendarStrategyAction) => void;
 };
 
 function monthRange(date: Date) {
@@ -83,7 +86,9 @@ function formatDateTime(value: string) {
   }).format(date);
 }
 
-function actionIcon(type: CalendarAIAction["type"]) {
+function actionIcon(type: CalendarStrategyAction["type"]) {
+  if (type === "fill_platform_gap") return Target;
+  if (type === "fill_campaign_gap") return BarChart3;
   if (type === "fill_empty_day") return CalendarPlus;
   if (type === "create_best_time_draft") return Clock;
   if (type === "create_pillar_balance_draft") return Target;
@@ -108,6 +113,10 @@ export function CalendarAIPanel({
   workspaceId,
   currentMonth,
   onDraftCreated,
+  initialData,
+  focusedActionId,
+  onDataLoaded,
+  onUseInCreate,
 }: CalendarAIPanelProps) {
   const [data, setData] = useState<CalendarAIData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -115,6 +124,12 @@ export function CalendarAIPanel({
   const [applyingId, setApplyingId] = useState<string | null>(null);
 
   const range = useMemo(() => monthRange(currentMonth), [currentMonth]);
+
+  useEffect(() => {
+    if (initialData !== undefined) {
+      setData(initialData);
+    }
+  }, [initialData]);
 
   const loadActions = useCallback(async () => {
     if (!workspaceId || !open) return;
@@ -134,13 +149,15 @@ export function CalendarAIPanel({
         throw new Error(payload?.error?.message || "Unable to load Calendar AI actions");
       }
       setData(payload.data);
+      onDataLoaded?.(payload.data);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load Calendar AI actions");
       setData(null);
+      onDataLoaded?.(null);
     } finally {
       setLoading(false);
     }
-  }, [open, range.from, range.to, workspaceId]);
+  }, [onDataLoaded, open, range.from, range.to, workspaceId]);
 
   useEffect(() => {
     void loadActions();
@@ -172,7 +189,7 @@ export function CalendarAIPanel({
     }
   };
 
-  const applyAction = async (action: CalendarAIAction) => {
+  const applyAction = async (action: CalendarStrategyAction) => {
     if (!workspaceId) return;
     setApplyingId(action.id);
     try {
@@ -199,6 +216,26 @@ export function CalendarAIPanel({
         throw new Error(payload?.error?.message || "Unable to create planned draft");
       }
       toast.success("Planned draft created");
+      await fetch(`/api/intelligence/feedback?${params.toString()}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-workspace-id": workspaceId,
+        },
+        body: JSON.stringify({
+          targetType: "calendar_suggestion",
+          targetId: action.id,
+          action: "apply",
+          originalValue: action,
+          metadata: {
+            source: "calendar_ai_panel",
+            title: action.title,
+            actionType: action.type,
+            explanation: action.explanation,
+            createdPostId: payload?.data?.post?.id,
+          },
+        }),
+      }).catch(() => null);
       await onDraftCreated();
       await loadActions();
     } catch (error) {
@@ -209,6 +246,21 @@ export function CalendarAIPanel({
   };
 
   const summary = data?.summary;
+  const allActions = data?.actions || [];
+  const focusedAction = focusedActionId
+    ? allActions.find((action) => action.id === focusedActionId)
+    : null;
+  const recommendedActions = focusedAction
+    ? [focusedAction, ...allActions.filter((action) => action.id !== focusedAction.id)]
+    : allActions;
+  const topRecommendedActions = recommendedActions.slice(0, 4);
+  const topRecommendedIds = new Set(topRecommendedActions.map((action) => action.id));
+  const remainingActions = recommendedActions.filter((action) => !topRecommendedIds.has(action.id));
+  const gapActions = remainingActions.filter((action) =>
+    ["empty_day", "pillar_gap", "platform_gap", "campaign_gap"].includes(String(action.slotType))
+  );
+  const bestTimeActions = remainingActions.filter((action) => action.slotType === "best_time");
+  const strategyActions = remainingActions.filter((action) => action.slotType === "strategy");
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -252,6 +304,7 @@ export function CalendarAIPanel({
             ) : (
               <div className="space-y-5">
                 <div className="grid grid-cols-2 gap-3">
+                  <SummaryTile label="Strategy health" value={`${data?.strategyHealth?.score ?? 0}%`} />
                   <SummaryTile label="Empty days" value={summary?.emptyDays ?? 0} />
                   <SummaryTile label="Strategy items" value={summary?.activeRecommendations ?? 0} />
                   <SummaryTile label="Best slots" value={summary?.bestTimeSlots ?? 0} />
@@ -277,32 +330,58 @@ export function CalendarAIPanel({
                   </div>
                 ) : null}
 
-                <div>
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-semibold text-secondary-900">Recommended actions</h3>
-                    <Badge variant="primary">{data?.actions?.length || 0}</Badge>
+                {recommendedActions.length ? (
+                  <div className="space-y-5">
+                    <ActionSection
+                      title="Recommended"
+                      actions={topRecommendedActions}
+                      applyingId={applyingId}
+                      focusedActionId={focusedActionId}
+                      workspaceId={workspaceId}
+                      onApply={applyAction}
+                      onFeedback={loadActions}
+                      onUseInCreate={onUseInCreate}
+                    />
+                    <ActionSection
+                      title="Gaps"
+                      actions={gapActions}
+                      applyingId={applyingId}
+                      focusedActionId={focusedActionId}
+                      workspaceId={workspaceId}
+                      onApply={applyAction}
+                      onFeedback={loadActions}
+                      onUseInCreate={onUseInCreate}
+                    />
+                    <ActionSection
+                      title="Best Times"
+                      actions={bestTimeActions}
+                      applyingId={applyingId}
+                      focusedActionId={focusedActionId}
+                      workspaceId={workspaceId}
+                      onApply={applyAction}
+                      onFeedback={loadActions}
+                      onUseInCreate={onUseInCreate}
+                    />
+                    <ActionSection
+                      title="Strategy"
+                      actions={strategyActions}
+                      applyingId={applyingId}
+                      focusedActionId={focusedActionId}
+                      workspaceId={workspaceId}
+                      onApply={applyAction}
+                      onFeedback={loadActions}
+                      onUseInCreate={onUseInCreate}
+                    />
                   </div>
-                  <div className="space-y-3">
-                    {data?.actions?.length ? (
-                      data.actions.map((action) => (
-                        <ActionCard
-                          key={action.id}
-                          action={action}
-                          applying={applyingId === action.id}
-                          onApply={() => applyAction(action)}
-                        />
-                      ))
-                    ) : (
-                      <div className="rounded-lg border border-dashed border-secondary-300 bg-white p-6 text-center">
-                        <Sparkles className="mx-auto h-8 w-8 text-secondary-400" />
-                        <p className="mt-3 text-sm font-medium text-secondary-900">No actions yet</p>
-                        <p className="mt-1 text-xs text-secondary-500">
-                          Queue a refresh after publishing or syncing analytics to generate stronger recommendations.
-                        </p>
-                      </div>
-                    )}
+                ) : (
+                  <div className="rounded-lg border border-dashed border-secondary-300 bg-white p-6 text-center">
+                    <Sparkles className="mx-auto h-8 w-8 text-secondary-400" />
+                    <p className="mt-3 text-sm font-medium text-secondary-900">No actions yet</p>
+                    <p className="mt-1 text-xs text-secondary-500">
+                      Queue a refresh after publishing or syncing analytics to generate stronger recommendations.
+                    </p>
                   </div>
-                </div>
+                )}
               </div>
             )}
           </ScrollArea>
@@ -312,7 +391,7 @@ export function CalendarAIPanel({
   );
 }
 
-function SummaryTile({ label, value }: { label: string; value: number }) {
+function SummaryTile({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded-lg border border-secondary-200 bg-white p-3">
       <p className="text-xs font-medium text-secondary-500">{label}</p>
@@ -321,19 +400,77 @@ function SummaryTile({ label, value }: { label: string; value: number }) {
   );
 }
 
+function ActionSection({
+  title,
+  actions,
+  applyingId,
+  focusedActionId,
+  workspaceId,
+  onApply,
+  onFeedback,
+  onUseInCreate,
+}: {
+  title: string;
+  actions: CalendarStrategyAction[];
+  applyingId: string | null;
+  focusedActionId?: string | null;
+  workspaceId?: string;
+  onApply: (action: CalendarStrategyAction) => void;
+  onFeedback?: () => Promise<unknown> | unknown;
+  onUseInCreate?: (action: CalendarStrategyAction) => void;
+}) {
+  if (!actions.length) return null;
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-secondary-900">{title}</h3>
+        <Badge variant="primary">{actions.length}</Badge>
+      </div>
+      <div className="space-y-3">
+        {actions.map((action) => (
+          <ActionCard
+            key={`${title}-${action.id}`}
+            action={action}
+            applying={applyingId === action.id}
+            focused={focusedActionId === action.id}
+            onApply={() => onApply(action)}
+            workspaceId={workspaceId}
+            onFeedback={onFeedback}
+            onUseInCreate={onUseInCreate ? () => onUseInCreate(action) : undefined}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ActionCard({
   action,
   applying,
+  focused,
   onApply,
+  onUseInCreate,
+  workspaceId,
+  onFeedback,
 }: {
-  action: CalendarAIAction;
+  action: CalendarStrategyAction;
   applying: boolean;
+  focused?: boolean;
   onApply: () => void;
+  onUseInCreate?: () => void;
+  workspaceId?: string;
+  onFeedback?: () => Promise<unknown> | unknown;
 }) {
   const Icon = actionIcon(action.type);
 
   return (
-    <div className="rounded-lg border border-secondary-200 bg-white p-4">
+    <div
+      className={cn(
+        "rounded-lg border bg-white p-4",
+        focused ? "border-primary-300 ring-2 ring-primary-100" : "border-secondary-200"
+      )}
+    >
       <div className="flex items-start gap-3">
         <div
           className={cn(
@@ -350,11 +487,17 @@ function ActionCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-sm font-semibold text-secondary-950">{action.title}</h4>
+            {focused && <Badge variant="primary">Selected</Badge>}
             {action.priority && (
               <Badge variant={priorityVariant(action.priority)}>{action.priority}</Badge>
             )}
           </div>
           <p className="mt-1 text-sm leading-relaxed text-secondary-600">{action.description}</p>
+          {action.impact && (
+            <p className="mt-2 rounded-md bg-secondary-50 px-2 py-1 text-xs text-secondary-600">
+              {action.impact}
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-secondary-500">
             <span>{formatDateTime(action.scheduledAt)}</span>
             {action.source && (
@@ -372,18 +515,49 @@ function ActionCard({
             ))}
             {action.pillar && <Badge variant="secondary">{action.pillar}</Badge>}
           </div>
+          {action.explanation && (
+            <WhyExplanation explanation={action.explanation} compact className="mt-3" />
+          )}
         </div>
       </div>
-      <Button
-        size="sm"
-        className="mt-4 w-full gap-2"
-        onClick={onApply}
-        disabled={applying}
-      >
-        {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarPlus className="h-4 w-4" />}
-        Create planned draft
-        {!applying && <ArrowRight className="h-4 w-4" />}
-      </Button>
+      <FeedbackControls
+        targetType="calendar_suggestion"
+        targetId={action.id}
+        title={action.title}
+        workspaceId={workspaceId}
+        originalValue={action}
+        originalText={action.description}
+        metadata={{ source: "calendar_ai_panel", actionType: action.type, explanation: action.explanation }}
+        actions={["ignore", "mark_off_brand"]}
+        className="mt-4"
+        onSubmitted={() => {
+          void onFeedback?.();
+        }}
+      />
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <Button
+          size="sm"
+          className="gap-2"
+          onClick={onApply}
+          disabled={applying || Boolean(action.blockedReason)}
+        >
+          {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarPlus className="h-4 w-4" />}
+          Create planned draft
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-2"
+          onClick={onUseInCreate}
+          disabled={!onUseInCreate || Boolean(action.blockedReason)}
+        >
+          Use in Create
+          <ArrowRight className="h-4 w-4" />
+        </Button>
+      </div>
+      {action.blockedReason && (
+        <p className="mt-2 text-xs text-red-600">{action.blockedReason}</p>
+      )}
     </div>
   );
 }

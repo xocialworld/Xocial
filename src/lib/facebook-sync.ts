@@ -9,6 +9,7 @@ import {
 import { logger } from '@/lib/logger';
 import { upsertPostByExternalId } from '@/lib/sync/upsert-post';
 import { upsertSocialComment } from '@/lib/sync/social-comments';
+import { persistPlatformMetrics } from '@/lib/intelligence/analytics-sync';
 
 interface SyncResult {
     synced: number;
@@ -82,8 +83,16 @@ export async function syncFacebookPosts(
                             fetched_at: new Date().toISOString(),
                         };
 
-                        await supabase.from('post_analytics').upsert(analyticsData, {
-                            onConflict: 'post_id,platform',
+                        await persistPlatformMetrics(supabase as any, {
+                            workspaceId: account.workspace_id,
+                            postId,
+                            platformPostId: post.id,
+                            socialAccountId: accountId,
+                            platform: 'facebook',
+                            publishedAt: postData.published_at,
+                            metrics: analyticsData,
+                            raw: { insights, post },
+                            syncSource: 'facebook_posts_sync',
                         });
                     }
                 } catch (insightsError: any) {
@@ -146,8 +155,16 @@ export async function syncFacebookAnalytics(accountId: string): Promise<SyncResu
                     fetched_at: new Date().toISOString(),
                 };
 
-                await supabase.from('post_analytics').upsert(analyticsData, {
-                    onConflict: 'post_id,platform',
+                await persistPlatformMetrics(supabase as any, {
+                    workspaceId: account.workspace_id,
+                    postId: post.id,
+                    platformPostId: post.external_post_id,
+                    socialAccountId: accountId,
+                    platform: 'facebook',
+                    publishedAt: post.published_at,
+                    metrics: analyticsData,
+                    raw: { insights },
+                    syncSource: 'facebook_analytics_sync',
                 });
 
                 result.synced++;

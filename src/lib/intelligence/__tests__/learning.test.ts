@@ -1,7 +1,9 @@
 import {
   LEARNING_EVENT_SCHEMA_VERSION,
+  buildLearningEventKey,
   recordLearningEvent,
   recordLearningEvents,
+  validateLearningEventInput,
 } from '../learning';
 
 function createSupabaseMock(error: any = null) {
@@ -39,6 +41,7 @@ describe('learning events', () => {
         entity_id: 'post-1',
         platform: 'instagram',
         signal_strength: 0.6,
+        event_key: null,
         metadata: expect.objectContaining({
           schemaVersion: LEARNING_EVENT_SCHEMA_VERSION,
           source: 'user',
@@ -76,6 +79,28 @@ describe('learning events', () => {
         workspaceId: 'workspace-1',
         eventType: 'post_created',
       })
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ recorded: false });
+  });
+
+  it('validates contracts and builds stable idempotency keys', () => {
+    const validation = validateLearningEventInput({
+      workspaceId: 'workspace-1',
+      eventType: 'publish_succeeded',
+      entityType: 'post',
+      entityId: 'post-1',
+      source: 'scheduler',
+    });
+
+    expect(validation.warnings).toContain('missing_required_platform');
+    expect(
+      buildLearningEventKey({
+        workspaceId: 'workspace-1',
+        eventType: 'metric_synced',
+        entityType: 'post',
+        entityId: 'post-1',
+        platform: 'Instagram',
+        discriminator: 'hour-1',
+      })
+    ).toBe('workspace-1:metric_synced:post:post-1:instagram:hour-1');
   });
 });

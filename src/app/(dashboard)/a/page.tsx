@@ -299,7 +299,7 @@ export default function AnalyticsPage() {
 
         {/* Tab: Overview */}
         <TabsContent value="overview" className="space-y-8 animate-in fade-in-50 duration-500">
-          <AIInsights />
+          <AIInsights workspaceId={workspace?.id} />
 
           <OverviewCards metrics={overviewMetrics} loading={loading} />
 

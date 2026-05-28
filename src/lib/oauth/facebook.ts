@@ -341,11 +341,42 @@ export async function getFacebookPostInsights(
   ];
 
   const response = await fetch(
-    `${META_GRAPH_API_BASE_URL}/${postId}/insights?metric=${metrics.join(',')}&access_token=${accessToken}`
+    `${META_GRAPH_API_BASE_URL}/${postId}/insights?metric=${metrics.join(',')}&access_token=${accessToken}`,
+    { cache: 'no-store' }
   );
 
   if (!response.ok) {
-    throw new Error('Failed to fetch Facebook post insights');
+    let detail = '';
+    try {
+      const error = await response.json();
+      detail = error?.error?.message ? `: ${error.error.message}` : '';
+    } catch {
+      detail = '';
+    }
+
+    if (detail.includes('nonexisting field (insights)')) {
+      const fallbackResponse = await fetch(
+        `${META_GRAPH_API_BASE_URL}/${postId}?fields=likes.limit(0).summary(true),comments.limit(0).summary(true)&access_token=${accessToken}`,
+        { cache: 'no-store' }
+      );
+
+      if (fallbackResponse.ok) {
+        const fallback = await fallbackResponse.json();
+        const reactions = fallback?.likes?.summary?.total_count || 0;
+        const comments = fallback?.comments?.summary?.total_count || 0;
+        const shares = 0;
+
+        return [
+          { name: 'post_impressions', values: [{ value: 0 }] },
+          { name: 'post_reach', values: [{ value: 0 }] },
+          { name: 'post_engaged_users', values: [{ value: reactions + comments + shares }] },
+          { name: 'post_reactions', values: [{ value: reactions }] },
+          { name: 'post_clicks', values: [{ value: 0 }] },
+        ];
+      }
+    }
+
+    throw new Error(`Failed to fetch Facebook post insights (${response.status})${detail}`);
   }
 
   const data = await response.json();

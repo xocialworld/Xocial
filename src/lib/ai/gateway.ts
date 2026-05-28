@@ -7,7 +7,6 @@ export function getAIGatewayApiKey() {
     process.env.AI_GATEWAY_API_KEY ||
     env.VERCEL_OIDC_TOKEN ||
     process.env.VERCEL_OIDC_TOKEN ||
-    env.VERCEL_AI_GATEWAY_API_KEY ||
     ''
   );
 }

@@ -204,7 +204,6 @@ export const isFeatureEnabled = {
     !!(
       env.AI_GATEWAY_API_KEY ||
       env.VERCEL_OIDC_TOKEN ||
-      env.VERCEL_AI_GATEWAY_API_KEY ||
       env.OPENAI_API_KEY
     ),
 };
